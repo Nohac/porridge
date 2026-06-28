@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/pipeline",
+    "crates/playground",
+]
+resolver = "3"
