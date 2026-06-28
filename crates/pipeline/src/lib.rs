@@ -10,6 +10,7 @@ use std::{
 };
 
 pub use pipeline_macros::Component;
+use variadics_please::{all_tuples, all_tuples_enumerated};
 
 pub trait Component: 'static {
     fn fingerprint(&self) -> Option<u64> {
@@ -212,6 +213,13 @@ impl World {
         let value = self
             .get::<T>(entity)
             .expect("query row referenced a missing component");
+        // SAFETY: this prototype widens component references so `QueryParam`
+        // can be implemented without threading lifetimes through every system
+        // adapter. System bodies are safe because writes are buffered in
+        // `Commands` and are not applied to `World` until after the fetched
+        // references are no longer used. Materialized `Db::query` results rely
+        // on the caller not mutating the database while holding returned refs;
+        // a production API should encode that lifetime in the return type.
         unsafe { std::mem::transmute::<&T, &'static T>(value) }
     }
 }
@@ -286,6 +294,32 @@ impl<B: Bundle> CommandOp for SpawnCommand<B> {
 
 pub struct Query<T>(pub T);
 
+pub struct View<T> {
+    rows: Vec<T>,
+}
+
+impl<T> View<T> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.rows.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+}
+
+impl<T> View<(Entity, T)> {
+    pub fn get(&self, entity: Entity) -> Option<&T> {
+        self.rows
+            .iter()
+            .find_map(|(row_entity, value)| (*row_entity == entity).then_some(value))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Dep {
     type_id: TypeId,
@@ -323,62 +357,51 @@ impl<T: Component> QueryParam for &'static T {
     }
 
     unsafe fn fetch(world: *const World, state: &Self::State) -> Self {
+        // SAFETY: callers pass a raw pointer derived from a live `World`.
+        // `state` was produced by `rows` for that same world before buffered
+        // commands are applied, so the referenced component is still present.
         unsafe { (*world).get_static::<T>(*state) }
     }
 }
 
-impl<T: Component> QueryParam for (Entity, &'static T) {
-    type State = Entity;
+macro_rules! impl_entity_query_param {
+    ($($T:ident),*) => {
+        impl<$($T: Component),*> QueryParam for (Entity, $(&'static $T,)*)
+        {
+            type State = Entity;
 
-    fn rows(world: &World) -> Vec<Self::State> {
-        world.entities_with::<T>()
-    }
+            fn rows(world: &World) -> Vec<Self::State> {
+                (0..world.next_entity)
+                    .map(Entity)
+                    .filter(|entity| true $(&& world.has::<$T>(*entity))*)
+                    .collect()
+            }
 
-    fn keys(state: &Self::State) -> Vec<Entity> {
-        vec![*state]
-    }
+            fn keys(state: &Self::State) -> Vec<Entity> {
+                vec![*state]
+            }
 
-    fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
-        vec![component_dep::<T>(world, *state)]
-    }
+            fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
+                vec![$(component_dep::<$T>(world, *state),)*]
+            }
 
-    unsafe fn fetch(world: *const World, state: &Self::State) -> Self {
-        unsafe { (*state, (*world).get_static::<T>(*state)) }
-    }
-}
-
-impl<A: Component, B: Component> QueryParam for (Entity, &'static A, &'static B) {
-    type State = Entity;
-
-    fn rows(world: &World) -> Vec<Self::State> {
-        world
-            .entities_with::<A>()
-            .into_iter()
-            .filter(|entity| world.has::<B>(*entity))
-            .collect()
-    }
-
-    fn keys(state: &Self::State) -> Vec<Entity> {
-        vec![*state]
-    }
-
-    fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
-        vec![
-            component_dep::<A>(world, *state),
-            component_dep::<B>(world, *state),
-        ]
-    }
-
-    unsafe fn fetch(world: *const World, state: &Self::State) -> Self {
-        unsafe {
-            (
-                *state,
-                (*world).get_static::<A>(*state),
-                (*world).get_static::<B>(*state),
-            )
+            unsafe fn fetch(world: *const World, state: &Self::State) -> Self {
+                // SAFETY: callers pass a raw pointer derived from a live `World`.
+                // `state` was produced by `rows` for that same world before
+                // buffered commands are applied, so every component in the
+                // same-entity join is still present.
+                unsafe {
+                    (
+                        *state,
+                        $((*world).get_static::<$T>(*state),)*
+                    )
+                }
+            }
         }
-    }
+    };
 }
+
+all_tuples!(impl_entity_query_param, 1, 16, T);
 
 fn component_dep<T: Component>(world: &World, entity: Entity) -> Dep {
     Dep {
@@ -400,10 +423,9 @@ pub trait IntoSystem<Marker>: 'static {
     fn into_system(self, id: SystemId) -> BoxedSystem;
 }
 
-pub struct CommandsFirstOne;
-pub struct QueryFirstOne;
-pub struct CommandsFirstTwo;
-pub struct QueriesFirstTwo;
+pub struct CommandsQueries;
+pub struct QueriesCommands;
+pub struct QueryViewsCommands;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SystemHandle(SystemId);
@@ -542,233 +564,293 @@ impl Runnable for CompleteSystem {
     }
 }
 
-struct SystemOne<F, Q> {
+struct SystemCommandsQueries<F, Queries> {
     id: SystemId,
     function: F,
-    _query: PhantomData<Q>,
+    _queries: PhantomData<Queries>,
 }
 
-impl<F, Q> Runnable for SystemOne<F, Q>
-where
-    F: FnMut(Commands, Query<Q>) + 'static,
-    Q: QueryParam,
-{
-    fn run(&mut self, world: &mut World, memo: &mut HashMap<SystemInvocation, MemoEntry>) -> bool {
-        let rows = Q::rows(world);
-        let mut seen = HashSet::new();
-        let mut ran = false;
+struct SystemQueriesCommands<F, Queries> {
+    id: SystemId,
+    function: F,
+    _queries: PhantomData<Queries>,
+}
 
-        for row in rows {
-            let owner = SystemInvocation {
-                system: self.id,
-                keys: Q::keys(&row),
-            };
-            seen.insert(owner.clone());
-            let deps = Q::deps(world, &row);
+macro_rules! query_rows_empty {
+    ($rows:ident, $(($n:tt, $Q:ident)),*) => {
+        false $(|| $rows.$n.is_empty())*
+    };
+}
 
-            if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                continue;
-            }
+macro_rules! query_lengths {
+    ($rows:ident, $(($n:tt, $Q:ident)),*) => {
+        vec![$($rows.$n.len(),)*]
+    };
+}
 
-            run_with_commands(world, memo, owner, deps, |world_ptr, commands| {
-                let query = unsafe { Query(Q::fetch(world_ptr, &row)) };
-                (self.function)(commands, query);
-            });
-            ran = true;
+macro_rules! query_keys {
+    ($rows:ident, $indices:ident, $(($n:tt, $Q:ident)),*) => {{
+        let mut keys = Vec::new();
+        $(keys.extend($Q::keys(&$rows.$n[$indices[$n]]));)*
+        keys
+    }};
+}
+
+macro_rules! query_deps {
+    ($world:ident, $rows:ident, $indices:ident, $(($n:tt, $Q:ident)),*) => {{
+        let mut deps = Vec::new();
+        $(deps.extend($Q::deps($world, &$rows.$n[$indices[$n]]));)*
+        deps
+    }};
+}
+
+fn advance_indices(indices: &mut [usize], lengths: &[usize]) -> bool {
+    let mut position = indices.len();
+
+    while position > 0 {
+        position -= 1;
+        indices[position] += 1;
+
+        if indices[position] < lengths[position] {
+            return true;
         }
 
-        remove_unseen_invocations(self.id, seen, world, memo);
-        ran
+        indices[position] = 0;
     }
+
+    false
 }
 
-struct SystemOneQueryFirst<F, Q> {
-    id: SystemId,
-    function: F,
-    _query: PhantomData<Q>,
-}
-
-impl<F, Q> Runnable for SystemOneQueryFirst<F, Q>
-where
-    F: FnMut(Query<Q>, Commands) + 'static,
-    Q: QueryParam,
-{
-    fn run(&mut self, world: &mut World, memo: &mut HashMap<SystemInvocation, MemoEntry>) -> bool {
-        let rows = Q::rows(world);
-        let mut seen = HashSet::new();
-        let mut ran = false;
-
-        for row in rows {
-            let owner = SystemInvocation {
-                system: self.id,
-                keys: Q::keys(&row),
-            };
-            seen.insert(owner.clone());
-            let deps = Q::deps(world, &row);
-
-            if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                continue;
-            }
-
-            run_with_commands(world, memo, owner, deps, |world_ptr, commands| {
-                let query = unsafe { Query(Q::fetch(world_ptr, &row)) };
-                (self.function)(query, commands);
-            });
-            ran = true;
-        }
-
-        remove_unseen_invocations(self.id, seen, world, memo);
-        ran
-    }
-}
-
-struct SystemTwo<F, A, B> {
-    id: SystemId,
-    function: F,
-    _queries: PhantomData<(A, B)>,
-}
-
-impl<F, A, B> Runnable for SystemTwo<F, A, B>
-where
-    F: FnMut(Commands, Query<A>, Query<B>) + 'static,
-    A: QueryParam,
-    B: QueryParam,
-{
-    fn run(&mut self, world: &mut World, memo: &mut HashMap<SystemInvocation, MemoEntry>) -> bool {
-        let rows_a = A::rows(world);
-        let rows_b = B::rows(world);
-        let mut seen = HashSet::new();
-        let mut ran = false;
-
-        for row_a in &rows_a {
-            for row_b in &rows_b {
-                let owner = SystemInvocation {
-                    system: self.id,
-                    keys: [A::keys(row_a), B::keys(row_b)].concat(),
-                };
-                seen.insert(owner.clone());
-                let deps = [A::deps(world, row_a), B::deps(world, row_b)].concat();
-
-                if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                    continue;
+macro_rules! impl_query_driver_system {
+    ($(($n:tt, $Q:ident)),*) => {
+        impl<F, $($Q),*> Runnable for SystemCommandsQueries<F, ($($Q,)*)>
+        where
+            F: FnMut(Commands, $(Query<$Q>),*) + 'static,
+            $($Q: QueryParam,)*
+        {
+            fn run(
+                &mut self,
+                world: &mut World,
+                memo: &mut HashMap<SystemInvocation, MemoEntry>,
+            ) -> bool {
+                let rows = ($($Q::rows(world),)*);
+                if query_rows_empty!(rows, $(($n, $Q)),*) {
+                    remove_unseen_invocations(self.id, HashSet::new(), world, memo);
+                    return false;
                 }
 
-                run_with_commands(world, memo, owner, deps, |world_ptr, commands| {
-                    let query_a = unsafe { Query(A::fetch(world_ptr, row_a)) };
-                    let query_b = unsafe { Query(B::fetch(world_ptr, row_b)) };
-                    (self.function)(commands, query_a, query_b);
-                });
-                ran = true;
-            }
-        }
+                let lengths = query_lengths!(rows, $(($n, $Q)),*);
+                let mut indices = vec![0; lengths.len()];
+                let mut seen = HashSet::new();
+                let mut ran = false;
 
-        remove_unseen_invocations(self.id, seen, world, memo);
-        ran
-    }
-}
+                loop {
+                    let owner = SystemInvocation {
+                        system: self.id,
+                        keys: query_keys!(rows, indices, $(($n, $Q)),*),
+                    };
+                    seen.insert(owner.clone());
+                    let deps = query_deps!(world, rows, indices, $(($n, $Q)),*);
 
-struct SystemTwoQueriesFirst<F, A, B> {
-    id: SystemId,
-    function: F,
-    _queries: PhantomData<(A, B)>,
-}
+                    if !memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+                        run_with_commands(world, memo, owner, deps, |world_ptr, commands| {
+                            (self.function)(
+                                commands,
+                                // SAFETY: `world_ptr` points at the same world
+                                // used to build `rows`, and command writes are
+                                // buffered until the function returns.
+                                $(unsafe { Query($Q::fetch(world_ptr, &rows.$n[indices[$n]])) }),*
+                            );
+                        });
+                        ran = true;
+                    }
 
-impl<F, A, B> Runnable for SystemTwoQueriesFirst<F, A, B>
-where
-    F: FnMut(Query<A>, Query<B>, Commands) + 'static,
-    A: QueryParam,
-    B: QueryParam,
-{
-    fn run(&mut self, world: &mut World, memo: &mut HashMap<SystemInvocation, MemoEntry>) -> bool {
-        let rows_a = A::rows(world);
-        let rows_b = B::rows(world);
-        let mut seen = HashSet::new();
-        let mut ran = false;
-
-        for row_a in &rows_a {
-            for row_b in &rows_b {
-                let owner = SystemInvocation {
-                    system: self.id,
-                    keys: [A::keys(row_a), B::keys(row_b)].concat(),
-                };
-                seen.insert(owner.clone());
-                let deps = [A::deps(world, row_a), B::deps(world, row_b)].concat();
-
-                if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                    continue;
+                    if !advance_indices(&mut indices, &lengths) {
+                        break;
+                    }
                 }
 
-                run_with_commands(world, memo, owner, deps, |world_ptr, commands| {
-                    let query_a = unsafe { Query(A::fetch(world_ptr, row_a)) };
-                    let query_b = unsafe { Query(B::fetch(world_ptr, row_b)) };
-                    (self.function)(query_a, query_b, commands);
-                });
-                ran = true;
+                remove_unseen_invocations(self.id, seen, world, memo);
+                ran
             }
         }
 
-        remove_unseen_invocations(self.id, seen, world, memo);
-        ran
+        impl<F, $($Q),*> Runnable for SystemQueriesCommands<F, ($($Q,)*)>
+        where
+            F: FnMut($(Query<$Q>,)* Commands) + 'static,
+            $($Q: QueryParam,)*
+        {
+            fn run(
+                &mut self,
+                world: &mut World,
+                memo: &mut HashMap<SystemInvocation, MemoEntry>,
+            ) -> bool {
+                let rows = ($($Q::rows(world),)*);
+                if query_rows_empty!(rows, $(($n, $Q)),*) {
+                    remove_unseen_invocations(self.id, HashSet::new(), world, memo);
+                    return false;
+                }
+
+                let lengths = query_lengths!(rows, $(($n, $Q)),*);
+                let mut indices = vec![0; lengths.len()];
+                let mut seen = HashSet::new();
+                let mut ran = false;
+
+                loop {
+                    let owner = SystemInvocation {
+                        system: self.id,
+                        keys: query_keys!(rows, indices, $(($n, $Q)),*),
+                    };
+                    seen.insert(owner.clone());
+                    let deps = query_deps!(world, rows, indices, $(($n, $Q)),*);
+
+                    if !memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+                        run_with_commands(world, memo, owner, deps, |world_ptr, commands| {
+                            (self.function)(
+                                // SAFETY: `world_ptr` points at the same world
+                                // used to build `rows`, and command writes are
+                                // buffered until the function returns.
+                                $(unsafe { Query($Q::fetch(world_ptr, &rows.$n[indices[$n]])) },)*
+                                commands
+                            );
+                        });
+                        ran = true;
+                    }
+
+                    if !advance_indices(&mut indices, &lengths) {
+                        break;
+                    }
+                }
+
+                remove_unseen_invocations(self.id, seen, world, memo);
+                ran
+            }
+        }
+
+        impl<F, $($Q),*> IntoSystem<(CommandsQueries, ($($Q,)*))> for F
+        where
+            F: FnMut(Commands, $(Query<$Q>),*) + 'static,
+            $($Q: QueryParam,)*
+        {
+            fn into_system(self, id: SystemId) -> BoxedSystem {
+                BoxedSystem(Box::new(SystemCommandsQueries {
+                    id,
+                    function: self,
+                    _queries: PhantomData,
+                }))
+            }
+        }
+
+        impl<F, $($Q),*> IntoSystem<(QueriesCommands, ($($Q,)*))> for F
+        where
+            F: FnMut($(Query<$Q>,)* Commands) + 'static,
+            $($Q: QueryParam,)*
+        {
+            fn into_system(self, id: SystemId) -> BoxedSystem {
+                BoxedSystem(Box::new(SystemQueriesCommands {
+                    id,
+                    function: self,
+                    _queries: PhantomData,
+                }))
+            }
+        }
+    };
+}
+
+all_tuples_enumerated!(impl_query_driver_system, 1, 8, Q);
+
+fn fetch_view<V: QueryParam>(world: *const World) -> View<V> {
+    // SAFETY: `world` is a raw pointer to the live world for the current system
+    // invocation. View rows are fetched before buffered commands are applied.
+    let rows = unsafe { V::rows(&*world) };
+    View {
+        rows: rows
+            .into_iter()
+            // SAFETY: each row came from `V::rows` for this same world, and the
+            // world is not mutated while constructing the view.
+            .map(|row| unsafe { V::fetch(world, &row) })
+            .collect(),
     }
 }
 
-impl<F, Q> IntoSystem<(CommandsFirstOne, Q)> for F
-where
-    F: FnMut(Commands, Query<Q>) + 'static,
-    Q: QueryParam,
-{
-    fn into_system(self, id: SystemId) -> BoxedSystem {
-        BoxedSystem(Box::new(SystemOne {
-            id,
-            function: self,
-            _query: PhantomData,
-        }))
-    }
+fn view_deps<V: QueryParam>(world: &World) -> Vec<Dep> {
+    V::rows(world)
+        .into_iter()
+        .flat_map(|row| V::deps(world, &row))
+        .collect()
 }
 
-impl<F, Q> IntoSystem<(QueryFirstOne, Q)> for F
-where
-    F: FnMut(Query<Q>, Commands) + 'static,
-    Q: QueryParam,
-{
-    fn into_system(self, id: SystemId) -> BoxedSystem {
-        BoxedSystem(Box::new(SystemOneQueryFirst {
-            id,
-            function: self,
-            _query: PhantomData,
-        }))
-    }
+struct SystemQueryViews<F, Q, Views> {
+    id: SystemId,
+    function: F,
+    _params: PhantomData<(Q, Views)>,
 }
 
-impl<F, A, B> IntoSystem<(CommandsFirstTwo, A, B)> for F
-where
-    F: FnMut(Commands, Query<A>, Query<B>) + 'static,
-    A: QueryParam,
-    B: QueryParam,
-{
-    fn into_system(self, id: SystemId) -> BoxedSystem {
-        BoxedSystem(Box::new(SystemTwo {
-            id,
-            function: self,
-            _queries: PhantomData,
-        }))
-    }
+macro_rules! impl_query_views_system {
+    ($($V:ident),*) => {
+        #[allow(non_snake_case)]
+        impl<F, Q, $($V),*> Runnable for SystemQueryViews<F, Q, ($($V,)*)>
+        where
+            F: FnMut(Query<Q>, $(View<$V>,)* Commands) + 'static,
+            Q: QueryParam,
+            $($V: QueryParam,)*
+        {
+            fn run(
+                &mut self,
+                world: &mut World,
+                memo: &mut HashMap<SystemInvocation, MemoEntry>,
+            ) -> bool {
+                let rows = Q::rows(world);
+                let mut seen = HashSet::new();
+                let mut ran = false;
+
+                for row in rows {
+                    let owner = SystemInvocation {
+                        system: self.id,
+                        keys: Q::keys(&row),
+                    };
+                    seen.insert(owner.clone());
+                    let mut deps = Q::deps(world, &row);
+                    $(deps.extend(view_deps::<$V>(world));)*
+
+                    if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+                        continue;
+                    }
+
+                    run_with_commands(world, memo, owner, deps, |world_ptr, commands| {
+                        // SAFETY: `world_ptr` points at the same world used to
+                        // build `row`, and command writes are buffered until
+                        // the function returns.
+                        let query = unsafe { Query(Q::fetch(world_ptr, &row)) };
+                        $(let $V = fetch_view::<$V>(world_ptr);)*
+                        (self.function)(query, $($V,)* commands);
+                    });
+                    ran = true;
+                }
+
+                remove_unseen_invocations(self.id, seen, world, memo);
+                ran
+            }
+        }
+
+        impl<F, Q, $($V),*> IntoSystem<(QueryViewsCommands, Q, ($($V,)*))> for F
+        where
+            F: FnMut(Query<Q>, $(View<$V>,)* Commands) + 'static,
+            Q: QueryParam,
+            $($V: QueryParam,)*
+        {
+            fn into_system(self, id: SystemId) -> BoxedSystem {
+                BoxedSystem(Box::new(SystemQueryViews {
+                    id,
+                    function: self,
+                    _params: PhantomData,
+                }))
+            }
+        }
+    };
 }
 
-impl<F, A, B> IntoSystem<(QueriesFirstTwo, A, B)> for F
-where
-    F: FnMut(Query<A>, Query<B>, Commands) + 'static,
-    A: QueryParam,
-    B: QueryParam,
-{
-    fn into_system(self, id: SystemId) -> BoxedSystem {
-        BoxedSystem(Box::new(SystemTwoQueriesFirst {
-            id,
-            function: self,
-            _queries: PhantomData,
-        }))
-    }
-}
+all_tuples!(impl_query_views_system, 1, 8, V);
 
 fn run_with_commands(
     world: &mut World,
@@ -856,6 +938,10 @@ impl Db {
         let rows = Q::rows(&self.world);
         let world = &self.world as *const World;
         rows.into_iter()
+            // SAFETY: `rows` was produced from `self.world` immediately above,
+            // and no mutation occurs before the query result values are fetched.
+            // The resulting references are prototype-lifetime widened; callers
+            // must not mutate this `Db` while holding them.
             .map(|row| unsafe { Q::fetch(world, &row) })
             .collect()
     }
@@ -969,44 +1055,25 @@ pub trait Bundle {
     );
 }
 
-impl<A: Component> Bundle for (A,) {
-    fn insert_bundle(
-        self,
-        world: &mut World,
-        entity: Entity,
-        origin: Origin,
-        owner: Option<SystemInvocation>,
-    ) {
-        world.insert(entity, self.0, origin, owner);
-    }
+macro_rules! impl_bundle {
+    ($($T:ident),*) => {
+        #[allow(non_snake_case)]
+        impl<$($T: Component),*> Bundle for ($($T,)*) {
+            fn insert_bundle(
+                self,
+                world: &mut World,
+                entity: Entity,
+                origin: Origin,
+                owner: Option<SystemInvocation>,
+            ) {
+                let ($($T,)*) = self;
+                $(world.insert(entity, $T, origin, owner.clone());)*
+            }
+        }
+    };
 }
 
-impl<A: Component, B: Component> Bundle for (A, B) {
-    fn insert_bundle(
-        self,
-        world: &mut World,
-        entity: Entity,
-        origin: Origin,
-        owner: Option<SystemInvocation>,
-    ) {
-        world.insert(entity, self.0, origin, owner.clone());
-        world.insert(entity, self.1, origin, owner);
-    }
-}
-
-impl<A: Component, B: Component, C: Component> Bundle for (A, B, C) {
-    fn insert_bundle(
-        self,
-        world: &mut World,
-        entity: Entity,
-        origin: Origin,
-        owner: Option<SystemInvocation>,
-    ) {
-        world.insert(entity, self.0, origin, owner.clone());
-        world.insert(entity, self.1, origin, owner.clone());
-        world.insert(entity, self.2, origin, owner);
-    }
-}
+all_tuples!(impl_bundle, 1, 16, B);
 
 #[cfg(test)]
 mod tests {

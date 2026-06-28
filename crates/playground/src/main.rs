@@ -1,4 +1,6 @@
-use pipeline::{Commands, Component, Db, Entity, Query, SystemExt, insert};
+use std::collections::{HashMap, HashSet};
+
+use pipeline::{Commands, Component, Db, Entity, Query, SystemExt, View, insert};
 
 #[derive(Component)]
 struct SourceFile {
@@ -9,15 +11,28 @@ struct SourceFile {
 #[component(hash)]
 struct FileText(String);
 
-#[derive(Component, Hash)]
-#[component(hash)]
-struct Ast(String);
+#[derive(Component, Clone)]
+struct SystemImportDb(HashSet<String>);
 
-#[derive(Component)]
-struct Diagnostics(Vec<String>);
+impl Default for SystemImportDb {
+    fn default() -> Self {
+        let mut imports = HashSet::new();
+        imports.insert("std.io".to_string());
+        imports.insert("std.io".to_string());
+        Self(imports)
+    }
+}
 
 #[derive(Component, Clone, Copy)]
 struct AllFilesParsed;
+
+#[derive(Component, Hash)]
+#[component(hash)]
+struct BelongsToFile(Entity);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+struct ImportName(String);
 
 #[derive(Component, Hash)]
 #[component(hash)]
@@ -27,112 +42,116 @@ struct DefinitionName(String);
 #[component(hash)]
 struct DefinitionKind(String);
 
-#[derive(Component, Hash, Debug)]
+#[derive(Component, Hash)]
 #[component(hash)]
-struct CollectedDefinition(String);
+struct Diagnostic(String);
 
 fn parse_file(mut commands: Commands, Query((file, text)): Query<(Entity, &FileText)>) {
     println!("parse_file({})", file.raw());
-    commands
-        .entity(file)
-        .insert(Ast(format!("parsed({})", text.0)));
 
-    for definition in parse_definitions(&text.0) {
-        commands.insert((
-            DefinitionName(definition.name),
-            DefinitionKind(definition.kind),
-        ));
+    for line in text.0.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(kind) = parts.next() else {
+            continue;
+        };
+        let Some(name) = parts.next() else {
+            continue;
+        };
+
+        match kind {
+            "import" => commands.insert((BelongsToFile(file), ImportName(name.to_string()))),
+            "type" | "function" | "struct" => commands.insert((
+                BelongsToFile(file),
+                DefinitionKind(kind.to_string()),
+                DefinitionName(name.to_string()),
+            )),
+            _ => {}
+        }
     }
 }
 
-fn collect_definition(
-    Query((_complete, _)): Query<(Entity, &AllFilesParsed)>,
-    Query((definition, name, kind)): Query<(Entity, &DefinitionName, &DefinitionKind)>,
+fn check_imports(
+    _: Query<(Entity, &AllFilesParsed)>,
+    imports: View<(Entity, &ImportName, &BelongsToFile)>,
+    system_imports: View<&SystemImportDb>,
+    files: View<(Entity, &SourceFile)>,
     mut commands: Commands,
 ) {
-    println!("collect_definition({})", definition.raw());
-    commands
-        .entity(definition)
-        .insert(CollectedDefinition(format!("{} {}", kind.0, name.0)));
-}
+    println!("check_imports");
+    let system = system_imports.iter().next().unwrap();
 
-fn check_file(
-    Query((file, source, ast)): Query<(Entity, &SourceFile, &Ast)>,
-    mut commands: Commands,
-) {
-    println!("check_file({})", file.raw());
-    let mut diagnostics = Vec::new();
-    if ast.0.contains("error") {
-        diagnostics.push(format!("{} contains an error", source.path));
+    for (import, name, f) in imports.iter() {
+        if !system.0.contains(&name.0) {
+            let file = files
+                .get(f.0)
+                .map(|source| source.path.as_str())
+                .unwrap_or("<unknown>");
+            commands.entity(*import).insert(Diagnostic(format!(
+                "unknown import `{}` in file {}",
+                name.0, file
+            )));
+        }
     }
-
-    commands.entity(file).insert(Diagnostics(diagnostics));
 }
 
-struct ParsedDefinition {
-    kind: String,
-    name: String,
-}
+fn check_duplicate_definitions(
+    Query((_done, _)): Query<(Entity, &AllFilesParsed)>,
+    definitions: View<(Entity, &DefinitionName, &DefinitionKind)>,
+    mut commands: Commands,
+) {
+    println!("check_duplicate_definitions");
+    let mut seen = HashMap::new();
 
-fn parse_definitions(source: &str) -> Vec<ParsedDefinition> {
-    source
-        .lines()
-        .filter_map(|line| {
-            let mut parts = line.split_whitespace();
-            let kind = parts.next()?;
-            let name = parts.next()?;
-
-            matches!(kind, "type" | "function" | "struct").then(|| ParsedDefinition {
-                kind: kind.to_string(),
-                name: name.to_string(),
-            })
-        })
-        .collect()
+    for (definition, name, kind) in definitions.iter() {
+        if let Some((previous, previous_kind)) =
+            seen.insert(name.0.as_str(), (*definition, kind.0.as_str()))
+        {
+            commands.entity(*definition).insert(Diagnostic(format!(
+                "duplicate definition `{}`; previous {previous_kind} is entity {}",
+                name.0,
+                previous.raw()
+            )));
+            commands.entity(previous).insert(Diagnostic(format!(
+                "duplicate definition `{}`; duplicate {} is entity {}",
+                name.0,
+                kind.0,
+                definition.raw()
+            )));
+        }
+    }
 }
 
 fn main() {
     let mut db = Db::new();
     db.add_system(parse_file.on_complete(insert((AllFilesParsed,))));
-    db.add_system(collect_definition);
-    db.add_system(check_file);
+    db.add_system(check_imports);
+    db.add_system(check_duplicate_definitions);
 
-    let main_file = db.insert((
+    db.insert((SystemImportDb::default(),));
+    // db.insert((SystemImportDb, SystemImportName("std.io".to_string())));
+    // db.insert((SystemImportDb, SystemImportName("std.fs".to_string())));
+
+    db.insert((
         SourceFile {
             path: "main.porridge".to_string(),
         },
-        FileText("function main\ntype UserId".to_string()),
+        FileText("import std.io\nimport std.net\nfunction main\ntype UserId".to_string()),
     ));
 
-    let lib_file = db.insert((
+    db.insert((
         SourceFile {
             path: "lib.porridge".to_string(),
         },
-        FileText("struct Widget\nfunction render".to_string()),
+        FileText("import std.fs\nstruct Widget\nfunction main".to_string()),
     ));
 
-    println!("first run");
-    db.query::<(Entity, &CollectedDefinition)>();
-
-    db.entity(lib_file)
-        .insert(FileText("struct Widget\nfunction render".to_string()));
-    println!("\nsecond run; everything should be memoized based on hash");
-    db.query::<(Entity, &CollectedDefinition)>();
-
-    println!("\nchange one file");
-    db.entity(lib_file).insert(FileText(
-        "struct Widget\nfunction render\nfunction error".to_string(),
-    ));
-    db.query::<(Entity, &Diagnostics)>();
-
-    println!("\ndefinitions");
-    for (_, definition) in db.query::<(Entity, &CollectedDefinition)>() {
-        println!("{}", definition.0);
+    println!("query diagnostics");
+    for (entity, diagnostic) in db.query::<(Entity, &Diagnostic)>() {
+        println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
-    println!("\ndiagnostics");
-    for file in [main_file, lib_file] {
-        let path = &db.peek::<SourceFile>(file).unwrap().path;
-        let diagnostics = &db.peek::<Diagnostics>(file).unwrap().0;
-        println!("{path}: {diagnostics:?}");
+    println!("\nfiles");
+    for (_, source) in db.query::<(Entity, &SourceFile)>() {
+        println!("{}", source.path);
     }
 }

@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 pipeline-macros = { path = "../pipeline-macros" }
+variadics_please = "2.0.0"
