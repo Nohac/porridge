@@ -1054,13 +1054,6 @@ fn fetch_view<V: QueryParam<Item = V>>(world: *const World) -> View<V> {
     }
 }
 
-fn view_deps<V: QueryParam>(world: &World) -> Vec<Dep> {
-    V::rows(world)
-        .into_iter()
-        .flat_map(|row| V::deps(world, &row))
-        .collect()
-}
-
 struct SystemQueryViews<F, Q, Views> {
     id: SystemId,
     function: F,
@@ -1091,8 +1084,7 @@ macro_rules! impl_query_views_system {
                         keys: Q::keys(&row),
                     };
                     seen.insert(owner.clone());
-                    let mut deps = Q::deps(world, &row);
-                    $(deps.extend(view_deps::<$V>(world));)*
+                    let deps = Q::deps(world, &row);
 
                     if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
                         continue;
@@ -1670,6 +1662,17 @@ mod tests {
         commands.entity(entity).insert(Answer(scratch.0 + 1));
     }
 
+    static VIEW_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    fn count_with_ambient_view(
+        Query((entity, a)): Query<(Entity, &A)>,
+        bs: View<(Entity, &B)>,
+        mut commands: Commands,
+    ) {
+        VIEW_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(C(a.0 + bs.len() as u32));
+    }
+
     #[test]
     fn skips_valid_invocations_and_reruns_changed_entities() {
         let mut db = Db::new();
@@ -1738,6 +1741,25 @@ mod tests {
         db.entity(entity).insert(HashA(11));
         db.query::<(Entity, &B)>().collect();
         assert_eq!(HASH_A_RUNS.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn view_does_not_invalidate_memoized_query_rows() {
+        VIEW_RUNS.store(0, Ordering::SeqCst);
+        let mut db = Db::new();
+        db.add_system(count_with_ambient_view);
+
+        let entity = db.insert((A(1),));
+        db.query::<(Entity, &C)>().collect();
+
+        assert_eq!(VIEW_RUNS.load(Ordering::SeqCst), 1);
+        assert_eq!(db.get::<C>(entity).unwrap().0, 1);
+
+        db.insert((B(10),));
+        db.query::<(Entity, &C)>().collect();
+
+        assert_eq!(VIEW_RUNS.load(Ordering::SeqCst), 1);
+        assert_eq!(db.get::<C>(entity).unwrap().0, 1);
     }
 
     #[test]
