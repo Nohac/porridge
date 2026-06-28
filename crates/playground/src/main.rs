@@ -1,11 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use pipeline::{Commands, Component, Db, Entity, Query, SystemExt, View, insert};
+use pipeline::{
+    And, Commands, Component, Db, Entity, Eq, Gte, Query, SystemExt, View, Where, insert,
+};
 
 #[derive(Component)]
 struct SourceFile {
     path: String,
 }
+
+#[derive(Component, Hash, Clone, PartialEq, Eq)]
+#[component(hash)]
+struct FilePath(String);
 
 #[derive(Component, Hash)]
 #[component(hash)]
@@ -45,6 +51,13 @@ struct DefinitionKind(String);
 #[derive(Component, Hash)]
 #[component(hash)]
 struct Diagnostic(String);
+
+#[derive(Component, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[component(hash)]
+enum Severity {
+    Warning,
+    Error,
+}
 
 fn parse_file(mut commands: Commands, Query((file, text)): Query<(Entity, &FileText)>) {
     println!("parse_file({})", file.raw());
@@ -86,6 +99,8 @@ fn check_imports(
                 .get(f.0)
                 .map(|source| source.path.as_str())
                 .unwrap_or("<unknown>");
+            commands.entity(*import).insert(FilePath(file.to_string()));
+            commands.entity(*import).insert(Severity::Warning);
             commands.entity(*import).insert(Diagnostic(format!(
                 "unknown import `{}` in file {}",
                 name.0, file
@@ -106,11 +121,13 @@ fn check_duplicate_definitions(
         if let Some((previous, previous_kind)) =
             seen.insert(name.0.as_str(), (*definition, kind.0.as_str()))
         {
+            commands.entity(*definition).insert(Severity::Error);
             commands.entity(*definition).insert(Diagnostic(format!(
                 "duplicate definition `{}`; previous {previous_kind} is entity {}",
                 name.0,
                 previous.raw()
             )));
+            commands.entity(previous).insert(Severity::Error);
             commands.entity(previous).insert(Diagnostic(format!(
                 "duplicate definition `{}`; duplicate {} is entity {}",
                 name.0,
@@ -128,13 +145,12 @@ fn main() {
     db.add_system(check_duplicate_definitions);
 
     db.insert((SystemImportDb::default(),));
-    // db.insert((SystemImportDb, SystemImportName("std.io".to_string())));
-    // db.insert((SystemImportDb, SystemImportName("std.fs".to_string())));
 
     db.insert((
         SourceFile {
             path: "main.porridge".to_string(),
         },
+        FilePath("main.porridge".to_string()),
         FileText("import std.io\nimport std.net\nfunction main\ntype UserId".to_string()),
     ));
 
@@ -142,16 +158,27 @@ fn main() {
         SourceFile {
             path: "lib.porridge".to_string(),
         },
+        FilePath("lib.porridge".to_string()),
         FileText("import std.fs\nstruct Widget\nfunction main".to_string()),
     ));
 
     println!("query diagnostics");
-    for (entity, diagnostic) in db.query::<(Entity, &Diagnostic)>() {
+    for (entity, diagnostic) in db.query::<(Entity, &Diagnostic)>().collect() {
+        println!("entity {}: {}", entity.raw(), diagnostic.0);
+    }
+
+    println!("\nmain diagnostics at warning or above");
+    for (entity, diagnostic) in db
+        .query::<(Entity, &Diagnostic, Where<And<Eq<FilePath>, Gte<Severity>>>)>()
+        .bind(FilePath("main.porridge".to_string()))
+        .bind(Severity::Warning)
+        .collect()
+    {
         println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
     println!("\nfiles");
-    for (_, source) in db.query::<(Entity, &SourceFile)>() {
+    for (_, source) in db.query::<(Entity, &SourceFile)>().collect() {
         println!("{}", source.path);
     }
 }

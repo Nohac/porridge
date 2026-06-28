@@ -1,5 +1,7 @@
 #![allow(private_interfaces)]
 
+mod filter;
+
 use std::{
     any::{Any, TypeId},
     cell::RefCell,
@@ -9,6 +11,7 @@ use std::{
     rc::Rc,
 };
 
+pub use filter::{And, Eq, Gte, Not, Or, QueryBuilder, Where, With, Without};
 pub use pipeline_macros::Component;
 use variadics_please::{all_tuples, all_tuples_enumerated};
 
@@ -334,15 +337,20 @@ struct MemoEntry {
 
 pub trait QueryParam: 'static {
     type State: Clone;
+    type Item;
 
     fn rows(world: &World) -> Vec<Self::State>;
+    fn rows_with(world: &World, _bindings: &filter::Bindings) -> Vec<Self::State> {
+        Self::rows(world)
+    }
     fn keys(state: &Self::State) -> Vec<Entity>;
     fn deps(world: &World, state: &Self::State) -> Vec<Dep>;
-    unsafe fn fetch(world: *const World, state: &Self::State) -> Self;
+    unsafe fn fetch(world: *const World, state: &Self::State) -> Self::Item;
 }
 
 impl<T: Component> QueryParam for &'static T {
     type State = Entity;
+    type Item = Self;
 
     fn rows(world: &World) -> Vec<Self::State> {
         world.entities_with::<T>()
@@ -369,6 +377,7 @@ macro_rules! impl_entity_query_param {
         impl<$($T: Component),*> QueryParam for (Entity, $(&'static $T,)*)
         {
             type State = Entity;
+            type Item = Self;
 
             fn rows(world: &World) -> Vec<Self::State> {
                 (0..world.next_entity)
@@ -403,6 +412,55 @@ macro_rules! impl_entity_query_param {
 
 all_tuples!(impl_entity_query_param, 1, 16, T);
 
+macro_rules! impl_filtered_entity_query_param {
+    ($($T:ident),*) => {
+        impl<F, $($T: Component),*> QueryParam for (Entity, $(&'static $T,)* Where<F>)
+        where
+            F: filter::FilterExpr,
+        {
+            type State = Entity;
+            type Item = (Entity, $(&'static $T,)*);
+
+            fn rows(world: &World) -> Vec<Self::State> {
+                Self::rows_with(world, &filter::Bindings::default())
+            }
+
+            fn rows_with(world: &World, bindings: &filter::Bindings) -> Vec<Self::State> {
+                (0..world.next_entity)
+                    .map(Entity)
+                    .filter(|entity| true $(&& world.has::<$T>(*entity))*)
+                    .filter(|entity| F::matches(*entity, world, bindings))
+                    .collect()
+            }
+
+            fn keys(state: &Self::State) -> Vec<Entity> {
+                vec![*state]
+            }
+
+            fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
+                let mut deps = vec![$(component_dep::<$T>(world, *state),)*];
+                deps.extend(F::deps(*state, world));
+                deps
+            }
+
+            unsafe fn fetch(world: *const World, state: &Self::State) -> Self::Item {
+                // SAFETY: callers pass a raw pointer derived from a live `World`.
+                // `state` was produced by `rows_with` for that same world before
+                // buffered commands are applied, so every projected component is
+                // still present.
+                unsafe {
+                    (
+                        *state,
+                        $((*world).get_static::<$T>(*state),)*
+                    )
+                }
+            }
+        }
+    };
+}
+
+all_tuples!(impl_filtered_entity_query_param, 1, 16, T);
+
 fn component_dep<T: Component>(world: &World, entity: Entity) -> Dep {
     Dep {
         type_id: TypeId::of::<T>(),
@@ -411,6 +469,14 @@ fn component_dep<T: Component>(world: &World, entity: Entity) -> Dep {
             .revision::<T>(entity)
             .expect("query dependency referenced a missing component"),
     }
+}
+
+fn component_dep_if_present<T: Component>(world: &World, entity: Entity) -> Option<Dep> {
+    world.revision::<T>(entity).map(|revision| Dep {
+        type_id: TypeId::of::<T>(),
+        entity,
+        revision,
+    })
 }
 
 trait Runnable {
@@ -626,7 +692,7 @@ macro_rules! impl_query_driver_system {
         impl<F, $($Q),*> Runnable for SystemCommandsQueries<F, ($($Q,)*)>
         where
             F: FnMut(Commands, $(Query<$Q>),*) + 'static,
-            $($Q: QueryParam,)*
+            $($Q: QueryParam<Item = $Q>,)*
         {
             fn run(
                 &mut self,
@@ -678,7 +744,7 @@ macro_rules! impl_query_driver_system {
         impl<F, $($Q),*> Runnable for SystemQueriesCommands<F, ($($Q,)*)>
         where
             F: FnMut($(Query<$Q>,)* Commands) + 'static,
-            $($Q: QueryParam,)*
+            $($Q: QueryParam<Item = $Q>,)*
         {
             fn run(
                 &mut self,
@@ -730,7 +796,7 @@ macro_rules! impl_query_driver_system {
         impl<F, $($Q),*> IntoSystem<(CommandsQueries, ($($Q,)*))> for F
         where
             F: FnMut(Commands, $(Query<$Q>),*) + 'static,
-            $($Q: QueryParam,)*
+            $($Q: QueryParam<Item = $Q>,)*
         {
             fn into_system(self, id: SystemId) -> BoxedSystem {
                 BoxedSystem(Box::new(SystemCommandsQueries {
@@ -744,7 +810,7 @@ macro_rules! impl_query_driver_system {
         impl<F, $($Q),*> IntoSystem<(QueriesCommands, ($($Q,)*))> for F
         where
             F: FnMut($(Query<$Q>,)* Commands) + 'static,
-            $($Q: QueryParam,)*
+            $($Q: QueryParam<Item = $Q>,)*
         {
             fn into_system(self, id: SystemId) -> BoxedSystem {
                 BoxedSystem(Box::new(SystemQueriesCommands {
@@ -759,7 +825,7 @@ macro_rules! impl_query_driver_system {
 
 all_tuples_enumerated!(impl_query_driver_system, 1, 8, Q);
 
-fn fetch_view<V: QueryParam>(world: *const World) -> View<V> {
+fn fetch_view<V: QueryParam<Item = V>>(world: *const World) -> View<V> {
     // SAFETY: `world` is a raw pointer to the live world for the current system
     // invocation. View rows are fetched before buffered commands are applied.
     let rows = unsafe { V::rows(&*world) };
@@ -792,8 +858,8 @@ macro_rules! impl_query_views_system {
         impl<F, Q, $($V),*> Runnable for SystemQueryViews<F, Q, ($($V,)*)>
         where
             F: FnMut(Query<Q>, $(View<$V>,)* Commands) + 'static,
-            Q: QueryParam,
-            $($V: QueryParam,)*
+            Q: QueryParam<Item = Q>,
+            $($V: QueryParam<Item = $V>,)*
         {
             fn run(
                 &mut self,
@@ -836,8 +902,8 @@ macro_rules! impl_query_views_system {
         impl<F, Q, $($V),*> IntoSystem<(QueryViewsCommands, Q, ($($V,)*))> for F
         where
             F: FnMut(Query<Q>, $(View<$V>,)* Commands) + 'static,
-            Q: QueryParam,
-            $($V: QueryParam,)*
+            Q: QueryParam<Item = Q>,
+            $($V: QueryParam<Item = $V>,)*
         {
             fn into_system(self, id: SystemId) -> BoxedSystem {
                 BoxedSystem(Box::new(SystemQueryViews {
@@ -933,17 +999,12 @@ impl Db {
         handle
     }
 
-    pub fn query<Q: QueryParam>(&mut self) -> Vec<Q> {
-        self.materialize();
-        let rows = Q::rows(&self.world);
-        let world = &self.world as *const World;
-        rows.into_iter()
-            // SAFETY: `rows` was produced from `self.world` immediately above,
-            // and no mutation occurs before the query result values are fetched.
-            // The resulting references are prototype-lifetime widened; callers
-            // must not mutate this `Db` while holding them.
-            .map(|row| unsafe { Q::fetch(world, &row) })
-            .collect()
+    pub fn query<Q: QueryParam>(&mut self) -> QueryBuilder<'_, Q> {
+        QueryBuilder {
+            db: self,
+            bindings: filter::Bindings::default(),
+            _query: PhantomData,
+        }
     }
 
     fn materialize(&mut self) {
@@ -1131,13 +1192,13 @@ mod tests {
         let first = db.insert((A(1),));
         let second = db.insert((A(10),));
 
-        let rows = db.query::<(Entity, &B)>();
+        let rows = db.query::<(Entity, &B)>().collect();
         assert_eq!(rows.len(), 2);
         assert_eq!(db.get::<B>(first).unwrap().0, 2);
         assert_eq!(db.get::<B>(second).unwrap().0, 11);
 
         db.entity(first).insert(A(2));
-        let rows = db.query::<(Entity, &B)>();
+        let rows = db.query::<(Entity, &B)>().collect();
         assert_eq!(rows.len(), 2);
 
         assert_eq!(db.get::<B>(first).unwrap().0, 3);
@@ -1152,7 +1213,7 @@ mod tests {
 
         let entity = db.insert((A(10),));
 
-        let rows = db.query::<(Entity, &C)>();
+        let rows = db.query::<(Entity, &C)>().collect();
         assert_eq!(rows.len(), 1);
 
         assert_eq!(db.get::<B>(entity).unwrap().0, 11);
@@ -1167,7 +1228,7 @@ mod tests {
 
         let entity = db.insert((A(10),));
 
-        let rows = db.query::<(Entity, &C)>();
+        let rows = db.query::<(Entity, &C)>().collect();
         assert_eq!(rows.len(), 1);
         assert_eq!(db.get::<B>(entity).unwrap().0, 11);
         assert_eq!(db.get::<C>(entity).unwrap().0, 12);
@@ -1181,15 +1242,15 @@ mod tests {
 
         let entity = db.insert((HashA(10),));
 
-        db.query::<(Entity, &B)>();
+        db.query::<(Entity, &B)>().collect();
         assert_eq!(HASH_A_RUNS.load(Ordering::SeqCst), 1);
 
         db.entity(entity).insert(HashA(10));
-        db.query::<(Entity, &B)>();
+        db.query::<(Entity, &B)>().collect();
         assert_eq!(HASH_A_RUNS.load(Ordering::SeqCst), 1);
 
         db.entity(entity).insert(HashA(11));
-        db.query::<(Entity, &B)>();
+        db.query::<(Entity, &B)>().collect();
         assert_eq!(HASH_A_RUNS.load(Ordering::SeqCst), 2);
     }
 }
