@@ -768,6 +768,15 @@ where
     }
 }
 
+pub fn insert_on<T>(entity: Entity, component: T) -> impl CompleteCallback
+where
+    T: Component + Clone,
+{
+    move |mut commands: Commands| {
+        commands.entity(entity).insert(component.clone());
+    }
+}
+
 pub trait IntoSystemConfig<Marker>: 'static {
     fn into_system_config(self, id: SystemId) -> (BoxedSystem, Vec<SystemHandle>);
 }

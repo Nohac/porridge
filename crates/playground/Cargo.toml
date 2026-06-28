@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+codespan-reporting = "0.13"
+logos = "0.16"
 pipeline = { path = "../pipeline" }
+
+[build-dependencies]
+lelwel = "0.10"

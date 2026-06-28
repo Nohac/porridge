@@ -1,0 +1,37 @@
+token Import='import' Fn='fn' Type='type' Struct='struct' Return='return';
+token Arrow='->' Dot='.' LPar='(' RPar=')' Comma=',' Colon=':' LBrace='{' RBrace='}' Semi=';';
+token Name='<name>' String='<string>' Int='<int>';
+token Whitespace;
+
+skip Whitespace;
+
+start file;
+
+file: item*;
+item^:
+  import_decl
+| type_def
+| struct_def
+| function_def
+;
+import_decl: 'import' path;
+path: Name ('.' Name)*;
+type_def: 'type' Name;
+struct_def: 'struct' Name ['{' field* '}'];
+field: Name ':' type_ref;
+function_def: 'fn' Name param_list ['->' type_ref] block;
+param_list: '(' [param (?1 ',' param)* [',']] ')';
+param: Name ':' type_ref;
+type_ref: Name;
+block: '{' stmt* '}';
+stmt^:
+  return_stmt
+| expr_stmt
+;
+return_stmt: 'return' [expr] ';';
+expr_stmt: expr ';';
+expr^:
+  Name
+| String
+| Int
+;
