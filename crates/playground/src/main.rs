@@ -1,23 +1,59 @@
-use pipeline::{Commands, Db, Entity, Query};
+use pipeline::{Commands, Component, Db, Entity, Query, SystemExt, insert};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Pipe {
-    Check,
-}
-
+#[derive(Component)]
 struct SourceFile {
     path: String,
 }
 
+#[derive(Component, Hash)]
+#[component(hash)]
 struct FileText(String);
 
+#[derive(Component, Hash)]
+#[component(hash)]
 struct Ast(String);
 
+#[derive(Component)]
 struct Diagnostics(Vec<String>);
+
+#[derive(Component, Clone, Copy)]
+struct AllFilesParsed;
+
+#[derive(Component, Hash)]
+#[component(hash)]
+struct DefinitionName(String);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+struct DefinitionKind(String);
+
+#[derive(Component, Hash, Debug)]
+#[component(hash)]
+struct CollectedDefinition(String);
 
 fn parse_file(mut commands: Commands, Query((file, text)): Query<(Entity, &FileText)>) {
     println!("parse_file({})", file.raw());
-    commands.insert(file, Ast(format!("parsed({})", text.0)));
+    commands
+        .entity(file)
+        .insert(Ast(format!("parsed({})", text.0)));
+
+    for definition in parse_definitions(&text.0) {
+        commands.insert((
+            DefinitionName(definition.name),
+            DefinitionKind(definition.kind),
+        ));
+    }
+}
+
+fn collect_definition(
+    Query((_complete, _)): Query<(Entity, &AllFilesParsed)>,
+    Query((definition, name, kind)): Query<(Entity, &DefinitionName, &DefinitionKind)>,
+    mut commands: Commands,
+) {
+    println!("collect_definition({})", definition.raw());
+    commands
+        .entity(definition)
+        .insert(CollectedDefinition(format!("{} {}", kind.0, name.0)));
 }
 
 fn check_file(
@@ -30,42 +66,73 @@ fn check_file(
         diagnostics.push(format!("{} contains an error", source.path));
     }
 
-    commands.insert(file, Diagnostics(diagnostics));
+    commands.entity(file).insert(Diagnostics(diagnostics));
+}
+
+struct ParsedDefinition {
+    kind: String,
+    name: String,
+}
+
+fn parse_definitions(source: &str) -> Vec<ParsedDefinition> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let kind = parts.next()?;
+            let name = parts.next()?;
+
+            matches!(kind, "type" | "function" | "struct").then(|| ParsedDefinition {
+                kind: kind.to_string(),
+                name: name.to_string(),
+            })
+        })
+        .collect()
 }
 
 fn main() {
-    let mut db = Db::<Pipe>::new();
-    db.add_system(Pipe::Check, parse_file);
-    db.add_system(Pipe::Check, check_file);
+    let mut db = Db::new();
+    db.add_system(parse_file.on_complete(insert((AllFilesParsed,))));
+    db.add_system(collect_definition);
+    db.add_system(check_file);
 
-    let main_file = db.spawn((
+    let main_file = db.insert((
         SourceFile {
             path: "main.porridge".to_string(),
         },
-        FileText("fn main() {}".to_string()),
+        FileText("function main\ntype UserId".to_string()),
     ));
 
-    let lib_file = db.spawn((
+    let lib_file = db.insert((
         SourceFile {
             path: "lib.porridge".to_string(),
         },
-        FileText("fn lib() {}".to_string()),
+        FileText("struct Widget\nfunction render".to_string()),
     ));
 
     println!("first run");
-    db.run(Pipe::Check);
+    db.query::<(Entity, &CollectedDefinition)>();
 
-    println!("\nsecond run; everything should be memoized");
-    db.run(Pipe::Check);
+    db.entity(lib_file)
+        .insert(FileText("struct Widget\nfunction render".to_string()));
+    println!("\nsecond run; everything should be memoized based on hash");
+    db.query::<(Entity, &CollectedDefinition)>();
 
     println!("\nchange one file");
-    db.insert(lib_file, FileText("fn lib() { error }".to_string()));
-    db.run(Pipe::Check);
+    db.entity(lib_file).insert(FileText(
+        "struct Widget\nfunction render\nfunction error".to_string(),
+    ));
+    db.query::<(Entity, &Diagnostics)>();
+
+    println!("\ndefinitions");
+    for (_, definition) in db.query::<(Entity, &CollectedDefinition)>() {
+        println!("{}", definition.0);
+    }
 
     println!("\ndiagnostics");
     for file in [main_file, lib_file] {
-        let path = &db.get::<SourceFile>(file).unwrap().path;
-        let diagnostics = &db.get::<Diagnostics>(file).unwrap().0;
+        let path = &db.peek::<SourceFile>(file).unwrap().path;
+        let diagnostics = &db.peek::<Diagnostics>(file).unwrap().0;
         println!("{path}: {diagnostics:?}");
     }
 }
