@@ -8,6 +8,8 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher},
     marker::PhantomData,
+    ops::Deref,
+    ptr::NonNull,
     rc::Rc,
 };
 
@@ -16,10 +18,25 @@ pub use pipeline_macros::Component;
 use variadics_please::{all_tuples, all_tuples_enumerated};
 
 pub trait Component: 'static {
+    fn tracked() -> bool {
+        true
+    }
+
     fn fingerprint(&self) -> Option<u64> {
         None
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Ephemeral;
+
+impl Component for Ephemeral {
+    fn tracked() -> bool {
+        false
+    }
+}
+
+pub struct Take<T>(PhantomData<T>);
 
 pub fn hash_component<T: Hash>(value: &T) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -66,6 +83,12 @@ trait StoreDyn {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision);
+    fn remove_derived_touched_by(
+        &mut self,
+        keys: &HashSet<Entity>,
+        revision: &mut Revision,
+    ) -> Vec<Entity>;
+    fn remove_entity(&mut self, entity: Entity, revision: &mut Revision) -> Vec<SystemInvocation>;
 }
 
 struct Store<T> {
@@ -95,8 +118,52 @@ impl<T: Component> StoreDyn for Store<T> {
             entry.origin != Origin::Derived || entry.owner.as_ref() != Some(owner)
         });
 
-        if self.entries.len() != before {
+        if T::tracked() && self.entries.len() != before {
             bump(revision);
+        }
+    }
+
+    fn remove_derived_touched_by(
+        &mut self,
+        keys: &HashSet<Entity>,
+        revision: &mut Revision,
+    ) -> Vec<Entity> {
+        let mut removed = Vec::new();
+
+        self.entries.retain(|entity, entry| {
+            let remove = entry.origin == Origin::Derived
+                && entry
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| owner.keys.iter().any(|key| keys.contains(key)));
+
+            if remove {
+                removed.push(*entity);
+            }
+
+            !remove
+        });
+
+        if T::tracked() && !removed.is_empty() {
+            bump(revision);
+        }
+
+        removed
+    }
+
+    fn remove_entity(&mut self, entity: Entity, revision: &mut Revision) -> Vec<SystemInvocation> {
+        let Some(removed) = self.entries.remove(&entity) else {
+            return Vec::new();
+        };
+
+        if T::tracked() {
+            bump(revision);
+        }
+
+        if removed.origin == Origin::Derived {
+            removed.owner.into_iter().collect()
+        } else {
+            Vec::new()
         }
     }
 }
@@ -138,20 +205,24 @@ impl World {
         owner: Option<SystemInvocation>,
     ) {
         let fingerprint = value.fingerprint();
-        let old_revision = self
-            .store::<T>()
-            .and_then(|store| store.entries.get(&entity))
-            .and_then(|entry| {
-                (entry.fingerprint.is_some() && entry.fingerprint == fingerprint)
-                    .then_some(entry.revision)
-            });
+        let revision = if T::tracked() {
+            let old_revision = self
+                .store::<T>()
+                .and_then(|store| store.entries.get(&entity))
+                .and_then(|entry| {
+                    (entry.fingerprint.is_some() && entry.fingerprint == fingerprint)
+                        .then_some(entry.revision)
+                });
 
-        let revision = match old_revision {
-            Some(revision) => revision,
-            None => {
-                bump(&mut self.revision);
-                self.revision
+            match old_revision {
+                Some(revision) => revision,
+                None => {
+                    bump(&mut self.revision);
+                    self.revision
+                }
             }
+        } else {
+            self.revision
         };
 
         self.store_mut::<T>().entries.insert(
@@ -195,6 +266,33 @@ impl World {
         for store in self.stores.values_mut() {
             store.remove_derived_owned(owner, &mut self.revision);
         }
+    }
+
+    fn remove_derived_touched_by(&mut self, keys: &HashSet<Entity>) -> Vec<Entity> {
+        self.stores
+            .values_mut()
+            .flat_map(|store| store.remove_derived_touched_by(keys, &mut self.revision))
+            .collect()
+    }
+
+    fn remove_entity(&mut self, entity: Entity) -> Vec<SystemInvocation> {
+        let mut owners = Vec::new();
+
+        for store in self.stores.values_mut() {
+            owners.extend(store.remove_entity(entity, &mut self.revision));
+        }
+
+        owners
+    }
+
+    fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<ComponentEntry<T>> {
+        let removed = self.store_mut::<T>().entries.remove(&entity)?;
+
+        if T::tracked() {
+            bump(&mut self.revision);
+        }
+
+        Some(removed)
     }
 
     fn store<T: Component>(&self) -> Option<&Store<T>> {
@@ -343,9 +441,23 @@ pub trait QueryParam: 'static {
     fn rows_with(world: &World, _bindings: &filter::Bindings) -> Vec<Self::State> {
         Self::rows(world)
     }
+    fn rows_for_entity(
+        world: &World,
+        entity: Entity,
+        bindings: &filter::Bindings,
+    ) -> Vec<Self::State> {
+        Self::rows_with(world, bindings)
+            .into_iter()
+            .filter(|state| Self::keys(state).contains(&entity))
+            .collect()
+    }
     fn keys(state: &Self::State) -> Vec<Entity>;
     fn deps(world: &World, state: &Self::State) -> Vec<Dep>;
     unsafe fn fetch(world: *const World, state: &Self::State) -> Self::Item;
+}
+
+pub trait OwnedQueryParam: QueryParam {
+    fn fetch_owned(db: &mut Db, state: &Self::State) -> Self::Item;
 }
 
 impl<T: Component> QueryParam for &'static T {
@@ -361,7 +473,9 @@ impl<T: Component> QueryParam for &'static T {
     }
 
     fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
-        vec![component_dep::<T>(world, *state)]
+        component_dep_if_tracked::<T>(world, *state)
+            .into_iter()
+            .collect()
     }
 
     unsafe fn fetch(world: *const World, state: &Self::State) -> Self {
@@ -369,6 +483,87 @@ impl<T: Component> QueryParam for &'static T {
         // `state` was produced by `rows` for that same world before buffered
         // commands are applied, so the referenced component is still present.
         unsafe { (*world).get_static::<T>(*state) }
+    }
+}
+
+impl<T> QueryParam for Take<T>
+where
+    T: Component + Clone,
+{
+    type State = Entity;
+    type Item = T;
+
+    fn rows(world: &World) -> Vec<Self::State> {
+        world.entities_with::<T>()
+    }
+
+    fn keys(state: &Self::State) -> Vec<Entity> {
+        vec![*state]
+    }
+
+    fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
+        component_dep_if_tracked::<T>(world, *state)
+            .into_iter()
+            .collect()
+    }
+
+    unsafe fn fetch(world: *const World, state: &Self::State) -> Self::Item {
+        // SAFETY: callers pass a raw pointer derived from a live `World`.
+        // This fallback clones the component value for non-consuming query
+        // paths; inserted owned queries use `OwnedQueryParam::fetch_owned`.
+        unsafe { (*world).get_static::<T>(*state).clone() }
+    }
+}
+
+impl<T> OwnedQueryParam for Take<T>
+where
+    T: Component + Clone,
+{
+    fn fetch_owned(db: &mut Db, state: &Self::State) -> Self::Item {
+        db.take_component::<T>(*state)
+            .expect("owned query row referenced a missing component")
+    }
+}
+
+impl<T> QueryParam for (Entity, Take<T>)
+where
+    T: Component + Clone,
+{
+    type State = Entity;
+    type Item = (Entity, T);
+
+    fn rows(world: &World) -> Vec<Self::State> {
+        world.entities_with::<T>()
+    }
+
+    fn keys(state: &Self::State) -> Vec<Entity> {
+        vec![*state]
+    }
+
+    fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
+        component_dep_if_tracked::<T>(world, *state)
+            .into_iter()
+            .collect()
+    }
+
+    unsafe fn fetch(world: *const World, state: &Self::State) -> Self::Item {
+        // SAFETY: callers pass a raw pointer derived from a live `World`.
+        // This fallback clones the component value for non-consuming query
+        // paths; inserted owned queries use `OwnedQueryParam::fetch_owned`.
+        unsafe { (*state, (*world).get_static::<T>(*state).clone()) }
+    }
+}
+
+impl<T> OwnedQueryParam for (Entity, Take<T>)
+where
+    T: Component + Clone,
+{
+    fn fetch_owned(db: &mut Db, state: &Self::State) -> Self::Item {
+        (
+            *state,
+            db.take_component::<T>(*state)
+                .expect("owned query row referenced a missing component"),
+        )
     }
 }
 
@@ -391,7 +586,9 @@ macro_rules! impl_entity_query_param {
             }
 
             fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
-                vec![$(component_dep::<$T>(world, *state),)*]
+                let mut deps = Vec::new();
+                $(deps.extend(component_dep_if_tracked::<$T>(world, *state));)*
+                deps
             }
 
             unsafe fn fetch(world: *const World, state: &Self::State) -> Self {
@@ -438,7 +635,8 @@ macro_rules! impl_filtered_entity_query_param {
             }
 
             fn deps(world: &World, state: &Self::State) -> Vec<Dep> {
-                let mut deps = vec![$(component_dep::<$T>(world, *state),)*];
+                let mut deps = Vec::new();
+                $(deps.extend(component_dep_if_tracked::<$T>(world, *state));)*
                 deps.extend(F::deps(*state, world));
                 deps
             }
@@ -472,11 +670,19 @@ fn component_dep<T: Component>(world: &World, entity: Entity) -> Dep {
 }
 
 fn component_dep_if_present<T: Component>(world: &World, entity: Entity) -> Option<Dep> {
+    if !T::tracked() {
+        return None;
+    }
+
     world.revision::<T>(entity).map(|revision| Dep {
         type_id: TypeId::of::<T>(),
         entity,
         revision,
     })
+}
+
+fn component_dep_if_tracked<T: Component>(world: &World, entity: Entity) -> Option<Dep> {
+    T::tracked().then(|| component_dep::<T>(world, entity))
 }
 
 trait Runnable {
@@ -970,6 +1176,189 @@ pub struct Db {
     next_system: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct InsertedEntity {
+    db: NonNull<Db>,
+    entity: Entity,
+}
+
+impl InsertedEntity {
+    pub fn entity(self) -> Entity {
+        self.entity
+    }
+
+    pub fn raw(self) -> u64 {
+        self.entity.raw()
+    }
+
+    pub fn query<Q: QueryParam>(self) -> InsertedQueryBuilder<Q> {
+        InsertedQueryBuilder {
+            db: self.db,
+            entity: self.entity,
+            bindings: filter::Bindings::default(),
+            _query: PhantomData,
+        }
+    }
+}
+
+impl From<InsertedEntity> for Entity {
+    fn from(value: InsertedEntity) -> Self {
+        value.entity
+    }
+}
+
+impl Deref for InsertedEntity {
+    type Target = Entity;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entity
+    }
+}
+
+pub struct InsertedQueryBuilder<Q> {
+    db: NonNull<Db>,
+    entity: Entity,
+    bindings: filter::Bindings,
+    _query: PhantomData<Q>,
+}
+
+impl<Q> InsertedQueryBuilder<Q>
+where
+    Q: QueryParam,
+{
+    pub fn bind<T: Component>(mut self, value: T) -> Self {
+        self.bindings.insert(value);
+        self
+    }
+
+    pub fn collect(self) -> InsertedQueryResult<Q::Item> {
+        // SAFETY: `InsertedEntity` handles are created from a live `Db` by
+        // `Db::insert`. This prototype stores the raw pointer to support the
+        // `db.insert(...).query()` API without keeping an active Rust borrow
+        // from the insertion site. Callers must not use a handle after moving
+        // or dropping its source `Db`.
+        let db = unsafe {
+            self.db
+                .as_ptr()
+                .as_mut()
+                .expect("inserted entity db is null")
+        };
+
+        db.materialize();
+        let rows = Q::rows_for_entity(&db.world, self.entity, &self.bindings);
+        let world = &db.world as *const World;
+        let rows = rows
+            .into_iter()
+            // SAFETY: `rows` was produced from `db.world` immediately above,
+            // and no mutation occurs before the values are fetched. Cleanup of
+            // ephemeral data is delayed until the result guard is dropped.
+            .map(|row| unsafe { Q::fetch(world, &row) })
+            .collect();
+
+        InsertedQueryResult {
+            db: self.db,
+            cleanup_ephemeral: db.has_ephemeral_entities(),
+            rows,
+        }
+    }
+}
+
+impl<Q> InsertedQueryBuilder<Q>
+where
+    Q: OwnedQueryParam,
+{
+    pub fn collect_owned(self) -> Vec<Q::Item> {
+        // SAFETY: `InsertedEntity` handles are created from a live `Db` by
+        // `Db::insert`. This prototype stores the raw pointer to support the
+        // `db.insert(...).query()` API without keeping an active Rust borrow
+        // from the insertion site. Callers must not use a handle after moving
+        // or dropping its source `Db`.
+        let db = unsafe {
+            self.db
+                .as_ptr()
+                .as_mut()
+                .expect("inserted entity db is null")
+        };
+
+        db.materialize();
+        let rows = Q::rows_for_entity(&db.world, self.entity, &self.bindings);
+        let items = rows
+            .into_iter()
+            .map(|row| Q::fetch_owned(db, &row))
+            .collect();
+
+        if db.has_ephemeral_entities() {
+            db.cleanup_ephemeral_entities();
+        }
+
+        items
+    }
+
+    pub fn one(self) -> Option<Q::Item> {
+        let mut items = self.collect_owned();
+        assert!(
+            items.len() <= 1,
+            "inserted entity query returned more than one row"
+        );
+        items.pop()
+    }
+}
+
+pub struct InsertedQueryResult<T> {
+    db: NonNull<Db>,
+    cleanup_ephemeral: bool,
+    rows: Vec<T>,
+}
+
+impl<T> InsertedQueryResult<T> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.rows.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+}
+
+impl<T> Deref for InsertedQueryResult<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.rows
+    }
+}
+
+impl<'a, T> IntoIterator for &'a InsertedQueryResult<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.rows.iter()
+    }
+}
+
+impl<T> Drop for InsertedQueryResult<T> {
+    fn drop(&mut self) {
+        if !self.cleanup_ephemeral {
+            return;
+        }
+
+        // SAFETY: see the safety note in `InsertedQueryBuilder::collect`.
+        let db = unsafe {
+            self.db
+                .as_ptr()
+                .as_mut()
+                .expect("inserted entity db is null")
+        };
+        self.rows.clear();
+        db.cleanup_ephemeral_entities();
+    }
+}
+
 impl Default for Db {
     fn default() -> Self {
         Self::new()
@@ -1071,27 +1460,93 @@ impl Db {
         order.push(index);
     }
 
-    pub fn insert<B: Bundle>(&mut self, bundle: B) -> Entity {
+    pub fn insert<B: Bundle>(&mut self, bundle: B) -> InsertedEntity {
         let entity = self.world.spawn_empty();
         bundle.insert_bundle(&mut self.world, entity, Origin::Base, None);
-        entity
+        InsertedEntity {
+            db: NonNull::from(self),
+            entity,
+        }
     }
 
-    pub fn insert_component<T: Component>(&mut self, entity: Entity, component: T) {
-        self.world.insert_base(entity, component);
+    pub fn insert_component<T: Component>(&mut self, entity: impl Into<Entity>, component: T) {
+        self.world.insert_base(entity.into(), component);
     }
 
-    pub fn entity(&mut self, entity: Entity) -> EntityMut<'_> {
-        EntityMut { db: self, entity }
+    pub fn entity(&mut self, entity: impl Into<Entity>) -> EntityMut<'_> {
+        EntityMut {
+            db: self,
+            entity: entity.into(),
+        }
     }
 
-    pub fn get<T: Component>(&mut self, entity: Entity) -> Option<&T> {
+    pub fn get<T: Component>(&mut self, entity: impl Into<Entity>) -> Option<&T> {
         self.materialize();
-        self.world.get(entity)
+        self.world.get(entity.into())
     }
 
-    pub fn peek<T: Component>(&self, entity: Entity) -> Option<&T> {
-        self.world.get(entity)
+    pub fn peek<T: Component>(&self, entity: impl Into<Entity>) -> Option<&T> {
+        self.world.get(entity.into())
+    }
+
+    fn has_ephemeral_entities(&self) -> bool {
+        !self.world.entities_with::<Ephemeral>().is_empty()
+    }
+
+    fn take_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
+        let entry = self.world.remove_component::<T>(entity)?;
+
+        if let Some(owner) = entry.owner {
+            self.world.remove_derived_owned(&owner);
+            self.memo.remove(&owner);
+        }
+
+        Some(entry.value)
+    }
+
+    fn cleanup_ephemeral_entities(&mut self) {
+        let mut frontier: HashSet<_> = self
+            .world
+            .entities_with::<Ephemeral>()
+            .into_iter()
+            .collect();
+        let mut removed_entities = HashSet::new();
+
+        while !frontier.is_empty() {
+            self.remove_memo_touched_by(&frontier);
+
+            let removed = self.world.remove_derived_touched_by(&frontier);
+            let mut next_frontier = HashSet::new();
+
+            for entity in removed {
+                if removed_entities.insert(entity) {
+                    next_frontier.insert(entity);
+                }
+            }
+
+            frontier = next_frontier;
+        }
+
+        let ephemeral_entities: HashSet<_> = self
+            .world
+            .entities_with::<Ephemeral>()
+            .into_iter()
+            .collect();
+        let mut removed_owners = Vec::new();
+        for entity in &ephemeral_entities {
+            removed_owners.extend(self.world.remove_entity(*entity));
+        }
+        self.remove_memo_touched_by(&ephemeral_entities);
+
+        for owner in removed_owners {
+            self.world.remove_derived_owned(&owner);
+            self.memo.remove(&owner);
+        }
+    }
+
+    fn remove_memo_touched_by(&mut self, keys: &HashSet<Entity>) {
+        self.memo
+            .retain(|owner, _| !owner.keys.iter().any(|key| keys.contains(key)));
     }
 }
 
@@ -1144,6 +1599,10 @@ mod tests {
     struct A(u32);
     struct B(u32);
     struct C(u32);
+    struct Request(u32);
+    struct Scratch(u32);
+    #[derive(Clone)]
+    struct Answer(u32);
     #[derive(Clone, Copy)]
     struct Done;
     #[derive(Hash)]
@@ -1152,6 +1611,9 @@ mod tests {
     impl Component for A {}
     impl Component for B {}
     impl Component for C {}
+    impl Component for Request {}
+    impl Component for Scratch {}
+    impl Component for Answer {}
     impl Component for Done {}
 
     impl Component for HashA {
@@ -1182,6 +1644,21 @@ mod tests {
         let _ = a;
         HASH_A_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(B(1));
+    }
+
+    fn answer_request(Query((entity, request)): Query<(Entity, &Request)>, mut commands: Commands) {
+        commands.entity(entity).insert(Answer(request.0 + 1));
+    }
+
+    fn spawn_ephemeral_scratch(
+        Query((_entity, request)): Query<(Entity, &Request)>,
+        mut commands: Commands,
+    ) {
+        commands.insert((Ephemeral, Scratch(request.0 + 1)));
+    }
+
+    fn answer_scratch(Query((entity, scratch)): Query<(Entity, &Scratch)>, mut commands: Commands) {
+        commands.entity(entity).insert(Answer(scratch.0 + 1));
     }
 
     #[test]
@@ -1252,5 +1729,75 @@ mod tests {
         db.entity(entity).insert(HashA(11));
         db.query::<(Entity, &B)>().collect();
         assert_eq!(HASH_A_RUNS.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn inserted_entity_query_can_clean_up_ephemeral_inputs_and_outputs() {
+        let mut db = Db::new();
+        db.add_system(answer_request);
+
+        let answers = db
+            .insert((Ephemeral, Request(41)))
+            .query::<(Entity, &Answer)>()
+            .collect();
+
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].1.0, 42);
+
+        drop(answers);
+
+        assert!(db.query::<(Entity, &Request)>().collect().is_empty());
+        assert!(db.query::<(Entity, &Answer)>().collect().is_empty());
+    }
+
+    #[test]
+    fn inserted_entity_query_keeps_durable_inputs_and_outputs() {
+        let mut db = Db::new();
+        db.add_system(answer_request);
+
+        let request = db.insert((Request(9),));
+        let answers = request.query::<(Entity, &Answer)>().collect();
+
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].1.0, 10);
+
+        drop(answers);
+
+        assert_eq!(db.get::<Request>(request).unwrap().0, 9);
+        assert_eq!(db.get::<Answer>(request).unwrap().0, 10);
+    }
+
+    #[test]
+    fn command_inserted_ephemeral_entities_are_cleaned_up_after_inserted_query() {
+        let mut db = Db::new();
+        db.add_system(spawn_ephemeral_scratch);
+        db.add_system(answer_scratch);
+
+        let request = db.insert((Request(40),));
+        let requests = request.query::<(Entity, &Request)>().collect();
+
+        assert_eq!(requests.len(), 1);
+
+        drop(requests);
+
+        assert_eq!(db.world.entities_with::<Request>().len(), 1);
+        assert!(db.world.entities_with::<Scratch>().is_empty());
+        assert!(db.world.entities_with::<Answer>().is_empty());
+    }
+
+    #[test]
+    fn inserted_entity_query_can_take_owned_output_and_clean_up_immediately() {
+        let mut db = Db::new();
+        db.add_system(answer_request);
+
+        let answer = db
+            .insert((Ephemeral, Request(41)))
+            .query::<Take<Answer>>()
+            .one()
+            .unwrap();
+
+        assert_eq!(answer.0, 42);
+        assert!(db.world.entities_with::<Request>().is_empty());
+        assert!(db.world.entities_with::<Answer>().is_empty());
     }
 }

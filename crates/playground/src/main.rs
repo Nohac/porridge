@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use pipeline::{
-    And, Commands, Component, Db, Entity, Eq, Gte, Query, SystemExt, View, Where, insert,
+    And, Commands, Component, Db, Entity, Ephemeral, Eq, Gte, Query, SystemExt, Take, View, Where,
+    insert,
 };
 
 #[derive(Component)]
@@ -52,6 +53,20 @@ struct DefinitionKind(String);
 #[component(hash)]
 struct Diagnostic(String);
 
+#[derive(Component, Hash, Clone, Copy)]
+#[component(hash)]
+struct HoverRequest;
+
+#[derive(Component, Hash, Clone, Copy)]
+#[component(hash)]
+struct Position {
+    offset: usize,
+}
+
+#[derive(Component, Hash, Clone)]
+#[component(hash)]
+struct HoverInfo(String);
+
 #[derive(Component, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[component(hash)]
 enum Severity {
@@ -81,6 +96,68 @@ fn parse_file(mut commands: Commands, Query((file, text)): Query<(Entity, &FileT
             _ => {}
         }
     }
+}
+
+fn hover_info(
+    Query((request, _hover, path, position)): Query<(Entity, &HoverRequest, &FilePath, &Position)>,
+    files: View<(Entity, &FilePath, &FileText)>,
+    definitions: View<(Entity, &DefinitionName, &DefinitionKind)>,
+    mut commands: Commands,
+) {
+    println!("hover_info");
+
+    let Some((_file, _path, text)) = files.iter().find(|(_, file_path, _)| *file_path == path)
+    else {
+        commands
+            .entity(request)
+            .insert(HoverInfo("unknown file".to_string()));
+        return;
+    };
+
+    let Some(word) = word_at(&text.0, position.offset) else {
+        commands
+            .entity(request)
+            .insert(HoverInfo("no symbol at position".to_string()));
+        return;
+    };
+
+    let Some((definition, _name, kind)) = definitions.iter().find(|(_, name, _)| name.0 == word)
+    else {
+        commands
+            .entity(request)
+            .insert(HoverInfo(format!("unresolved symbol `{word}`")));
+        return;
+    };
+
+    commands.entity(request).insert(HoverInfo(format!(
+        "`{word}` is a {} definition on entity {}",
+        kind.0,
+        definition.raw()
+    )));
+}
+
+fn word_at(text: &str, offset: usize) -> Option<&str> {
+    if offset >= text.len() || !text.is_char_boundary(offset) {
+        return None;
+    }
+
+    let is_word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+    let bytes = text.as_bytes();
+
+    if !is_word(bytes[offset]) {
+        return None;
+    }
+
+    let start = bytes[..offset]
+        .iter()
+        .rposition(|byte| !is_word(*byte))
+        .map_or(0, |index| index + 1);
+    let end = bytes[offset..]
+        .iter()
+        .position(|byte| !is_word(*byte))
+        .map_or(text.len(), |index| offset + index);
+
+    Some(&text[start..end])
 }
 
 fn check_imports(
@@ -143,6 +220,7 @@ fn main() {
     db.add_system(parse_file.on_complete(insert((AllFilesParsed,))));
     db.add_system(check_imports);
     db.add_system(check_duplicate_definitions);
+    db.add_system(hover_info);
 
     db.insert((SystemImportDb::default(),));
 
@@ -181,4 +259,26 @@ fn main() {
     for (_, source) in db.query::<(Entity, &SourceFile)>().collect() {
         println!("{}", source.path);
     }
+
+    println!("\nhover request");
+    let hover = db
+        .insert((
+            Ephemeral,
+            HoverRequest,
+            FilePath("main.porridge".to_string()),
+            Position {
+                offset: "import std.io\nimport std.net\nfunction ".len(),
+            },
+        ))
+        .query::<(Entity, Take<HoverInfo>)>()
+        .one();
+
+    if let Some((e, info)) = hover {
+        println!("{e:?} {}", info.0);
+    }
+
+    println!(
+        "hover facts after take: {}",
+        db.query::<(Entity, &HoverInfo)>().collect().len()
+    );
 }
