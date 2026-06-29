@@ -1,15 +1,14 @@
 use crate::lang::grammar::{
-    AstAvailable, AstDef, BelongsToFile, Diagnostic, FileText, FunctionDef, ImportDecl, ParsedFile,
-    Project, Span, TypeDef,
+    AstDef, BelongsToFile, Diagnostic, FileText, FunctionDef, ImportDecl, ParsedFile, Span,
+    TypeDef,
     lexer::Token,
     parser::{CstData, Node, NodeRef, Parser, Rule},
 };
-use bowl::{Commands, Entity, Query, View};
+use bowl::{Commands, Entity, Query};
 
-pub(crate) async fn parse_file(
-    Query((file, text)): Query<(Entity, &FileText)>,
-    mut commands: Commands,
-) {
+pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands) {
+    let (file, text) = query.item();
+
     println!("parse_file({})", file.raw());
 
     let mut diags = Vec::new();
@@ -25,10 +24,11 @@ pub(crate) async fn parse_file(
 }
 
 pub(crate) async fn generate_ast(
-    Query((file, parsed, text)): Query<(Entity, &ParsedFile, &FileText)>,
-    projects: View<'_, (Entity, &Project)>,
+    query: Query<(Entity, &ParsedFile, &FileText)>,
     mut commands: Commands,
 ) {
+    let (file, parsed, text) = query.item();
+
     println!("generate_ast({})", file.raw());
 
     for fact in ast_facts(&parsed.cst, &text.0) {
@@ -36,10 +36,6 @@ pub(crate) async fn generate_ast(
             AstFact::Import(import) => commands.insert((BelongsToFile(file), import)),
             AstFact::Def(def) => commands.insert((BelongsToFile(file), def)),
         }
-    }
-
-    for (project, _) in projects.iter() {
-        commands.entity(project).insert(AstAvailable);
     }
 }
 

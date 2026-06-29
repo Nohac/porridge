@@ -7,11 +7,12 @@
 //! The central API split is:
 //!
 //! ```text
-//! Query<T>
+//! Query<T, F = ()>
 //!   tracked input
 //!   drives system invocation identity and memo dependencies
+//!   optional filter F affects matching without changing the item
 //!
-//! View<T>
+//! View<T, F = ()>
 //!   ambient snapshot read
 //!   visible when a system runs, but not part of memo dependencies
 //!
@@ -61,5 +62,5 @@ pub use commands::Commands;
 pub use component::{Component, hash_component};
 pub use entity::Entity;
 pub use macros::Component;
-pub use query::{Query, QueryParam, QueryResult, View};
-pub use system::IntoSystem;
+pub use query::{Query, QueryFilter, QueryParam, QueryResult, View, With};
+pub use system::{CompleteCallback, IntoSystem, SystemExt, insert_on};

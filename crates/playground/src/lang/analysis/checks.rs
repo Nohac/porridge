@@ -15,11 +15,12 @@ fn emit_diagnostic(
 }
 
 pub(crate) async fn check_imports(
-    Query((import, import_decl)): Query<(Entity, &ImportDecl)>,
+    query: Query<(Entity, &ImportDecl)>,
     system_imports: View<'_, &SystemImportDb>,
     mut commands: Commands,
 ) {
     println!("check_imports");
+    let (import, import_decl) = query.item();
     let system = system_imports.iter().next().unwrap();
 
     if !system.0.contains(&import_decl.path) {
@@ -33,11 +34,13 @@ pub(crate) async fn check_imports(
 }
 
 pub(crate) async fn check_duplicate_defs(
-    Query((entity, def)): Query<(Entity, &AstDef)>,
+    query: Query<(Entity, &AstDef)>,
     ast_available: View<'_, (Entity, &AstAvailable)>,
     defs: View<'_, (Entity, &AstDef)>,
     mut commands: Commands,
 ) {
+    let (entity, def) = query.item();
+
     if ast_available.iter().next().is_none() {
         return;
     }

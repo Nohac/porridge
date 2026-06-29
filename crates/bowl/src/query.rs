@@ -9,8 +9,8 @@ use crate::{
 
 /// A tracked system input.
 ///
-/// `Query<T>` is what makes a system row-addressable and memoizable. Each row
-/// discovered by `T` contributes:
+/// `Query<T, F>` is what makes a system row-addressable and memoizable. Each
+/// row discovered by `T` and accepted by filter `F` contributes:
 ///
 /// ```text
 /// keys -> invocation identity
@@ -19,7 +19,39 @@ use crate::{
 /// ```
 ///
 /// Query items borrow from an immutable snapshot through normal Rust lifetimes.
-pub struct Query<T>(pub T);
+pub struct Query<T, F = ()> {
+    item: T,
+    _filter: PhantomData<F>,
+}
+
+impl<T, F> Query<T, F> {
+    pub(crate) fn new(item: T) -> Self {
+        Self {
+            item,
+            _filter: PhantomData,
+        }
+    }
+
+    /// Returns the row data selected by this query.
+    pub fn item(self) -> T {
+        self.item
+    }
+
+    /// Borrows the row data selected by this query.
+    pub fn as_item(&self) -> &T {
+        &self.item
+    }
+}
+
+/// Marker query filter that requires `T` to be present without fetching it.
+///
+/// This is useful for components that act only as tags:
+///
+/// ```text
+/// Query<(Entity, &FilePath), With<HoverRequest>>
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct With<T>(PhantomData<T>);
 
 /// Ambient read-only snapshot access.
 ///
@@ -27,23 +59,31 @@ pub struct Query<T>(pub T);
 /// [`Query`], but it is intentionally not part of the invocation memo key.
 ///
 /// ```text
-/// Query<T>
+/// Query<T, F = ()>
 ///   tracked dependency
 ///
-/// View<T>
+/// View<T, F = ()>
 ///   current snapshot context
 ///   no automatic invalidation
 /// ```
 ///
 /// This is useful for checks that need to inspect surrounding facts but should
 /// only rerun when their driving row changes.
-pub struct View<'a, T: QueryParam> {
+pub struct View<'a, T, F = ()>
+where
+    T: QueryParam,
+    F: QueryFilter<T>,
+{
     snapshot: &'a Snapshot,
     rows: Vec<<T as QueryParam>::State>,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<(T, F)>,
 }
 
-impl<'a, T: QueryParam> View<'a, T> {
+impl<'a, T, F> View<'a, T, F>
+where
+    T: QueryParam,
+    F: QueryFilter<T>,
+{
     /// Builds an ambient view over `snapshot`.
     ///
     /// This records row states eagerly, then fetches borrowed items lazily while
@@ -52,7 +92,7 @@ impl<'a, T: QueryParam> View<'a, T> {
     pub(crate) fn new(snapshot: &'a Snapshot) -> Self {
         Self {
             snapshot,
-            rows: T::rows(snapshot),
+            rows: filtered_rows::<T, F>(snapshot),
             _marker: PhantomData,
         }
     }
@@ -77,16 +117,24 @@ impl<'a, T: QueryParam> View<'a, T> {
 ///
 /// The result owns the snapshot it was read from. Borrowed rows returned by
 /// [`QueryResult::collect`] are therefore tied to `&self`, not to the live bowl.
-pub struct QueryResult<Q: QueryParam> {
+pub struct QueryResult<Q, F = ()>
+where
+    Q: QueryParam,
+    F: QueryFilter<Q>,
+{
     snapshot: Snapshot,
     rows: Vec<Q::State>,
-    _marker: PhantomData<Q>,
+    _marker: PhantomData<(Q, F)>,
 }
 
-impl<Q: QueryParam> QueryResult<Q> {
+impl<Q, F> QueryResult<Q, F>
+where
+    Q: QueryParam,
+    F: QueryFilter<Q>,
+{
     /// Creates a result over every row of `Q` in `snapshot`.
     pub(crate) fn new(snapshot: Snapshot) -> Self {
-        let rows = Q::rows(&snapshot);
+        let rows = filtered_rows::<Q, F>(&snapshot);
         Self {
             snapshot,
             rows,
@@ -160,6 +208,27 @@ pub trait QueryParam {
     fn fetch<'a>(snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a>;
 }
 
+impl QueryParam for Entity {
+    type State = Entity;
+    type Item<'a> = Entity;
+
+    fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
+        (0..snapshot.next_entity_raw()).map(Entity).collect()
+    }
+
+    fn keys(state: &Self::State) -> Vec<Entity> {
+        vec![*state]
+    }
+
+    fn deps(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Dep> {
+        Vec::new()
+    }
+
+    fn fetch<'a>(_snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+        *state
+    }
+}
+
 impl<T: Component> QueryParam for &T {
     type State = Entity;
     type Item<'a> = &'a T;
@@ -188,17 +257,47 @@ impl<T: Component> QueryParam for &T {
     }
 }
 
+/// One entry in an entity query tuple.
+#[doc(hidden)]
+pub trait QueryPart {
+    type Item<'a>;
+
+    fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
+    fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
+    fn fetch<'a>(snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a>;
+}
+
+impl<T: Component> QueryPart for &T {
+    type Item<'a> = &'a T;
+
+    fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
+        snapshot.has::<T>(entity)
+    }
+
+    fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+        component_dep_if_tracked::<T>(snapshot, entity)
+            .into_iter()
+            .collect()
+    }
+
+    fn fetch<'a>(snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a> {
+        snapshot
+            .get::<T>(entity)
+            .expect("query row referenced a missing component")
+    }
+}
+
 macro_rules! impl_entity_query_param {
-    ($($T:ident),*) => {
-        impl<$($T: Component),*> QueryParam for (Entity, $(& $T,)*)
+    ($($P:ident),*) => {
+        impl<$($P: QueryPart),*> QueryParam for (Entity, $($P,)*)
         {
             type State = Entity;
-            type Item<'a> = (Entity, $(&'a $T,)*);
+            type Item<'a> = (Entity, $(<$P as QueryPart>::Item<'a>,)*);
 
             fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
                 (0..snapshot.next_entity_raw())
                     .map(Entity)
-                    .filter(|entity| true $(&& snapshot.has::<$T>(*entity))*)
+                    .filter(|entity| true $(&& $P::matches(snapshot, *entity))*)
                     .collect()
             }
 
@@ -208,21 +307,90 @@ macro_rules! impl_entity_query_param {
 
             fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
                 let mut deps = Vec::new();
-                $(deps.extend(component_dep_if_tracked::<$T>(snapshot, *state));)*
+                $(deps.extend($P::deps(snapshot, *state));)*
                 deps
             }
 
             fn fetch<'a>(snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
                 (
                     *state,
-                    $(snapshot.get::<$T>(*state).expect("query row referenced a missing component"),)*
+                    $($P::fetch(snapshot, *state),)*
                 )
             }
         }
     };
 }
 
-all_tuples!(impl_entity_query_param, 1, 8, T);
+all_tuples!(impl_entity_query_param, 1, 8, P);
+
+#[doc(hidden)]
+pub trait EntityQueryState {
+    fn entity(&self) -> Entity;
+}
+
+impl EntityQueryState for Entity {
+    fn entity(&self) -> Entity {
+        *self
+    }
+}
+
+/// Additional predicate applied to query data without changing the returned row.
+///
+/// Filters can contribute dependencies, so a memoized system row can be
+/// invalidated when a tracked marker component changes even though that marker
+/// is not part of the returned item.
+pub trait QueryFilter<Q: QueryParam> {
+    fn matches(snapshot: &Snapshot, state: &Q::State) -> bool;
+    fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>;
+}
+
+impl<Q: QueryParam> QueryFilter<Q> for () {
+    fn matches(_snapshot: &Snapshot, _state: &Q::State) -> bool {
+        true
+    }
+
+    fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
+        Vec::new()
+    }
+}
+
+impl<Q, T> QueryFilter<Q> for With<T>
+where
+    Q: QueryParam,
+    Q::State: EntityQueryState,
+    T: Component,
+{
+    fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+        snapshot.has::<T>(state.entity())
+    }
+
+    fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
+        component_dep_if_tracked::<T>(snapshot, state.entity())
+            .into_iter()
+            .collect()
+    }
+}
+
+pub(crate) fn filtered_rows<Q, F>(snapshot: &Snapshot) -> Vec<Q::State>
+where
+    Q: QueryParam,
+    F: QueryFilter<Q>,
+{
+    Q::rows(snapshot)
+        .into_iter()
+        .filter(|state| F::matches(snapshot, state))
+        .collect()
+}
+
+pub(crate) fn filtered_deps<Q, F>(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>
+where
+    Q: QueryParam,
+    F: QueryFilter<Q>,
+{
+    let mut deps = Q::deps(snapshot, state);
+    deps.extend(F::deps(snapshot, state));
+    deps
+}
 
 /// Produces a dependency for `T` on `entity` when `T` participates in revision
 /// tracking.

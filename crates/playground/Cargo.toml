@@ -7,7 +7,7 @@ edition = "2024"
 codespan-reporting = "0.13"
 bowl = { path = "../bowl" }
 logos = "0.16"
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["macros", "rt", "time"] }
 
 [build-dependencies]
 lelwel = "0.10"

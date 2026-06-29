@@ -21,8 +21,8 @@ const DEFAULT_SETTLE_LIMIT: usize = 64;
 /// Async-first database and system runner.
 ///
 /// `Bowl` is cheap to clone and all public operations take `&self`. This is
-/// deliberate: callers should be able to share one bowl through `Arc<Bowl>` and
-/// submit reads or inputs concurrently.
+/// deliberate: callers can clone a bowl handle into tasks and submit reads or
+/// inputs concurrently.
 ///
 /// A bowl has two separate coordination concepts:
 ///
@@ -33,9 +33,7 @@ const DEFAULT_SETTLE_LIMIT: usize = 64;
 /// generation state
 ///   decides what each caller is waiting for
 /// ```
-///
-/// This avoids storing a fragile `is_running` flag while still letting readers
-/// subscribe to the generation currently being produced.
+#[derive(Clone)]
 pub struct Bowl {
     inner: Arc<Inner>,
 }
@@ -224,14 +222,6 @@ where
 
     fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
         Ok(world.remove_component::<T>(entity))
-    }
-}
-
-impl Clone for Bowl {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Arc::clone(&self.inner),
-        }
     }
 }
 
@@ -666,12 +656,13 @@ mod tests {
 
     use futures::executor::block_on;
 
-    use crate::{Bowl, Commands, Component, Entity, Query, View};
+    use crate::{Bowl, Commands, Component, Entity, Query, View, With};
 
     struct A(u32);
     struct B(u32);
     struct C(u32);
     struct Count(usize);
+    struct Sum(u32);
     struct Request;
     #[derive(Clone)]
     struct Answer(u32);
@@ -682,6 +673,7 @@ mod tests {
     impl Component for B {}
     impl Component for C {}
     impl Component for Count {}
+    impl Component for Sum {}
     impl Component for Request {}
     impl Component for Answer {}
     impl Component for Note {}
@@ -689,36 +681,66 @@ mod tests {
     static REQUEST_RUNS: AtomicUsize = AtomicUsize::new(0);
     static CLEAN_RUNS: AtomicUsize = AtomicUsize::new(0);
 
-    async fn make_b(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (entity, a) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_b_uncounted(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b_uncounted(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (entity, a) = query.item();
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_c(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_c(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (entity, a) = query.item();
         CLEAN_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(C(a.0 + 1));
     }
 
     async fn count_bs(
-        Query((entity, _a)): Query<(Entity, &A)>,
+        query: Query<(Entity, &A)>,
         bs: View<'_, (Entity, &B)>,
         mut commands: Commands,
     ) {
+        let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(bs.len()));
     }
 
-    async fn spawn_b(Query((_entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
+    async fn spawn_b(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (_entity, a) = query.item();
         commands.insert((B(a.0 + 1),));
     }
 
-    async fn answer_request(
-        Query((entity, _request)): Query<(Entity, &Request)>,
+    async fn count_tagged_a(query: Query<(Entity, &A), With<Request>>, mut commands: Commands) {
+        let (entity, _a) = query.item();
+        commands.entity(entity).insert(Count(1));
+    }
+
+    async fn sum_a_b(
+        a_query: Query<(Entity, &A)>,
+        b_query: Query<(Entity, &B)>,
         mut commands: Commands,
     ) {
+        let (a_entity, a) = a_query.item();
+        let (b_entity, b) = b_query.item();
+        commands.entity(a_entity).insert(Sum(a.0 + b.0));
+        commands.entity(b_entity).insert(Sum(a.0 + b.0));
+    }
+
+    async fn count_a_when_c_exists(
+        a_query: Query<(Entity, &A)>,
+        c_query: Query<(Entity, &C)>,
+        bs: View<'_, (Entity, &B)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _a) = a_query.item();
+        let (_ready, _c) = c_query.item();
+        commands.entity(entity).insert(Count(bs.len()));
+    }
+
+    async fn answer_request(query: Query<(Entity, &Request)>, mut commands: Commands) {
+        let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
     }
 
@@ -807,10 +829,61 @@ mod tests {
         });
     }
 
-    async fn answer_request_with_note(
-        Query((entity, _request)): Query<(Entity, &Request)>,
-        mut commands: Commands,
-    ) {
+    #[test]
+    fn with_filter_does_not_appear_in_query_item() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(count_tagged_a).await;
+
+            bowl.insert((A(1),)).await;
+            bowl.insert((Request, A(2))).await;
+
+            let result = bowl.query::<(Entity, &Count)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 1);
+        });
+    }
+
+    #[test]
+    fn two_query_system_runs_cross_product_rows() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(sum_a_b).await;
+
+            bowl.insert((A(2),)).await;
+            bowl.insert((B(3),)).await;
+
+            let result = bowl.query::<(Entity, &Sum)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 2);
+            assert!(rows.iter().all(|(_, sum)| sum.0 == 5));
+        });
+    }
+
+    #[test]
+    fn two_query_view_system_can_gate_on_readiness() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(count_a_when_c_exists).await;
+
+            bowl.insert((A(1),)).await;
+            bowl.insert((B(10),)).await;
+            assert_eq!(bowl.query::<(Entity, &Count)>().await.len(), 0);
+
+            bowl.insert((C(0),)).await;
+            let result = bowl.query::<(Entity, &Count)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 1);
+        });
+    }
+
+    async fn answer_request_with_note(query: Query<(Entity, &Request)>, mut commands: Commands) {
+        let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
         commands.entity(entity).insert(Note);
     }

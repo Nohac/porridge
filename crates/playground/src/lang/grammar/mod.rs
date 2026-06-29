@@ -46,7 +46,7 @@ pub(crate) struct ImportDecl {
     pub(crate) span: Span,
 }
 
-#[derive(Component, Hash, Clone)]
+#[derive(Debug, Component, Hash, Clone)]
 #[component(hash)]
 pub(crate) enum AstDef {
     Function(FunctionDef),
@@ -91,13 +91,13 @@ impl fmt::Display for DefKind {
     }
 }
 
-#[derive(Hash, Clone)]
+#[derive(Debug, Hash, Clone)]
 pub(crate) struct FunctionDef {
     pub(crate) name: String,
     pub(crate) span: Span,
 }
 
-#[derive(Hash, Clone)]
+#[derive(Debug, Hash, Clone)]
 pub(crate) struct TypeDef {
     pub(crate) name: String,
     pub(crate) span: Span,
@@ -124,7 +124,7 @@ pub(crate) enum Severity {
 #[component(hash)]
 pub(crate) struct HoverRequest;
 
-#[derive(Component, Hash, Clone, Copy)]
+#[derive(Debug, Component, Hash, Clone, Copy)]
 #[component(hash)]
 pub(crate) struct Position {
     pub(crate) offset: usize,
