@@ -14,7 +14,7 @@ use std::{
 };
 
 pub use filter::{And, Eq, Gte, Not, Or, QueryBuilder, Where, With, Without};
-pub use pipeline_macros::Component;
+pub use macros::Component;
 use variadics_please::{all_tuples, all_tuples_enumerated};
 
 pub trait Component: 'static {

@@ -1,0 +1,105 @@
+use std::sync::{Arc, Mutex};
+
+use crate::{
+    Component, Entity,
+    world::{SystemInvocation, World},
+};
+
+/// Buffered writes issued by a system invocation.
+///
+/// Commands do not mutate the live world immediately. A system writes into its
+/// invocation-local command buffer; the runner applies those commands at the
+/// end of the generation.
+///
+/// ```text
+/// system reads snapshot N
+///   commands.entity(e).insert(X)
+///
+/// barrier
+///   command applies to world N+1
+/// ```
+#[derive(Clone)]
+pub struct Commands {
+    pub(crate) inner: Arc<Mutex<Vec<Box<dyn CommandOp>>>>,
+}
+
+impl Commands {
+    /// Creates an empty invocation-local command buffer.
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Returns a builder for writing components to an existing entity.
+    pub fn entity(&mut self, entity: Entity) -> EntityCommands<'_> {
+        EntityCommands {
+            commands: self,
+            entity,
+        }
+    }
+
+    /// Drains buffered command operations after the system invocation returns.
+    pub(crate) fn take(self) -> Vec<Box<dyn CommandOp>> {
+        std::mem::take(&mut *self.inner.lock().expect("command buffer lock poisoned"))
+    }
+}
+
+/// Command builder scoped to one entity.
+pub struct EntityCommands<'a> {
+    commands: &'a mut Commands,
+    entity: Entity,
+}
+
+impl EntityCommands<'_> {
+    /// Buffers insertion of a derived component on this entity.
+    ///
+    /// The component is owned by the current system invocation. When that
+    /// invocation reruns, previous derived outputs with the same owner are
+    /// removed before the new commands are applied.
+    pub fn insert<T: Component>(&mut self, value: T) {
+        self.commands
+            .inner
+            .lock()
+            .expect("command buffer lock poisoned")
+            .push(Box::new(InsertCommand {
+                entity: self.entity,
+                value,
+            }));
+    }
+}
+
+/// Operation produced by a system command buffer.
+pub(crate) trait CommandOp: Send {
+    /// Applies the operation as a derived write owned by `owner`.
+    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation);
+}
+
+struct InsertCommand<T> {
+    entity: Entity,
+    value: T,
+}
+
+impl<T: Component> CommandOp for InsertCommand<T> {
+    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
+        world.insert_derived(self.entity, self.value, owner.clone());
+    }
+}
+
+#[doc(hidden)]
+pub trait BaseCommandOp: Send {
+    /// Applies the operation as a base input write.
+    fn apply(self: Box<Self>, world: &mut World);
+}
+
+/// Base insert queued by public `Bowl::insert`.
+pub(crate) struct InsertBaseCommand<T> {
+    pub(crate) entity: Entity,
+    pub(crate) value: T,
+}
+
+impl<T: Component> BaseCommandOp for InsertBaseCommand<T> {
+    fn apply(self: Box<Self>, world: &mut World) {
+        world.insert_base(self.entity, self.value);
+    }
+}

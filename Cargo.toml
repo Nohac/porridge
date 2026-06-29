@@ -1,7 +1,8 @@
 [workspace]
 members = [
+    "crates/bowl",
     "crates/pipeline",
-    "crates/pipeline-macros",
+    "crates/macros",
     "crates/playground",
 ]
 resolver = "3"

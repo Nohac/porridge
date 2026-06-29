@@ -1,8 +1,8 @@
 [package]
-name = "pipeline"
+name = "bowl"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-macros = { path = "../macros" }
+futures = "0.3.31"
 variadics_please = "2.0.0"
