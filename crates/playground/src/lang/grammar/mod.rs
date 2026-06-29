@@ -5,11 +5,6 @@ use pipeline::{Component, Entity};
 pub(crate) mod lexer;
 pub(crate) mod parser;
 
-#[derive(Component)]
-pub(crate) struct SourceFile {
-    pub(crate) path: String,
-}
-
 #[derive(Component, Hash, Clone, PartialEq, Eq)]
 #[component(hash)]
 pub(crate) struct FilePath(pub(crate) String);

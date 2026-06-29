@@ -6,7 +6,7 @@ use crate::lang::{
     analysis::{ast_available, check_duplicate_defs, check_imports, generate_ast, parse_file},
     grammar::{
         AstAvailable, AstDef, Diagnostic, FilePath, FileText, HoverInfo, HoverRequest, Position,
-        Project, SourceFile, SystemImportDb,
+        Project, SystemImportDb,
     },
     service::hover_info,
 };
@@ -24,9 +24,6 @@ fn main() {
     db.insert((SystemImportDb::default(),));
 
     db.insert((
-        SourceFile {
-            path: "main.porridge".to_string(),
-        },
         FilePath("main.porridge".to_string()),
         FileText(
             "import std.io\nimport std.net\nfn main() -> UserId { return 1; }\ntype UserId"
@@ -35,9 +32,6 @@ fn main() {
     ));
 
     db.insert((
-        SourceFile {
-            path: "lib.porridge".to_string(),
-        },
         FilePath("lib.porridge".to_string()),
         FileText("import std.fs\nstruct Widget {}\nfn main() { return 2; }".to_string()),
     ));
@@ -59,9 +53,6 @@ fn main() {
     }
 
     db.insert((
-        SourceFile {
-            path: "foo.porridge".to_string(),
-        },
         FilePath("foo.porridge".to_string()),
         FileText("import derp.fs\nstruct Widget {}\nfn other() { return 2; }".to_string()),
     ));

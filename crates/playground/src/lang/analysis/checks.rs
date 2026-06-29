@@ -1,6 +1,5 @@
 use crate::lang::grammar::{
-    AstAvailable, AstDef, BelongsToFile, Diagnostic, FilePath, ImportDecl, Severity, SourceFile,
-    SystemImportDb,
+    AstAvailable, AstDef, Diagnostic, ImportDecl, Severity, SystemImportDb,
 };
 use pipeline::{Commands, Entity, Query, View};
 
@@ -16,29 +15,20 @@ fn emit_diagnostic(
 }
 
 pub(crate) fn check_imports(
-    _: Query<(Entity, &AstAvailable)>,
-    imports: View<(Entity, &ImportDecl, &BelongsToFile)>,
+    Query((import, import_decl)): Query<(Entity, &ImportDecl)>,
     system_imports: View<&SystemImportDb>,
-    files: View<(Entity, &SourceFile)>,
     mut commands: Commands,
 ) {
     println!("check_imports");
     let system = system_imports.iter().next().unwrap();
 
-    for (import, import_decl, f) in imports.iter() {
-        if !system.0.contains(&import_decl.path) {
-            let file = files
-                .get(f.0)
-                .map(|source| source.path.as_str())
-                .unwrap_or("<unknown>");
-            commands.entity(*import).insert(FilePath(file.to_string()));
-            emit_diagnostic(
-                &mut commands,
-                *import,
-                Severity::Warning,
-                format!("unknown import `{}` in file {}", import_decl.path, file),
-            );
-        }
+    if !system.0.contains(&import_decl.path) {
+        emit_diagnostic(
+            &mut commands,
+            import,
+            Severity::Warning,
+            format!("unknown import `{}`", import_decl.path),
+        );
     }
 }
 
