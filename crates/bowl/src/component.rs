@@ -23,20 +23,6 @@ pub trait Component: Send + Sync + 'static {
     }
 }
 
-/// Marker for request/input entities that should be cleaned up after a scoped
-/// request query.
-///
-/// Full bound-entity cleanup is still future work; this marker is included now
-/// so playground code can model ephemeral requests against `bowl`.
-#[derive(Debug, Clone, Copy)]
-pub struct Ephemeral;
-
-impl Component for Ephemeral {
-    fn tracked() -> bool {
-        false
-    }
-}
-
 /// Convenience helper for implementing [`Component::fingerprint`] with `Hash`.
 pub fn hash_component<T: Hash>(value: &T) -> u64 {
     let mut hasher = DefaultHasher::new();

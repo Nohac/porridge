@@ -1,111 +1,121 @@
 # Bound Entity Handles
 
-This spec explores owned entity handles for operations that should not be
-available from arbitrary shared queries.
+Bound entity handles are the request/response cleanup mechanism for `bowl`.
+They replace the earlier `Ephemeral` marker idea.
 
-The motivating case is `Take<T>`.
+The core idea:
 
-`Take<T>` is a destructive read. It removes a component or output from the bowl,
-so it should require proof that the caller has logical ownership of the entity
-being consumed.
+```rust
+let output = db
+    .insert((HoverRequest, FilePath(path), Position { offset }))
+    .await
+    .bind()
+    .take::<(HoverInfo, Option<Diagnostic>)>()
+    .await?;
+```
+
+`Entity` is just a copyable id. `BoundEntity` is a capability tied to a specific
+inserted entity.
 
 ## Problem
 
-This is too broad:
+Destructive reads should not be available from arbitrary shared queries:
 
 ```rust
 db.query::<Take<HoverInfo>>().await
 ```
 
-A normal database query can match many entities and is available from a shared
-database handle. Allowing destructive reads there makes ownership unclear:
+That shape is too broad:
 
-- Who is allowed to remove the component?
-- What happens if multiple callers race to take the same output?
-- How does an ephemeral request clean up only its own outputs?
-- How do request queries avoid accidentally consuming another request's result?
+- a normal query can match many entities
+- concurrent callers could race to consume the same component
+- request outputs could be consumed by the wrong caller
+- request cleanup would need extra filtering rules
 
-## BoundEntity
-
-Introduce a move-only handle:
-
-```rust
-pub struct BoundEntity {
-    bowl: Arc<Inner>,
-    entity: Entity,
-}
-```
-
-`BoundEntity` represents an entity that is logically bound to the caller. It is
-not just an ID; it is a capability.
-
-Possible properties:
-
-```rust
-impl BoundEntity {
-    pub fn entity(&self) -> Entity;
-
-    pub async fn query<Q>(&self) -> Q::Output;
-    pub async fn take<T: Component>(self) -> Option<T>;
-}
-```
-
-`BoundEntity` should probably be move-only and not `Clone`.
+Instead, destructive reads are methods on a bound handle.
 
 ## Creating Bound Entities
 
-Inserting new entities can return a bound handle:
+Durable inserts stay ordinary:
 
 ```rust
-let request = db.insert_bound((
-    Ephemeral,
-    HoverRequest,
-    FilePath(path),
-    Position { offset },
-));
+db.insert((FilePath(path), FileText(text))).await;
 ```
 
-Request sugar can build on the same primitive:
+Request-style inserts opt into a bound lifetime:
 
 ```rust
-let request = db.request((
-    HoverRequest,
-    FilePath(path),
-    Position { offset },
-));
+let request = db
+    .insert((HoverRequest, FilePath(path), Position { offset }))
+    .await
+    .bind();
 ```
 
-That request can then query only its own outputs:
+The inserted entity can still be inspected as an id:
 
 ```rust
-let hover = request.query::<Take<HoverInfo>>().await;
+let entity = request.entity();
 ```
 
-or:
+but the important part is the handle. It is not cloneable and represents the
+right to consume outputs from that exact entity.
+
+## Taking Outputs
+
+`BoundEntity::take<T>(self)` is consuming:
 
 ```rust
-let hover = request.take::<HoverInfo>().await;
+let hover = request.take::<HoverInfo>().await?;
 ```
 
-## Rule
+It does all of this:
 
-```text
-Take<T> is only valid through a BoundEntity-scoped query.
-```
+1. waits for the inserted generation and bowl settlement
+2. removes the requested component or component bundle from the bound entity
+3. closes the bound entity
+4. removes remaining outputs scoped to the bound entity
+5. removes the bound entity itself
 
-Normal database queries can borrow:
+Tuple bundles take everything at once:
 
 ```rust
-db.query::<(Entity, &HoverInfo)>().await
+let (hover, diagnostic) = request
+    .take::<(HoverInfo, Option<Diagnostic>)>()
+    .await?;
 ```
 
-but they cannot destructively take:
+Required components fail the take when missing. Optional components use
+`Option<T>`:
 
 ```rust
-db.query::<Take<HoverInfo>>().await // invalid
+take::<HoverInfo>()                  // HoverInfo required
+take::<Option<Diagnostic>>()         // Diagnostic optional
+take::<(HoverInfo, Option<Diagnostic>)>()
 ```
 
-This keeps destructive operations capability-based.
+The result type is:
+
+```rust
+Result<T::Output, TakeError>
+```
+
+where `TakeError` identifies the missing required component.
+
+## Cleanup On Drop
+
+`Drop` cannot `await`, so dropping a bound handle without `take` queues cleanup
+for the next bowl operation.
+
+```rust
+{
+    let _request = db.insert((HoverRequest, ...)).await.bind();
+}
+
+db.query::<(Entity, &Diagnostic)>().await; // drains deferred cleanup first
+```
+
+This gives deterministic cleanup for `take`, and best-effort deferred cleanup
+for abandoned request handles.
 
 ## Entity vs BoundEntity
 
@@ -117,39 +127,35 @@ Entity
   Does not grant destructive permissions.
 
 BoundEntity
-  Owned capability.
-  Tied to a bowl.
-  Can scope queries to one entity.
-  Can take/remove owned outputs.
-  Can trigger cleanup on drop.
+  Move-only capability.
+  Tied to one bowl and one inserted entity.
+  Can destructively take outputs from that entity.
+  Cleans the entity and scoped leftovers on take/drop.
 ```
 
-The name `BoundEntity` is intentionally less absolute than `UniqueEntity`.
-The handle does not necessarily prove global uniqueness of the entity. It proves
-that this entity is bound to the caller for certain operations.
+The name `BoundEntity` is intentionally less absolute than `UniqueEntity`. The
+handle does not prove global uniqueness of the entity. It proves that this
+entity is bound to the caller for scoped request cleanup and destructive output
+consumption.
 
-## Ephemeral Cleanup
+## Current Implementation
 
-`BoundEntity` fits ephemeral request cleanup:
+Implemented:
 
-```text
-caller creates bound ephemeral request
-systems produce outputs for that request
-caller takes or queries the output
-bound handle is consumed or dropped
-ephemeral request and owned derived outputs are cleaned up
-```
+- `InsertedEntity::bind() -> BoundEntity`
+- `BoundEntity::take<T>(self) -> Result<T::Output, TakeError>`
+- required component takes
+- `Option<T>` optional takes
+- tuple take bundles
+- cleanup of leftovers scoped to the bound entity
+- deferred cleanup when a bound handle is dropped without `take`
 
-Cleanup should be scoped to the bound entity. It should not remove unrelated
-facts that merely happen to match the same query shape.
+Not implemented:
 
-## Open Questions
+- binding existing arbitrary entities
+- non-consuming bound reads
+- explicit async `close()`
+- query-level `Take<T>`
 
-- Should ordinary `insert` return `Entity` or `BoundEntity`?
-- Should there be both `insert` and `insert_bound`?
-- Should `BoundEntity` cleanup happen on `Drop`, explicit `close`, or both?
-- Can `BoundEntity` be safely `Send` and `Sync`?
-- Should a bound query automatically include `Entity == bound.entity`?
-- Can users bind an existing entity, or only newly inserted entities?
-- Should `Take<T>` consume the `BoundEntity`, or can multiple takes happen from
-  the same bound entity?
+The current direction is to avoid query-level `Take<T>` entirely unless a later
+use case proves it is needed.

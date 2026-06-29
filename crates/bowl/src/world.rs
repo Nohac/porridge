@@ -298,17 +298,10 @@ impl World {
         }
     }
 
-    /// Returns every entity that currently has component `T`.
-    pub(crate) fn entities_with<T: Component>(&self) -> Vec<Entity> {
-        self.store::<T>()
-            .map(|store| store.entries.keys().copied().collect())
-            .unwrap_or_default()
-    }
-
     /// Removes derived components whose owner key set intersects `keys`.
     ///
     /// The returned entities form the next cleanup frontier: a derived entity
-    /// touched by an ephemeral request may itself own more derived outputs.
+    /// touched by a bound request may itself own more derived outputs.
     pub(crate) fn remove_derived_touched_by(&mut self, keys: &HashSet<Entity>) -> Vec<Entity> {
         self.stores
             .values_mut()
@@ -328,6 +321,20 @@ impl World {
         }
 
         owners
+    }
+
+    /// Removes one typed component and returns an owned clone of its value.
+    pub(crate) fn remove_component<T>(&mut self, entity: Entity) -> Option<T>
+    where
+        T: Component + Clone,
+    {
+        let removed = self.store_mut_existing::<T>()?.entries.remove(&entity)?;
+
+        if T::tracked() {
+            bump(&mut self.revision);
+        }
+
+        Some(removed.value.as_ref().clone())
     }
 
     /// Upper bound used for simple entity scans.
@@ -355,6 +362,13 @@ impl World {
             .as_any_mut()
             .downcast_mut()
             .expect("component store has the wrong concrete type")
+    }
+
+    /// Returns the typed component store for `T`, if it already exists.
+    fn store_mut_existing<T: Component>(&mut self) -> Option<&mut Store<T>> {
+        self.stores
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|store| store.as_any_mut().downcast_mut())
     }
 }
 

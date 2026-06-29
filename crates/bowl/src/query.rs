@@ -94,23 +94,6 @@ impl<Q: QueryParam> QueryResult<Q> {
         }
     }
 
-    /// Creates a result scoped to rows whose invocation keys contain `entity`.
-    ///
-    /// This is a temporary bridge for request-style inserted entity queries.
-    /// The future bound-entity API should make this capability explicit.
-    pub(crate) fn new_for_entity(snapshot: Snapshot, entity: Entity) -> Self {
-        let rows = Q::rows(&snapshot)
-            .into_iter()
-            .filter(|row| Q::keys(row).contains(&entity))
-            .collect();
-
-        Self {
-            snapshot,
-            rows,
-            _marker: PhantomData,
-        }
-    }
-
     /// Fetches all rows from the owned snapshot.
     ///
     /// This returns borrowed values. Keep the [`QueryResult`] alive while using

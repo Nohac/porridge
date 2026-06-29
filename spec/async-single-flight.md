@@ -76,8 +76,10 @@ let b = Arc::clone(&db);
 
 let diagnostics = a.query::<(Entity, &Diagnostic)>();
 let hover = b
-    .insert((Ephemeral, HoverRequest, Position { offset }))
-    .query::<Take<HoverInfo>>();
+    .insert((HoverRequest, Position { offset }))
+    .await
+    .bind()
+    .take::<HoverInfo>();
 ```
 
 Internally, the bowl owns its mutable state behind synchronization primitives.
@@ -85,7 +87,7 @@ The public API should expose logical mutation through shared references, not
 Rust exclusive borrows.
 
 This requirement applies to base inserts, entity mutation, request insertion,
-ephemeral cleanup, and query evaluation.
+bound cleanup, and query evaluation.
 
 Deadlock avoidance rules:
 
@@ -152,8 +154,10 @@ A caller can submit input before querying:
 
 ```rust
 let hover = db
-    .insert((Ephemeral, HoverRequest, FilePath(path), Position { offset }))
-    .query::<Take<HoverInfo>>()
+    .insert((HoverRequest, FilePath(path), Position { offset }))
+    .await
+    .bind()
+    .take::<HoverInfo>()
     .await;
 ```
 
@@ -446,8 +450,10 @@ for the first async implementation.
 Request queries are just input plus query.
 
 ```rust
-db.insert((Ephemeral, HoverRequest, FilePath(path), Position { offset }))
-    .query::<Take<HoverInfo>>()
+db.insert((HoverRequest, FilePath(path), Position { offset }))
+    .await
+    .bind()
+    .take::<HoverInfo>()
     .await
 ```
 
@@ -458,8 +464,8 @@ Multiple request queries can share that same scheduled generation. The request
 entity is how each query scopes its own output; the generation only controls
 when the batch becomes visible.
 
-If the request entity is ephemeral, cleanup happens after the query result is
-materialized or taken.
+If the request entity is bound, cleanup happens after `take`. If the bound
+handle is dropped before `take`, cleanup is deferred to the next bowl operation.
 
 ## Consequences
 

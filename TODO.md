@@ -23,39 +23,40 @@ Current shortcut:
 - This is enough for the playground, but it is not yet a full model for
   replacing complex derived output graphs.
 
-## 2. Add BoundEntity And Take<T>
+## 2. Harden BoundEntity Take Semantics
 
-- Introduce a capability type such as `BoundEntity`.
-- Make destructive reads require that capability.
-- Add `Take<T>` for request-scoped outputs like hover results.
-- Decide whether taking consumes the bound entity or whether multiple takes can
-  happen through the same handle.
-- Make `db.query::<Take<T>>()` invalid unless scoped through a bound entity.
+- Continue with the current `insert(...).await.bind().take::<T>().await` model.
+- Keep destructive reads as methods on `BoundEntity`, not normal queries.
+- Decide whether an explicit `close().await` is useful in addition to consuming
+  `take`.
+- Improve `TakeError` reporting if missing required output becomes common.
+- Add more tests for missing required components and multi-component failure
+  behavior.
 
 Current shortcut:
-- `InsertedEntity::query::<Q>()` filters rows by checking whether `Q::keys`
-  contains the inserted entity.
-- This works for request outputs written back onto the request entity, but it is
-  not a real ownership or destructive-read model.
-- `HoverInfo` is currently read by reference from a snapshot, then cleaned from
-  the live bowl afterward.
+- `BoundEntity::take<T>` is implemented and consuming.
+- `Option<T>` works for optional outputs, and tuples take multiple outputs at
+  once.
+- Dropping a bound handle without `take` queues cleanup for the next bowl
+  operation because `Drop` cannot `await`.
 
-## 3. Improve Ephemeral Cleanup
+## 3. Improve Bound Cleanup
 
-- Keep the `Ephemeral` marker as the ECS-shaped request lifetime marker.
 - Make cleanup semantics explicit:
   - when cleanup runs
   - what gets removed
   - which memo entries are invalidated
   - whether cleanup itself should bump revisions or be isolated from normal
     evaluation
-- Add more tests for command-spawned ephemeral entities and transitive cleanup in
+- Add more tests for command-spawned request outputs and transitive cleanup in
   the async `bowl` crate.
+- Decide whether cleanup of a dropped bound entity should run before or after
+  the next evaluation when both cleanup and new inputs are pending.
 
 Current shortcut:
-- After `InsertedEntity::query`, the result snapshot is created first, then the
-  live bowl removes ephemeral entities and derived outputs touched by them.
-- Cleanup is intentionally coarse and live-world only.
+- `take` cleans immediately after extracting requested outputs.
+- Drop cleanup is deferred to the next bowl operation.
+- Cleanup is scoped by system invocation keys that touched the bound entity.
 
 ## 4. Add Indexed And Filtered Queries
 
@@ -218,10 +219,10 @@ Current shortcut:
 - `SystemImportDb` is a singleton component with hardcoded data.
 - Parser and AST extraction are pragmatic prototype code.
 
-## 13. Support Owned Query Results
+## 13. Support Owned Query Results If Needed
 
 - Add query forms that can return owned component values where appropriate.
-- Decide how this overlaps with `Take<T>`.
+- Decide how this overlaps with `BoundEntity::take`.
 - Avoid cloning by default; borrowed snapshot results should remain the normal
   read path.
 

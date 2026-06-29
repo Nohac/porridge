@@ -1,13 +1,15 @@
 use std::{
+    any::type_name,
     collections::{HashMap, HashSet},
-    sync::Arc,
+    fmt,
+    sync::{Arc, Mutex as StdMutex},
 };
 
 use futures::{channel::oneshot, lock::Mutex};
 use variadics_please::all_tuples;
 
 use crate::{
-    Component, Entity, Ephemeral, IntoSystem, QueryResult,
+    Component, Entity, IntoSystem, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
     query::QueryParam,
     system::{BoxedSystem, MemoEntry},
@@ -50,6 +52,10 @@ struct Inner {
     /// Holding this guard means the caller is the only active runner. The guard
     /// may be held across system execution; `state` must not be.
     runner: Mutex<()>,
+    /// Bound entity handles cannot `await` in `Drop`, so dropped handles enqueue
+    /// their entity here. The next bowl operation drains this queue after
+    /// evaluation has had a chance to materialize request outputs.
+    deferred_bound_cleanup: StdMutex<Vec<Entity>>,
 }
 
 struct State {
@@ -66,16 +72,6 @@ struct State {
 }
 
 /// Result of inserting a new entity into the next evaluation generation.
-///
-/// The handle remembers the generation that includes the inserted bundle. A
-/// follow-up [`InsertedEntity::query`] waits for that generation before reading,
-/// which makes request-style flows deterministic:
-///
-/// ```text
-/// insert request -> generation G
-/// wait for G
-/// query only the inserted entity's outputs
-/// ```
 pub struct InsertedEntity {
     bowl: Bowl,
     entity: Entity,
@@ -91,21 +87,143 @@ impl InsertedEntity {
         self.entity
     }
 
-    /// Waits for this insert's generation and queries rows bound to this
-    /// inserted entity.
+    /// Turns this inserted entity into a scoped request capability.
     ///
-    /// This is the current request-query bridge. It filters query rows by the
-    /// entity key produced by [`QueryParam::keys`], so it is suitable for
-    /// request outputs that are written back onto the request entity. It is not
-    /// a final replacement for the planned `BoundEntity`/`Take<T>` capability.
-    pub async fn query<Q>(&self) -> QueryResult<Q>
+    /// A [`BoundEntity`] can destructively take outputs from this exact entity.
+    /// Dropping it without taking schedules the entity and its derived outputs
+    /// for cleanup by the next bowl operation.
+    pub fn bind(self) -> BoundEntity {
+        BoundEntity {
+            bowl: self.bowl,
+            entity: Some(self.entity),
+            generation: self.generation,
+        }
+    }
+}
+
+/// Scoped capability for consuming outputs from one inserted entity.
+pub struct BoundEntity {
+    bowl: Bowl,
+    entity: Option<Entity>,
+    generation: u64,
+}
+
+impl BoundEntity {
+    /// Returns the raw bound entity id.
+    pub fn entity(&self) -> Entity {
+        self.entity
+            .expect("bound entity was already closed or consumed")
+    }
+
+    /// Waits for evaluation, takes the requested components, then closes the
+    /// bound entity.
+    ///
+    /// Required components fail the take when absent. `Option<T>` entries are
+    /// allowed to be absent. The bound entity and all remaining outputs scoped
+    /// to it are cleaned up regardless of success.
+    pub async fn take<T>(mut self) -> Result<T::Output, TakeError>
     where
-        Q: QueryParam,
+        T: TakeBundle,
     {
+        let entity = self
+            .entity
+            .take()
+            .expect("bound entity was already closed or consumed");
+
         self.bowl.ensure_evaluated(self.generation).await;
-        let result = self.bowl.query_entity::<Q>(self.entity).await;
-        self.bowl.cleanup_ephemeral_entities().await;
+        self.bowl.settle().await;
+
+        let result = {
+            let mut state = self.bowl.inner.state.lock().await;
+            let result = T::take(&mut state.world, entity);
+            cleanup_bound_entity(&mut state, entity);
+            state.settled_revision = state.world.revision_raw();
+            result
+        };
+
+        self.bowl.drain_deferred_bound_cleanup().await;
         result
+    }
+}
+
+impl Drop for BoundEntity {
+    fn drop(&mut self) {
+        let Some(entity) = self.entity.take() else {
+            return;
+        };
+
+        self.bowl
+            .inner
+            .deferred_bound_cleanup
+            .lock()
+            .expect("deferred bound cleanup lock poisoned")
+            .push(entity);
+    }
+}
+
+/// Error returned by [`BoundEntity::take`] when a required component is absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TakeError {
+    entity: Entity,
+    component: &'static str,
+}
+
+impl TakeError {
+    /// Entity that was missing a required component.
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+
+    /// Rust type name of the missing component.
+    pub fn component(&self) -> &'static str {
+        self.component
+    }
+}
+
+impl fmt::Display for TakeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "entity {} is missing required component {}",
+            self.entity.raw(),
+            self.component
+        )
+    }
+}
+
+impl std::error::Error for TakeError {}
+
+/// Components that can be taken from a bound entity.
+pub trait TakeBundle {
+    /// Value returned by a successful take.
+    type Output;
+
+    #[doc(hidden)]
+    fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError>;
+}
+
+impl<T> TakeBundle for T
+where
+    T: Component + Clone,
+{
+    type Output = T;
+
+    fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
+        world.remove_component::<T>(entity).ok_or(TakeError {
+            entity,
+            component: type_name::<T>(),
+        })
+    }
+}
+
+impl<T> TakeBundle for Option<T>
+where
+    T: Component + Clone,
+{
+    type Output = Option<T>;
+
+    fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
+        Ok(world.remove_component::<T>(entity))
     }
 }
 
@@ -144,6 +262,7 @@ impl Bowl {
                     settled_revision: 0,
                 }),
                 runner: Mutex::new(()),
+                deferred_bound_cleanup: StdMutex::new(Vec::new()),
             }),
         }
     }
@@ -228,71 +347,30 @@ impl Bowl {
         Q: QueryParam,
     {
         self.settle().await;
+        self.drain_deferred_bound_cleanup().await;
         let snapshot = self.snapshot().await;
         QueryResult::new(snapshot)
     }
 
-    async fn query_entity<Q>(&self, entity: Entity) -> QueryResult<Q>
-    where
-        Q: QueryParam,
-    {
-        self.settle().await;
-        let snapshot = self.snapshot().await;
-        QueryResult::new_for_entity(snapshot, entity)
-    }
+    /// Drains bound entities whose handles were dropped without `take`.
+    async fn drain_deferred_bound_cleanup(&self) {
+        let cleanup = {
+            let mut cleanup = self
+                .inner
+                .deferred_bound_cleanup
+                .lock()
+                .expect("deferred bound cleanup lock poisoned");
+            std::mem::take(&mut *cleanup)
+        };
 
-    /// Removes ephemeral request entities and outputs that were derived from
-    /// them.
-    ///
-    /// Cleanup is intentionally live-world only. Inserted request queries build
-    /// their [`QueryResult`] snapshot first, so callers can still read the
-    /// answer while the bowl is ready for later generations.
-    async fn cleanup_ephemeral_entities(&self) {
-        let mut state = self.inner.state.lock().await;
-        if state.world.entities_with::<Ephemeral>().is_empty() {
+        if cleanup.is_empty() {
             return;
         }
 
-        let mut frontier: HashSet<_> = state
-            .world
-            .entities_with::<Ephemeral>()
-            .into_iter()
-            .collect();
-        let mut removed_entities = HashSet::new();
-
-        while !frontier.is_empty() {
-            remove_memo_touched_by(&mut state.memo, &frontier);
-
-            let removed = state.world.remove_derived_touched_by(&frontier);
-            let mut next_frontier = HashSet::new();
-
-            for entity in removed {
-                if removed_entities.insert(entity) {
-                    next_frontier.insert(entity);
-                }
-            }
-
-            frontier = next_frontier;
+        let mut state = self.inner.state.lock().await;
+        for entity in cleanup {
+            cleanup_bound_entity(&mut state, entity);
         }
-
-        let ephemeral_entities: HashSet<_> = state
-            .world
-            .entities_with::<Ephemeral>()
-            .into_iter()
-            .collect();
-        let mut removed_owners = Vec::new();
-
-        for entity in &ephemeral_entities {
-            removed_owners.extend(state.world.remove_entity(*entity));
-        }
-
-        remove_memo_touched_by(&mut state.memo, &ephemeral_entities);
-
-        for owner in removed_owners {
-            state.world.remove_derived_owned(&owner);
-            state.memo.remove(&owner);
-        }
-
         state.settled_revision = state.world.revision_raw();
     }
 
@@ -499,6 +577,51 @@ fn remove_memo_touched_by(memo: &mut HashMap<SystemInvocation, MemoEntry>, keys:
     memo.retain(|owner, _| !owner.keys.iter().any(|key| keys.contains(key)));
 }
 
+fn cleanup_bound_entity(state: &mut State, entity: Entity) {
+    let mut frontier = HashSet::from([entity]);
+    let mut removed_entities = HashSet::new();
+
+    while !frontier.is_empty() {
+        remove_memo_touched_by(&mut state.memo, &frontier);
+
+        let removed = state.world.remove_derived_touched_by(&frontier);
+        let mut next_frontier = HashSet::new();
+
+        for entity in removed {
+            if removed_entities.insert(entity) {
+                next_frontier.insert(entity);
+            }
+        }
+
+        frontier = next_frontier;
+    }
+
+    let keys = HashSet::from([entity]);
+    let removed_owners = state.world.remove_entity(entity);
+    remove_memo_touched_by(&mut state.memo, &keys);
+
+    for owner in removed_owners {
+        state.world.remove_derived_owned(&owner);
+        state.memo.remove(&owner);
+    }
+}
+
+macro_rules! impl_take_bundle_tuple {
+    ($($T:ident),*) => {
+        impl<$($T: TakeBundle),*> TakeBundle for ($($T,)*)
+        {
+            type Output = ($($T::Output,)*);
+
+            #[allow(non_snake_case)]
+            fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
+                Ok(($($T::take(world, entity)?,)*))
+            }
+        }
+    };
+}
+
+all_tuples!(impl_take_bundle_tuple, 2, 8, T);
+
 /// A group of components inserted onto one newly-created entity.
 ///
 /// This trait is implemented for tuples of components. It is public because it
@@ -543,14 +666,17 @@ mod tests {
 
     use futures::executor::block_on;
 
-    use crate::{Bowl, Commands, Component, Entity, Ephemeral, Query, View};
+    use crate::{Bowl, Commands, Component, Entity, Query, View};
 
     struct A(u32);
     struct B(u32);
     struct C(u32);
     struct Count(usize);
     struct Request;
+    #[derive(Clone)]
     struct Answer(u32);
+    #[derive(Clone)]
+    struct Note;
 
     impl Component for A {}
     impl Component for B {}
@@ -558,6 +684,7 @@ mod tests {
     impl Component for Count {}
     impl Component for Request {}
     impl Component for Answer {}
+    impl Component for Note {}
 
     static REQUEST_RUNS: AtomicUsize = AtomicUsize::new(0);
     static CLEAN_RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -603,7 +730,7 @@ mod tests {
             bowl.add_system(make_b).await;
 
             let inserted = bowl.insert((A(41),)).await;
-            let result = inserted.query::<(Entity, &B)>().await;
+            let result = bowl.query::<(Entity, &B)>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -638,11 +765,11 @@ mod tests {
             let bowl = Bowl::new();
             bowl.add_system(count_bs).await;
 
-            let inserted = bowl.insert((A(1),)).await;
+            bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
             bowl.insert((B(20),)).await;
 
-            let result = inserted.query::<(Entity, &Count)>().await;
+            let result = bowl.query::<(Entity, &Count)>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -680,20 +807,69 @@ mod tests {
         });
     }
 
+    async fn answer_request_with_note(
+        Query((entity, _request)): Query<(Entity, &Request)>,
+        mut commands: Commands,
+    ) {
+        commands.entity(entity).insert(Answer(42));
+        commands.entity(entity).insert(Note);
+    }
+
     #[test]
-    fn inserted_query_cleans_up_ephemeral_request_outputs() {
+    fn bound_entity_take_consumes_output_and_cleans_scope() {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(answer_request).await;
 
-            let request = bowl.insert((Ephemeral, Request)).await;
-            let result = request.query::<(Entity, &Answer)>().await;
-            let rows = result.collect();
+            let request = bowl.insert((Request,)).await.bind();
+            let answer = request.take::<Answer>().await.unwrap();
 
-            assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0].0, request.entity());
-            assert_eq!(rows[0].1.0, 42);
+            assert_eq!(answer.0, 42);
             assert_eq!(bowl.query::<(Entity, &Answer)>().await.len(), 0);
+        });
+    }
+
+    #[test]
+    fn bound_entity_take_supports_required_and_optional_outputs() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(answer_request).await;
+
+            let request = bowl.insert((Request,)).await.bind();
+            let (answer, note) = request.take::<(Answer, Option<Note>)>().await.unwrap();
+
+            assert_eq!(answer.0, 42);
+            assert!(note.is_none());
+            assert_eq!(bowl.query::<(Entity, &Answer)>().await.len(), 0);
+        });
+    }
+
+    #[test]
+    fn bound_entity_take_removes_leftover_outputs() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(answer_request_with_note).await;
+
+            let request = bowl.insert((Request,)).await.bind();
+            let answer = request.take::<Answer>().await.unwrap();
+
+            assert_eq!(answer.0, 42);
+            assert_eq!(bowl.query::<(Entity, &Note)>().await.len(), 0);
+        });
+    }
+
+    #[test]
+    fn dropped_bound_entity_is_cleaned_up_on_next_operation() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(answer_request).await;
+
+            {
+                let _request = bowl.insert((Request,)).await.bind();
+            }
+
+            assert_eq!(bowl.query::<(Entity, &Answer)>().await.len(), 0);
+            assert_eq!(bowl.query::<(Entity, &Request)>().await.len(), 0);
         });
     }
 }
