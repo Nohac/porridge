@@ -412,27 +412,37 @@ mod tests {
 
     use futures::executor::block_on;
 
-    use crate::{Bowl, Commands, Component, Entity, Query, system::QueryCommands};
+    use crate::{Bowl, Commands, Component, Entity, Query, View};
 
     struct A(u32);
     struct B(u32);
     struct C(u32);
+    struct Count(usize);
 
     impl Component for A {}
     impl Component for B {}
     impl Component for C {}
+    impl Component for Count {}
 
     static REQUEST_RUNS: AtomicUsize = AtomicUsize::new(0);
     static CLEAN_RUNS: AtomicUsize = AtomicUsize::new(0);
 
-    fn make_b(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    fn make_c(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_c(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
         CLEAN_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(C(a.0 + 1));
+    }
+
+    async fn count_bs(
+        Query((entity, _a)): Query<(Entity, &A)>,
+        bs: View<'_, (Entity, &B)>,
+        mut commands: Commands,
+    ) {
+        commands.entity(entity).insert(Count(bs.len()));
     }
 
     #[test]
@@ -440,8 +450,7 @@ mod tests {
         block_on(async {
             REQUEST_RUNS.store(0, Ordering::SeqCst);
             let bowl = Bowl::new();
-            bowl.add_system::<_, (QueryCommands, (Entity, &A))>(make_b)
-                .await;
+            bowl.add_system(make_b).await;
 
             let inserted = bowl.insert((A(41),)).await;
             let result = inserted.query::<(Entity, &B)>().await;
@@ -459,8 +468,7 @@ mod tests {
         block_on(async {
             CLEAN_RUNS.store(0, Ordering::SeqCst);
             let bowl = Bowl::new();
-            bowl.add_system::<_, (QueryCommands, (Entity, &A))>(make_c)
-                .await;
+            bowl.add_system(make_c).await;
 
             bowl.insert((A(1),)).await;
             let result = bowl.query::<(Entity, &C)>().await;
@@ -471,6 +479,24 @@ mod tests {
 
             assert_eq!(bowl.query::<(Entity, &C)>().await.len(), 1);
             assert_eq!(CLEAN_RUNS.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn async_system_can_read_ambient_view() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(count_bs).await;
+
+            let inserted = bowl.insert((A(1),)).await;
+            bowl.insert((B(10),)).await;
+            bowl.insert((B(20),)).await;
+
+            let result = inserted.query::<(Entity, &Count)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 2);
         });
     }
 }

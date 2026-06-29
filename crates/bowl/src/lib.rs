@@ -41,6 +41,10 @@
 //! time; concurrent readers subscribe to the same in-flight generation instead
 //! of starting duplicate work.
 //!
+//! Systems registered with [`Bowl::add_system`] are async functions. The first
+//! implementation polls systems serially from one runner future; parallel
+//! polling can be added later without changing the basic system signature.
+//!
 //! This crate is intentionally small right now. The older `pipeline` crate is
 //! still the reference implementation for the broader prototype behavior.
 

@@ -1,13 +1,14 @@
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
-use futures::future::{BoxFuture, FutureExt};
+use futures::future::{FutureExt, LocalBoxFuture};
 
 use crate::{
-    Commands, Query, View,
+    Commands, Entity, Query, View,
     commands::CommandOp,
     query::{Dep, QueryParam},
     world::{Snapshot, SystemId, SystemInvocation},
 };
+use variadics_please::all_tuples;
 
 /// Memoized dependency record for one system invocation.
 ///
@@ -31,12 +32,17 @@ pub(crate) struct SystemOutput {
 ///
 /// `Runnable` receives an immutable snapshot plus the memo table. It returns all
 /// command buffers that need to be committed for this generation.
+///
+/// The returned future is local rather than `Send`. This lets ordinary async
+/// functions borrow snapshot data across `.await` without forcing the first
+/// implementation to solve cross-thread spawning. The bowl can still be shared;
+/// this only constrains where the evaluation future may be polled.
 pub(crate) trait Runnable: Send + Sync {
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
         memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> BoxFuture<'a, Vec<SystemOutput>>;
+    ) -> LocalBoxFuture<'a, Vec<SystemOutput>>;
 }
 
 /// Type-erased registered system.
@@ -47,6 +53,7 @@ pub struct BoxedSystem(pub(crate) Arc<dyn Runnable>);
 ///
 /// The `Marker` parameter is the usual Rust trick used to distinguish function
 /// shapes without overlapping trait impls. Users do not name it directly.
+///
 pub trait IntoSystem<Marker>: Send + Sync + 'static {
     fn into_system(self, id: SystemId) -> BoxedSystem;
 }
@@ -64,7 +71,7 @@ impl<F, Q> Runnable for QuerySystem<F, Q>
 where
     F: Send + Sync + 'static,
     Q: QueryParam + Send + Sync + 'static,
-    for<'a> F: Fn(Query<Q::Item<'a>>, Commands),
+    for<'a> F: AsyncFn(Query<Q::Item<'a>>, Commands),
 {
     /// Runs every memo-invalid row of `Q` against the current snapshot.
     ///
@@ -74,7 +81,7 @@ where
         &'a self,
         snapshot: &'a Snapshot,
         memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> BoxFuture<'a, Vec<SystemOutput>> {
+    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
         async move {
             let mut outputs = Vec::new();
 
@@ -90,7 +97,7 @@ where
                 }
 
                 let commands = Commands::new();
-                (self.function)(Query(Q::fetch(snapshot, &row)), commands.clone());
+                (self.function)(Query(Q::fetch(snapshot, &row)), commands.clone()).await;
 
                 outputs.push(SystemOutput {
                     owner: owner.clone(),
@@ -101,24 +108,29 @@ where
 
             outputs
         }
-        .boxed()
+        .boxed_local()
     }
 }
 
-impl<F, Q> IntoSystem<(QueryCommands, Q)> for F
-where
-    F: Send + Sync + 'static,
-    Q: QueryParam + Send + Sync + 'static,
-    for<'a> F: Fn(Query<Q::Item<'a>>, Commands),
-{
-    fn into_system(self, id: SystemId) -> BoxedSystem {
-        BoxedSystem(Arc::new(QuerySystem {
-            id,
-            function: self,
-            _marker: PhantomData::<Q>,
-        }))
-    }
+macro_rules! impl_query_system {
+    ($($T:ident),*) => {
+        impl<F, $($T: crate::Component),*> IntoSystem<(QueryCommands, (Entity, $(& $T,)*))> for F
+        where
+            F: Send + Sync + 'static,
+            for<'a> F: AsyncFn(Query<(Entity, $(&'a $T,)*)>, Commands),
+        {
+            fn into_system(self, id: SystemId) -> BoxedSystem {
+                BoxedSystem(Arc::new(QuerySystem {
+                    id,
+                    function: self,
+                    _marker: PhantomData::<(Entity, $(& $T,)*)>,
+                }))
+            }
+        }
+    };
 }
+
+all_tuples!(impl_query_system, 1, 8, T);
 
 struct QueryViewSystem<F, Q, V> {
     id: SystemId,
@@ -131,7 +143,7 @@ where
     F: Send + Sync + 'static,
     Q: QueryParam + Send + Sync + 'static,
     V: QueryParam + Send + Sync + 'static,
-    for<'a> F: Fn(Query<Q::Item<'a>>, View<'a, V>, Commands),
+    for<'a> F: AsyncFn(Query<Q::Item<'a>>, View<'a, V>, Commands),
 {
     /// Runs every memo-invalid row of `Q` and passes an ambient `View<V>`.
     ///
@@ -142,7 +154,7 @@ where
         &'a self,
         snapshot: &'a Snapshot,
         memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> BoxFuture<'a, Vec<SystemOutput>> {
+    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
         async move {
             let mut outputs = Vec::new();
 
@@ -162,7 +174,8 @@ where
                     Query(Q::fetch(snapshot, &row)),
                     View::<V>::new(snapshot),
                     commands.clone(),
-                );
+                )
+                .await;
 
                 outputs.push(SystemOutput {
                     owner: owner.clone(),
@@ -173,22 +186,27 @@ where
 
             outputs
         }
-        .boxed()
+        .boxed_local()
     }
 }
 
-impl<F, Q, V> IntoSystem<(QueryViewCommands, Q, V)> for F
-where
-    F: Send + Sync + 'static,
-    Q: QueryParam + Send + Sync + 'static,
-    V: QueryParam + Send + Sync + 'static,
-    for<'a> F: Fn(Query<Q::Item<'a>>, View<'a, V>, Commands),
-{
-    fn into_system(self, id: SystemId) -> BoxedSystem {
-        BoxedSystem(Arc::new(QueryViewSystem {
-            id,
-            function: self,
-            _marker: PhantomData::<(Q, V)>,
-        }))
-    }
+macro_rules! impl_query_view_system {
+    ($($T:ident),*) => {
+        impl<F, V, $($T: crate::Component),*> IntoSystem<(QueryViewCommands, (Entity, $(& $T,)*), V)> for F
+        where
+            F: Send + Sync + 'static,
+            V: QueryParam + Send + Sync + 'static,
+            for<'a> F: AsyncFn(Query<(Entity, $(&'a $T,)*)>, View<'a, V>, Commands),
+        {
+            fn into_system(self, id: SystemId) -> BoxedSystem {
+                BoxedSystem(Arc::new(QueryViewSystem {
+                    id,
+                    function: self,
+                    _marker: PhantomData::<((Entity, $(& $T,)*), V)>,
+                }))
+            }
+        }
+    };
 }
+
+all_tuples!(impl_query_view_system, 1, 8, T);
