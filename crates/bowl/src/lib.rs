@@ -45,8 +45,8 @@
 //! implementation polls systems serially from one runner future; parallel
 //! polling can be added later without changing the basic system signature.
 //!
-//! This crate is intentionally small right now. The older `pipeline` crate is
-//! still the reference implementation for the broader prototype behavior.
+//! This crate is intentionally small right now and is the primary runtime for
+//! the prototype.
 
 mod bowl;
 mod commands;
@@ -58,7 +58,8 @@ mod world;
 
 pub use bowl::{Bowl, Bundle, InsertedEntity};
 pub use commands::Commands;
-pub use component::{Component, hash_component};
+pub use component::{Component, Ephemeral, hash_component};
 pub use entity::Entity;
+pub use macros::Component;
 pub use query::{Query, QueryParam, QueryResult, View};
 pub use system::IntoSystem;

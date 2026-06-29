@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/bowl",
-    "crates/pipeline",
     "crates/macros",
     "crates/playground",
 ]

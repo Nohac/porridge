@@ -1,6 +1,6 @@
 use std::{
     any::{Any, TypeId},
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -24,7 +24,8 @@ pub struct SystemId(pub(crate) usize);
 /// Derived outputs written by an invocation are owned by this value. On rerun,
 /// the runner removes old outputs for the owner before applying new commands.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct SystemInvocation {
+#[doc(hidden)]
+pub struct SystemInvocation {
     pub(crate) system: SystemId,
     pub(crate) keys: Vec<Entity>,
 }
@@ -69,6 +70,12 @@ trait StoreDyn: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision);
+    fn remove_derived_touched_by(
+        &mut self,
+        keys: &HashSet<Entity>,
+        revision: &mut Revision,
+    ) -> Vec<Entity>;
+    fn remove_entity(&mut self, entity: Entity, revision: &mut Revision) -> Vec<SystemInvocation>;
 }
 
 /// Concrete storage for one component type.
@@ -114,6 +121,46 @@ impl<T: Component> StoreDyn for Store<T> {
         if T::tracked() && self.entries.len() != before {
             bump(revision);
         }
+    }
+
+    fn remove_derived_touched_by(
+        &mut self,
+        keys: &HashSet<Entity>,
+        revision: &mut Revision,
+    ) -> Vec<Entity> {
+        let mut removed = Vec::new();
+
+        self.entries.retain(|entity, entry| {
+            let remove = entry.origin == Origin::Derived
+                && entry
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| owner.keys.iter().any(|key| keys.contains(key)));
+
+            if remove {
+                removed.push(*entity);
+            }
+
+            !remove
+        });
+
+        if T::tracked() && !removed.is_empty() {
+            bump(revision);
+        }
+
+        removed
+    }
+
+    fn remove_entity(&mut self, entity: Entity, revision: &mut Revision) -> Vec<SystemInvocation> {
+        let Some(removed) = self.entries.remove(&entity) else {
+            return Vec::new();
+        };
+
+        if T::tracked() {
+            bump(revision);
+        }
+
+        removed.owner.into_iter().collect()
     }
 }
 
@@ -251,9 +298,46 @@ impl World {
         }
     }
 
+    /// Returns every entity that currently has component `T`.
+    pub(crate) fn entities_with<T: Component>(&self) -> Vec<Entity> {
+        self.store::<T>()
+            .map(|store| store.entries.keys().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Removes derived components whose owner key set intersects `keys`.
+    ///
+    /// The returned entities form the next cleanup frontier: a derived entity
+    /// touched by an ephemeral request may itself own more derived outputs.
+    pub(crate) fn remove_derived_touched_by(&mut self, keys: &HashSet<Entity>) -> Vec<Entity> {
+        self.stores
+            .values_mut()
+            .flat_map(|store| store.remove_derived_touched_by(keys, &mut self.revision))
+            .collect()
+    }
+
+    /// Removes every component attached to `entity`.
+    ///
+    /// If removed components were themselves derived, their owners are returned
+    /// so the caller can clear any remaining outputs for those invocations.
+    pub(crate) fn remove_entity(&mut self, entity: Entity) -> Vec<SystemInvocation> {
+        let mut owners = Vec::new();
+
+        for store in self.stores.values_mut() {
+            owners.extend(store.remove_entity(entity, &mut self.revision));
+        }
+
+        owners
+    }
+
     /// Upper bound used for simple entity scans.
     pub(crate) fn next_entity_raw(&self) -> u64 {
         self.next_entity
+    }
+
+    /// Current global revision.
+    pub(crate) fn revision_raw(&self) -> u64 {
+        self.revision.0
     }
 
     /// Returns the typed component store for `T`, if it exists.

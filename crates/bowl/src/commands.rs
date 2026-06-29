@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    Component, Entity,
+    Bundle, Component, Entity,
     world::{SystemInvocation, World},
 };
 
@@ -37,6 +37,14 @@ impl Commands {
             commands: self,
             entity,
         }
+    }
+
+    /// Buffers spawning a new derived entity with `bundle`.
+    pub fn insert<B: Bundle>(&mut self, bundle: B) {
+        self.inner
+            .lock()
+            .expect("command buffer lock poisoned")
+            .push(Box::new(SpawnCommand { bundle }));
     }
 
     /// Drains buffered command operations after the system invocation returns.
@@ -83,6 +91,17 @@ struct InsertCommand<T> {
 impl<T: Component> CommandOp for InsertCommand<T> {
     fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
         world.insert_derived(self.entity, self.value, owner.clone());
+    }
+}
+
+struct SpawnCommand<B> {
+    bundle: B,
+}
+
+impl<B: Bundle> CommandOp for SpawnCommand<B> {
+    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
+        let entity = world.spawn_empty();
+        self.bundle.insert_derived(world, entity, owner.clone());
     }
 }
 

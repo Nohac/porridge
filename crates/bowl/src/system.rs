@@ -60,6 +60,7 @@ pub trait IntoSystem<Marker>: Send + Sync + 'static {
 
 pub struct QueryCommands;
 pub struct QueryViewCommands;
+pub struct QueryTwoViewsCommands;
 
 struct QuerySystem<F, Q> {
     id: SystemId,
@@ -210,3 +211,80 @@ macro_rules! impl_query_view_system {
 }
 
 all_tuples!(impl_query_view_system, 1, 8, T);
+
+struct QueryTwoViewsSystem<F, Q, V0, V1> {
+    id: SystemId,
+    function: F,
+    _marker: PhantomData<(Q, V0, V1)>,
+}
+
+impl<F, Q, V0, V1> Runnable for QueryTwoViewsSystem<F, Q, V0, V1>
+where
+    F: Send + Sync + 'static,
+    Q: QueryParam + Send + Sync + 'static,
+    V0: QueryParam + Send + Sync + 'static,
+    V1: QueryParam + Send + Sync + 'static,
+    for<'a> F: AsyncFn(Query<Q::Item<'a>>, View<'a, V0>, View<'a, V1>, Commands),
+{
+    fn run<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        async move {
+            let mut outputs = Vec::new();
+
+            for row in Q::rows(snapshot) {
+                let owner = SystemInvocation {
+                    system: self.id,
+                    keys: Q::keys(&row),
+                };
+                let deps = Q::deps(snapshot, &row);
+
+                if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+                    continue;
+                }
+
+                let commands = Commands::new();
+                (self.function)(
+                    Query(Q::fetch(snapshot, &row)),
+                    View::<V0>::new(snapshot),
+                    View::<V1>::new(snapshot),
+                    commands.clone(),
+                )
+                .await;
+
+                outputs.push(SystemOutput {
+                    owner: owner.clone(),
+                    commands: commands.take(),
+                });
+                memo.insert(owner, MemoEntry { deps });
+            }
+
+            outputs
+        }
+        .boxed_local()
+    }
+}
+
+macro_rules! impl_query_two_views_system {
+    ($($T:ident),*) => {
+        impl<F, V0, V1, $($T: crate::Component),*> IntoSystem<(QueryTwoViewsCommands, (Entity, $(& $T,)*), V0, V1)> for F
+        where
+            F: Send + Sync + 'static,
+            V0: QueryParam + Send + Sync + 'static,
+            V1: QueryParam + Send + Sync + 'static,
+            for<'a> F: AsyncFn(Query<(Entity, $(&'a $T,)*)>, View<'a, V0>, View<'a, V1>, Commands),
+        {
+            fn into_system(self, id: SystemId) -> BoxedSystem {
+                BoxedSystem(Arc::new(QueryTwoViewsSystem {
+                    id,
+                    function: self,
+                    _marker: PhantomData::<((Entity, $(& $T,)*), V0, V1)>,
+                }))
+            }
+        }
+    };
+}
+
+all_tuples!(impl_query_two_views_system, 1, 8, T);

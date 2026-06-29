@@ -1,7 +1,7 @@
 use crate::lang::grammar::{
     AstAvailable, AstDef, Diagnostic, ImportDecl, Severity, SystemImportDb,
 };
-use pipeline::{Commands, Entity, Query, View};
+use bowl::{Commands, Entity, Query, View};
 
 fn emit_diagnostic(
     commands: &mut Commands,
@@ -14,9 +14,9 @@ fn emit_diagnostic(
     entity.insert(Diagnostic(message.into()));
 }
 
-pub(crate) fn check_imports(
+pub(crate) async fn check_imports(
     Query((import, import_decl)): Query<(Entity, &ImportDecl)>,
-    system_imports: View<&SystemImportDb>,
+    system_imports: View<'_, &SystemImportDb>,
     mut commands: Commands,
 ) {
     println!("check_imports");
@@ -32,10 +32,10 @@ pub(crate) fn check_imports(
     }
 }
 
-pub(crate) fn check_duplicate_defs(
+pub(crate) async fn check_duplicate_defs(
     Query((entity, def)): Query<(Entity, &AstDef)>,
-    ast_available: View<(Entity, &AstAvailable)>,
-    defs: View<(Entity, &AstDef)>,
+    ast_available: View<'_, (Entity, &AstAvailable)>,
+    defs: View<'_, (Entity, &AstDef)>,
     mut commands: Commands,
 ) {
     if ast_available.iter().next().is_none() {

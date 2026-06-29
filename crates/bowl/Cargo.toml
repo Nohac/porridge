@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 futures = "0.3.31"
+macros = { path = "../macros" }
 variadics_please = "2.0.0"

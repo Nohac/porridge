@@ -1,9 +1,9 @@
 mod lang;
 
-use pipeline::{Db, Entity, Ephemeral, SystemExt, Take};
+use bowl::{Bowl, Entity, Ephemeral};
 
 use crate::lang::{
-    analysis::{ast_available, check_duplicate_defs, check_imports, generate_ast, parse_file},
+    analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
     grammar::{
         AstAvailable, AstDef, Diagnostic, FilePath, FileText, HoverInfo, HoverRequest, Position,
         Project, SystemImportDb,
@@ -11,17 +11,18 @@ use crate::lang::{
     service::hover_info,
 };
 
-fn main() {
-    let mut db = Db::new();
-    let project = db.insert((Project,)).entity();
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    let db = Bowl::new();
 
-    db.add_system(parse_file);
-    db.add_system(generate_ast.on_complete(ast_available(project)));
-    db.add_system(check_imports);
-    db.add_system(check_duplicate_defs);
-    db.add_system(hover_info);
+    db.add_system(parse_file).await;
+    db.add_system(generate_ast).await;
+    db.add_system(check_imports).await;
+    db.add_system(check_duplicate_defs).await;
+    db.add_system(hover_info).await;
 
-    db.insert((SystemImportDb::default(),));
+    db.insert((Project,)).await;
+    db.insert((SystemImportDb::default(),)).await;
 
     db.insert((
         FilePath("main.porridge".to_string()),
@@ -29,20 +30,24 @@ fn main() {
             "import std.io\nimport std.net\nfn main() -> UserId { return 1; }\ntype UserId"
                 .to_string(),
         ),
-    ));
+    ))
+    .await;
 
     db.insert((
         FilePath("lib.porridge".to_string()),
         FileText("import std.fs\nstruct Widget {}\nfn main() { return 2; }".to_string()),
-    ));
+    ))
+    .await;
 
     println!("query diagnostics");
-    for (entity, diagnostic) in db.query::<(Entity, &Diagnostic)>().collect() {
+    let diagnostics = db.query::<(Entity, &Diagnostic)>().await;
+    for (entity, diagnostic) in diagnostics.collect() {
         println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
     println!("\ndefinitions");
-    for (entity, def) in db.query::<(Entity, &AstDef)>().collect() {
+    let definitions = db.query::<(Entity, &AstDef)>().await;
+    for (entity, def) in definitions.collect() {
         println!(
             "entity {}: {} `{}` at {:?}",
             entity.raw(),
@@ -55,20 +60,23 @@ fn main() {
     db.insert((
         FilePath("foo.porridge".to_string()),
         FileText("import derp.fs\nstruct Widget {}\nfn other() { return 2; }".to_string()),
-    ));
+    ))
+    .await;
 
     println!("query diagnostics again");
-    for (entity, diagnostic) in db.query::<(Entity, &Diagnostic)>().collect() {
+    let diagnostics = db.query::<(Entity, &Diagnostic)>().await;
+    for (entity, diagnostic) in diagnostics.collect() {
         println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
     println!("\nast available markers");
-    for (entity, _) in db.query::<(Entity, &AstAvailable)>().collect() {
+    let ast_available = db.query::<(Entity, &AstAvailable)>().await;
+    for (entity, _) in ast_available.collect() {
         println!("entity {}", entity.raw());
     }
 
     println!("\nhover request");
-    let hover = db
+    let request = db
         .insert((
             Ephemeral,
             HoverRequest,
@@ -77,15 +85,13 @@ fn main() {
                 offset: "import std.io\nimport std.net\nfn ".len(),
             },
         ))
-        .query::<Take<HoverInfo>>()
-        .one();
+        .await;
 
-    if let Some(info) = hover {
+    let hover = request.query::<(Entity, &HoverInfo)>().await;
+    if let Some((_, info)) = hover.collect().into_iter().next() {
         println!("{}", info.0);
     }
 
-    println!(
-        "hover facts after take: {}",
-        db.query::<(Entity, &HoverInfo)>().collect().len()
-    );
+    let hover_facts = db.query::<(Entity, &HoverInfo)>().await;
+    println!("hover facts after request: {}", hover_facts.collect().len());
 }

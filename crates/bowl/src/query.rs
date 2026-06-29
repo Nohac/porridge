@@ -18,9 +18,7 @@ use crate::{
 /// item -> values passed to the system
 /// ```
 ///
-/// Unlike the older `pipeline` prototype, this async implementation does not
-/// widen references to `'static`. Query items borrow from an immutable snapshot
-/// through normal Rust lifetimes.
+/// Query items borrow from an immutable snapshot through normal Rust lifetimes.
 pub struct Query<T>(pub T);
 
 /// Ambient read-only snapshot access.

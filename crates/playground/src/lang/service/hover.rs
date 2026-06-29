@@ -1,10 +1,10 @@
 use crate::lang::grammar::{AstDef, FilePath, FileText, HoverInfo, HoverRequest, Position};
-use pipeline::{Commands, Entity, Query, View};
+use bowl::{Commands, Entity, Query, View};
 
-pub(crate) fn hover_info(
+pub(crate) async fn hover_info(
     Query((request, _hover, path, position)): Query<(Entity, &HoverRequest, &FilePath, &Position)>,
-    files: View<(Entity, &FilePath, &FileText)>,
-    defs: View<(Entity, &AstDef)>,
+    files: View<'_, (Entity, &FilePath, &FileText)>,
+    defs: View<'_, (Entity, &AstDef)>,
     mut commands: Commands,
 ) {
     println!("hover_info");

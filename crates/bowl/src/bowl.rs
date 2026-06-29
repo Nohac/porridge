@@ -1,15 +1,20 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use futures::{channel::oneshot, lock::Mutex};
 use variadics_please::all_tuples;
 
 use crate::{
-    Component, Entity, IntoSystem, QueryResult,
+    Component, Entity, Ephemeral, IntoSystem, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
     query::QueryParam,
     system::{BoxedSystem, MemoEntry},
     world::{Snapshot, SystemId, SystemInvocation, World},
 };
+
+const DEFAULT_SETTLE_LIMIT: usize = 64;
 
 /// Async-first database and system runner.
 ///
@@ -57,6 +62,7 @@ struct State {
     pending_generation: Option<u64>,
     pending_inputs: Vec<Box<dyn BaseCommandOp>>,
     waiters: Vec<oneshot::Sender<()>>,
+    settled_revision: u64,
 }
 
 /// Result of inserting a new entity into the next evaluation generation.
@@ -97,7 +103,9 @@ impl InsertedEntity {
         Q: QueryParam,
     {
         self.bowl.ensure_evaluated(self.generation).await;
-        self.bowl.query_entity::<Q>(self.entity).await
+        let result = self.bowl.query_entity::<Q>(self.entity).await;
+        self.bowl.cleanup_ephemeral_entities().await;
+        result
     }
 }
 
@@ -133,6 +141,7 @@ impl Bowl {
                     pending_generation: None,
                     pending_inputs: Vec::new(),
                     waiters: Vec::new(),
+                    settled_revision: 0,
                 }),
                 runner: Mutex::new(()),
             }),
@@ -155,6 +164,10 @@ impl Bowl {
         let mut state = self.inner.state.lock().await;
         let id = SystemId(state.systems.len());
         state.systems.push(system.into_system(id));
+        if state.pending_generation.is_none() {
+            let next_generation = state.next_generation;
+            state.pending_generation = Some(next_generation);
+        }
     }
 
     /// Queues a new entity bundle for the next evaluation generation.
@@ -214,15 +227,7 @@ impl Bowl {
     where
         Q: QueryParam,
     {
-        let target = {
-            let state = self.inner.state.lock().await;
-            state
-                .pending_generation
-                .or(state.running_generation)
-                .unwrap_or(state.completed_generation)
-        };
-
-        self.ensure_evaluated(target).await;
+        self.settle().await;
         let snapshot = self.snapshot().await;
         QueryResult::new(snapshot)
     }
@@ -231,8 +236,121 @@ impl Bowl {
     where
         Q: QueryParam,
     {
+        self.settle().await;
         let snapshot = self.snapshot().await;
         QueryResult::new_for_entity(snapshot, entity)
+    }
+
+    /// Removes ephemeral request entities and outputs that were derived from
+    /// them.
+    ///
+    /// Cleanup is intentionally live-world only. Inserted request queries build
+    /// their [`QueryResult`] snapshot first, so callers can still read the
+    /// answer while the bowl is ready for later generations.
+    async fn cleanup_ephemeral_entities(&self) {
+        let mut state = self.inner.state.lock().await;
+        if state.world.entities_with::<Ephemeral>().is_empty() {
+            return;
+        }
+
+        let mut frontier: HashSet<_> = state
+            .world
+            .entities_with::<Ephemeral>()
+            .into_iter()
+            .collect();
+        let mut removed_entities = HashSet::new();
+
+        while !frontier.is_empty() {
+            remove_memo_touched_by(&mut state.memo, &frontier);
+
+            let removed = state.world.remove_derived_touched_by(&frontier);
+            let mut next_frontier = HashSet::new();
+
+            for entity in removed {
+                if removed_entities.insert(entity) {
+                    next_frontier.insert(entity);
+                }
+            }
+
+            frontier = next_frontier;
+        }
+
+        let ephemeral_entities: HashSet<_> = state
+            .world
+            .entities_with::<Ephemeral>()
+            .into_iter()
+            .collect();
+        let mut removed_owners = Vec::new();
+
+        for entity in &ephemeral_entities {
+            removed_owners.extend(state.world.remove_entity(*entity));
+        }
+
+        remove_memo_touched_by(&mut state.memo, &ephemeral_entities);
+
+        for owner in removed_owners {
+            state.world.remove_derived_owned(&owner);
+            state.memo.remove(&owner);
+        }
+
+        state.settled_revision = state.world.revision_raw();
+    }
+
+    /// Runs generations until the bowl has no pending work and the last
+    /// generation produced no tracked changes.
+    async fn settle(&self) {
+        let mut last_revision = None;
+
+        for _ in 0..DEFAULT_SETTLE_LIMIT {
+            let target = {
+                let state = self.inner.state.lock().await;
+                if state.pending_generation.is_none()
+                    && state.running_generation.is_none()
+                    && state.world.revision_raw() == state.settled_revision
+                {
+                    return;
+                }
+
+                state
+                    .pending_generation
+                    .or(state.running_generation)
+                    .unwrap_or(state.completed_generation)
+            };
+
+            self.ensure_evaluated(target).await;
+
+            let (revision, settled_revision, clean) = {
+                let state = self.inner.state.lock().await;
+                (
+                    state.world.revision_raw(),
+                    state.settled_revision,
+                    state.pending_generation.is_none() && state.running_generation.is_none(),
+                )
+            };
+
+            if clean && revision == settled_revision {
+                return;
+            }
+
+            if clean && last_revision == Some(revision) {
+                let mut state = self.inner.state.lock().await;
+                state.settled_revision = revision;
+                return;
+            }
+
+            last_revision = Some(revision);
+            self.enqueue_next_generation().await;
+        }
+
+        panic!("bowl did not settle within {DEFAULT_SETTLE_LIMIT} generations");
+    }
+
+    async fn enqueue_next_generation(&self) {
+        let mut state = self.inner.state.lock().await;
+        if state.pending_generation.is_none() {
+            let next_generation = state.next_generation;
+            state.pending_generation = Some(next_generation);
+        }
     }
 
     /// Drives the bowl until `target` has completed.
@@ -377,6 +495,10 @@ impl Bowl {
     }
 }
 
+fn remove_memo_touched_by(memo: &mut HashMap<SystemInvocation, MemoEntry>, keys: &HashSet<Entity>) {
+    memo.retain(|owner, _| !owner.keys.iter().any(|key| keys.contains(key)));
+}
+
 /// A group of components inserted onto one newly-created entity.
 ///
 /// This trait is implemented for tuples of components. It is public because it
@@ -389,6 +511,9 @@ impl Bowl {
 pub trait Bundle: Send + 'static {
     #[doc(hidden)]
     fn queue(self, entity: Entity, commands: &mut Vec<Box<dyn BaseCommandOp>>);
+
+    #[doc(hidden)]
+    fn insert_derived(self, world: &mut World, entity: Entity, owner: SystemInvocation);
 }
 
 macro_rules! impl_bundle {
@@ -399,6 +524,12 @@ macro_rules! impl_bundle {
             fn queue(self, entity: Entity, commands: &mut Vec<Box<dyn BaseCommandOp>>) {
                 let ($($T,)*) = self;
                 $(commands.push(Box::new(InsertBaseCommand { entity, value: $T }));)*
+            }
+
+            #[allow(non_snake_case)]
+            fn insert_derived(self, world: &mut World, entity: Entity, owner: SystemInvocation) {
+                let ($($T,)*) = self;
+                $(world.insert_derived(entity, $T, owner.clone());)*
             }
         }
     };
@@ -412,23 +543,31 @@ mod tests {
 
     use futures::executor::block_on;
 
-    use crate::{Bowl, Commands, Component, Entity, Query, View};
+    use crate::{Bowl, Commands, Component, Entity, Ephemeral, Query, View};
 
     struct A(u32);
     struct B(u32);
     struct C(u32);
     struct Count(usize);
+    struct Request;
+    struct Answer(u32);
 
     impl Component for A {}
     impl Component for B {}
     impl Component for C {}
     impl Component for Count {}
+    impl Component for Request {}
+    impl Component for Answer {}
 
     static REQUEST_RUNS: AtomicUsize = AtomicUsize::new(0);
     static CLEAN_RUNS: AtomicUsize = AtomicUsize::new(0);
 
     async fn make_b(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(B(a.0 + 1));
+    }
+
+    async fn make_b_uncounted(Query((entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
@@ -443,6 +582,17 @@ mod tests {
         mut commands: Commands,
     ) {
         commands.entity(entity).insert(Count(bs.len()));
+    }
+
+    async fn spawn_b(Query((_entity, a)): Query<(Entity, &A)>, mut commands: Commands) {
+        commands.insert((B(a.0 + 1),));
+    }
+
+    async fn answer_request(
+        Query((entity, _request)): Query<(Entity, &Request)>,
+        mut commands: Commands,
+    ) {
+        commands.entity(entity).insert(Answer(42));
     }
 
     #[test]
@@ -497,6 +647,53 @@ mod tests {
 
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 2);
+        });
+    }
+
+    #[test]
+    fn system_added_after_input_runs_on_existing_rows() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((A(41),)).await;
+            bowl.add_system(make_b_uncounted).await;
+
+            let result = bowl.query::<(Entity, &B)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 42);
+        });
+    }
+
+    #[test]
+    fn commands_can_insert_derived_entities() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(spawn_b).await;
+
+            bowl.insert((A(41),)).await;
+            let result = bowl.query::<(Entity, &B)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 42);
+        });
+    }
+
+    #[test]
+    fn inserted_query_cleans_up_ephemeral_request_outputs() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(answer_request).await;
+
+            let request = bowl.insert((Ephemeral, Request)).await;
+            let result = request.query::<(Entity, &Answer)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, request.entity());
+            assert_eq!(rows[0].1.0, 42);
+            assert_eq!(bowl.query::<(Entity, &Answer)>().await.len(), 0);
         });
     }
 }

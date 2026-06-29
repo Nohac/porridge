@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fmt};
 
-use pipeline::{Component, Entity};
+use bowl::{Component, Entity};
 
 pub(crate) mod lexer;
 pub(crate) mod parser;

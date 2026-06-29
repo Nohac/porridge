@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 codespan-reporting = "0.13"
+bowl = { path = "../bowl" }
 logos = "0.16"
-pipeline = { path = "../pipeline" }
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [build-dependencies]
 lelwel = "0.10"

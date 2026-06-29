@@ -1,12 +1,15 @@
 use crate::lang::grammar::{
     AstAvailable, AstDef, BelongsToFile, Diagnostic, FileText, FunctionDef, ImportDecl, ParsedFile,
-    Span, TypeDef,
+    Project, Span, TypeDef,
     lexer::Token,
     parser::{CstData, Node, NodeRef, Parser, Rule},
 };
-use pipeline::{Commands, CompleteCallback, Entity, Query, insert_on};
+use bowl::{Commands, Entity, Query, View};
 
-pub(crate) fn parse_file(mut commands: Commands, Query((file, text)): Query<(Entity, &FileText)>) {
+pub(crate) async fn parse_file(
+    Query((file, text)): Query<(Entity, &FileText)>,
+    mut commands: Commands,
+) {
     println!("parse_file({})", file.raw());
 
     let mut diags = Vec::new();
@@ -21,8 +24,9 @@ pub(crate) fn parse_file(mut commands: Commands, Query((file, text)): Query<(Ent
     }
 }
 
-pub(crate) fn generate_ast(
+pub(crate) async fn generate_ast(
     Query((file, parsed, text)): Query<(Entity, &ParsedFile, &FileText)>,
+    projects: View<'_, (Entity, &Project)>,
     mut commands: Commands,
 ) {
     println!("generate_ast({})", file.raw());
@@ -33,10 +37,10 @@ pub(crate) fn generate_ast(
             AstFact::Def(def) => commands.insert((BelongsToFile(file), def)),
         }
     }
-}
 
-pub(crate) fn ast_available(project: Entity) -> impl CompleteCallback {
-    insert_on(project, AstAvailable)
+    for (project, _) in projects.iter() {
+        commands.entity(project).insert(AstAvailable);
+    }
 }
 
 enum AstFact {

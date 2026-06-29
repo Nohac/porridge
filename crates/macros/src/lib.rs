@@ -9,22 +9,26 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 
     if use_hash {
         format!(
-            "impl ::pipeline::Component for {name} {{
+            "impl ::bowl::Component for {name} {{
                 fn fingerprint(&self) -> ::core::option::Option<u64> {{
-                    ::core::option::Option::Some(::pipeline::hash_component(self))
+                    ::core::option::Option::Some(::bowl::hash_component(self))
                 }}
             }}"
         )
         .parse()
         .expect("generated component impl should parse")
     } else {
-        format!("impl ::pipeline::Component for {name} {{}}")
+        format!("impl ::bowl::Component for {name} {{}}")
             .parse()
             .expect("generated component impl should parse")
     }
 }
 
 fn has_hash_attribute(input: TokenStream) -> bool {
+    component_attribute_contains(input, "hash")
+}
+
+fn component_attribute_contains(input: TokenStream, needle: &str) -> bool {
     let mut tokens = input.into_iter().peekable();
 
     while let Some(token) = tokens.next() {
@@ -44,7 +48,7 @@ fn has_hash_attribute(input: TokenStream) -> bool {
             continue;
         }
 
-        if attribute_contains_component_hash(attribute.stream()) {
+        if attribute_contains_component_ident(attribute.stream(), needle) {
             return true;
         }
     }
@@ -52,7 +56,7 @@ fn has_hash_attribute(input: TokenStream) -> bool {
     false
 }
 
-fn attribute_contains_component_hash(attribute: TokenStream) -> bool {
+fn attribute_contains_component_ident(attribute: TokenStream, needle: &str) -> bool {
     let mut tokens = attribute.into_iter();
     let Some(TokenTree::Ident(ident)) = tokens.next() else {
         return false;
@@ -66,7 +70,7 @@ fn attribute_contains_component_hash(attribute: TokenStream) -> bool {
         TokenTree::Group(group) if group.delimiter() == Delimiter::Parenthesis => group
             .stream()
             .into_iter()
-            .any(|inner| matches!(inner, TokenTree::Ident(ident) if ident.to_string() == "hash")),
+            .any(|inner| matches!(inner, TokenTree::Ident(ident) if ident.to_string() == needle)),
         _ => false,
     })
 }
