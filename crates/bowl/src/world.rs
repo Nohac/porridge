@@ -323,10 +323,15 @@ impl World {
         owners
     }
 
-    /// Removes one typed component and returns an owned clone of its value.
-    pub(crate) fn remove_component<T>(&mut self, entity: Entity) -> Option<T>
+    /// Removes one typed component and returns the stored shared value.
+    ///
+    /// Component payloads are stored behind `Arc` so immutable snapshots can
+    /// keep reading old generations. Removing from the live world therefore
+    /// transfers the live world's `Arc<T>` handle rather than cloning or moving
+    /// `T` itself.
+    pub(crate) fn remove_component<T>(&mut self, entity: Entity) -> Option<Arc<T>>
     where
-        T: Component + Clone,
+        T: Component,
     {
         let removed = self.store_mut_existing::<T>()?.entries.remove(&entity)?;
 
@@ -334,7 +339,7 @@ impl World {
             bump(&mut self.revision);
         }
 
-        Some(removed.value.as_ref().clone())
+        Some(removed.value)
     }
 
     /// Upper bound used for simple entity scans.

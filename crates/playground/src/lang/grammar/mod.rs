@@ -5,7 +5,7 @@ use bowl::{Component, Entity};
 pub(crate) mod lexer;
 pub(crate) mod parser;
 
-#[derive(Component, Hash, Clone, PartialEq, Eq)]
+#[derive(Component, Hash, PartialEq, Eq)]
 #[component(hash)]
 pub(crate) struct FilePath(pub(crate) String);
 
@@ -13,7 +13,7 @@ pub(crate) struct FilePath(pub(crate) String);
 #[component(hash)]
 pub(crate) struct FileText(pub(crate) String);
 
-#[derive(Component, Clone)]
+#[derive(Component)]
 pub(crate) struct SystemImportDb(pub(crate) HashSet<String>);
 
 impl Default for SystemImportDb {
@@ -24,13 +24,13 @@ impl Default for SystemImportDb {
     }
 }
 
-#[derive(Component, Clone, Copy)]
+#[derive(Component)]
 pub(crate) struct Project;
 
 #[derive(Component, Clone, Copy)]
 pub(crate) struct AstAvailable;
 
-#[derive(Component, Hash, Clone, Copy)]
+#[derive(Component, Hash)]
 #[component(hash)]
 pub(crate) struct BelongsToFile(pub(crate) Entity);
 
@@ -39,14 +39,14 @@ pub(crate) struct ParsedFile {
     pub(crate) cst: parser::CstData,
 }
 
-#[derive(Component, Hash, Clone)]
+#[derive(Component, Hash)]
 #[component(hash)]
 pub(crate) struct ImportDecl {
     pub(crate) path: String,
     pub(crate) span: Span,
 }
 
-#[derive(Debug, Component, Hash, Clone)]
+#[derive(Debug, Component, Hash)]
 #[component(hash)]
 pub(crate) enum AstDef {
     Function(FunctionDef),
@@ -91,13 +91,13 @@ impl fmt::Display for DefKind {
     }
 }
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Hash)]
 pub(crate) struct FunctionDef {
     pub(crate) name: String,
     pub(crate) span: Span,
 }
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Hash)]
 pub(crate) struct TypeDef {
     pub(crate) name: String,
     pub(crate) span: Span,
@@ -113,23 +113,23 @@ pub(crate) struct Span {
 #[component(hash)]
 pub(crate) struct Diagnostic(pub(crate) String);
 
-#[derive(Component, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Component, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[component(hash)]
 pub(crate) enum Severity {
     Warning,
     Error,
 }
 
-#[derive(Component, Hash, Clone, Copy)]
+#[derive(Component, Hash)]
 #[component(hash)]
 pub(crate) struct HoverRequest;
 
-#[derive(Debug, Component, Hash, Clone, Copy)]
+#[derive(Debug, Component, Hash)]
 #[component(hash)]
 pub(crate) struct Position {
     pub(crate) offset: usize,
 }
 
-#[derive(Component, Hash, Clone)]
+#[derive(Component, Hash)]
 #[component(hash)]
 pub(crate) struct HoverInfo(pub(crate) String);

@@ -105,10 +105,10 @@ async fn main() {
         ))
         .await
         .bind()
-        .take::<AstDef>()
+        .take::<HoverInfo>()
         .await
     {
-        println!("{:?}", info);
+        println!("{}", info.0);
     }
 
     let hover_facts = db.query::<(Entity, &HoverInfo)>().await;

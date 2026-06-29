@@ -192,6 +192,10 @@ impl fmt::Display for TakeError {
 impl std::error::Error for TakeError {}
 
 /// Components that can be taken from a bound entity.
+///
+/// Taking returns `Arc<T>` handles because snapshots may still share component
+/// payloads from previous generations. This preserves true destructive removal
+/// from the live bowl without requiring `T: Clone`.
 pub trait TakeBundle {
     /// Value returned by a successful take.
     type Output;
@@ -202,9 +206,9 @@ pub trait TakeBundle {
 
 impl<T> TakeBundle for T
 where
-    T: Component + Clone,
+    T: Component,
 {
-    type Output = T;
+    type Output = Arc<T>;
 
     fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
         world.remove_component::<T>(entity).ok_or(TakeError {
@@ -216,9 +220,9 @@ where
 
 impl<T> TakeBundle for Option<T>
 where
-    T: Component + Clone,
+    T: Component,
 {
-    type Output = Option<T>;
+    type Output = Option<Arc<T>>;
 
     fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
         Ok(world.remove_component::<T>(entity))
@@ -664,9 +668,8 @@ mod tests {
     struct Count(usize);
     struct Sum(u32);
     struct Request;
-    #[derive(Clone)]
     struct Answer(u32);
-    #[derive(Clone)]
+    struct NonCloneAnswer(u32);
     struct Note;
 
     impl Component for A {}
@@ -676,6 +679,7 @@ mod tests {
     impl Component for Sum {}
     impl Component for Request {}
     impl Component for Answer {}
+    impl Component for NonCloneAnswer {}
     impl Component for Note {}
 
     static REQUEST_RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -742,6 +746,14 @@ mod tests {
     async fn answer_request(query: Query<(Entity, &Request)>, mut commands: Commands) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
+    }
+
+    async fn answer_request_with_non_clone(
+        query: Query<(Entity, &Request)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _request) = query.item();
+        commands.entity(entity).insert(NonCloneAnswer(42));
     }
 
     #[test]
@@ -899,6 +911,20 @@ mod tests {
 
             assert_eq!(answer.0, 42);
             assert_eq!(bowl.query::<(Entity, &Answer)>().await.len(), 0);
+        });
+    }
+
+    #[test]
+    fn bound_entity_take_does_not_require_clone() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(answer_request_with_non_clone).await;
+
+            let request = bowl.insert((Request,)).await.bind();
+            let answer = request.take::<NonCloneAnswer>().await.unwrap();
+
+            assert_eq!(answer.0, 42);
+            assert_eq!(bowl.query::<(Entity, &NonCloneAnswer)>().await.len(), 0);
         });
     }
 
