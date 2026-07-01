@@ -16,7 +16,7 @@ async fn main() {
     let db = Bowl::new();
 
     db.add_system(parse_file).await;
-    db.add_system(generate_ast.on_complete(|mut commands: Commands| {
+    db.add_system(generate_ast.on_settled(|mut commands: Commands| {
         commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
     }))
     .await;

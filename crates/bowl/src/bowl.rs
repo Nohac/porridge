@@ -67,6 +67,7 @@ struct State {
     pending_inputs: Vec<Box<dyn BaseCommandOp>>,
     waiters: Vec<oneshot::Sender<()>>,
     settled_revision: u64,
+    normal_clean: bool,
     startup_ran: bool,
 }
 
@@ -255,6 +256,7 @@ impl Bowl {
                     pending_inputs: Vec::new(),
                     waiters: Vec::new(),
                     settled_revision: 0,
+                    normal_clean: true,
                     startup_ran: false,
                 }),
                 runner: Mutex::new(()),
@@ -393,16 +395,26 @@ impl Bowl {
 
             self.ensure_evaluated(target).await;
 
-            let (revision, settled_revision, clean) = {
+            let (revision, settled_revision, clean, normal_clean) = {
                 let state = self.inner.state.lock().await;
                 (
                     state.world.revision_raw(),
                     state.settled_revision,
                     state.pending_generation.is_none() && state.running_generation.is_none(),
+                    state.normal_clean,
                 )
             };
 
             if clean && revision == settled_revision {
+                return;
+            }
+
+            if clean && normal_clean {
+                if self.run_settled_hooks().await {
+                    self.enqueue_next_generation().await;
+                    continue;
+                }
+
                 self.run_cleanup_phase().await;
                 return;
             }
@@ -411,6 +423,36 @@ impl Bowl {
         }
 
         panic!("bowl did not settle within {DEFAULT_SETTLE_LIMIT} generations");
+    }
+
+    async fn run_settled_hooks(&self) -> bool {
+        let (systems, mut memo) = {
+            let mut state = self.inner.state.lock().await;
+            (state.systems.clone(), std::mem::take(&mut state.memo))
+        };
+
+        let snapshot = self.snapshot().await;
+        let runs = join_all(
+            systems
+                .iter()
+                .filter(|system| system.phase != Phase::Cleanup)
+                .map(|system| system.run_settled(&snapshot, &memo)),
+        )
+        .await;
+
+        let progress = if runs.is_empty() {
+            CommitProgress::default()
+        } else {
+            commit_system_runs(&mut memo, &self.inner.state, runs, true).await
+        };
+
+        let mut state = self.inner.state.lock().await;
+        state.memo = memo;
+        if !progress.needs_followup {
+            state.settled_revision = state.world.revision_raw();
+        }
+
+        progress.needs_followup
     }
 
     async fn run_cleanup_phase(&self) {
@@ -555,15 +597,14 @@ impl Bowl {
                 runs,
                 commit_completion_outputs,
             )
-            .await;
+            .await
+            .needs_followup;
         }
 
         let waiters = {
             let mut state = self.inner.state.lock().await;
             state.memo = memo;
-            if !normal_phase_changed {
-                state.settled_revision = state.world.revision_raw();
-            }
+            state.normal_clean = !normal_phase_changed;
             state.completed_generation = generation;
             state.running_generation = None;
             std::mem::take(&mut state.waiters)
@@ -598,6 +639,7 @@ impl Bowl {
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
+        state.normal_clean = false;
         let startup = !state.startup_ran;
         state.startup_ran = true;
 
@@ -608,12 +650,17 @@ impl Bowl {
     }
 }
 
+#[derive(Default)]
+struct CommitProgress {
+    needs_followup: bool,
+}
+
 async fn commit_system_runs(
     memo: &mut HashMap<SystemInvocation, MemoEntry>,
     state: &Mutex<State>,
     runs: Vec<SystemRun>,
     commit_completion_outputs: bool,
-) -> bool {
+) -> CommitProgress {
     let mut outputs = Vec::new();
 
     for run in runs {
@@ -629,13 +676,17 @@ async fn commit_system_runs(
 
     let mut state = state.lock().await;
     let before_revision = state.world.revision_raw();
+    let mut applied_command = false;
     for output in outputs {
         state.world.remove_derived_owned(&output.owner);
         for command in output.commands {
+            applied_command = true;
             command.apply(&mut state.world, &output.owner);
         }
     }
-    state.world.revision_raw() != before_revision
+    CommitProgress {
+        needs_followup: applied_command || state.world.revision_raw() != before_revision,
+    }
 }
 
 fn remove_memo_touched_by(memo: &mut HashMap<SystemInvocation, MemoEntry>, keys: &HashSet<Entity>) {
@@ -942,7 +993,9 @@ mod tests {
         mut commands: Commands,
     ) {
         let (entity, _request) = query.item();
-        commands.entity(entity).insert(Answer(processed.len() as u32));
+        commands
+            .entity(entity)
+            .insert(Answer(processed.len() as u32));
     }
 
     async fn cleanup_untracked_marker(
@@ -1342,6 +1395,30 @@ mod tests {
             let answer = bowl.insert((A(1), Request)).await.bind();
 
             assert_eq!(answer.take::<Answer>().await.unwrap().0, 2);
+        });
+    }
+
+    #[test]
+    fn on_settled_runs_before_cleanup_and_can_continue_evaluation() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_b_uncounted).await;
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
+                commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
+            }))
+            .await;
+            bowl.add_system(answer_after_untracked_marker.run_during(Phase::Complete))
+                .await;
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((B(0),)).await;
+            bowl.query::<(Entity, &D)>().await;
+
+            let answer = bowl.insert((A(1), Request)).await.bind();
+
+            assert_eq!(answer.take::<Answer>().await.unwrap().0, 2);
+            assert_eq!(bowl.query::<(Entity, &UntrackedMarker)>().await.len(), 0);
         });
     }
 

@@ -76,9 +76,10 @@ This avoids publishing a readiness token too early when another system later
 inserts facts that would make the system match. A system with no matches has
 not completed work for any actual row; it has simply had nothing to consider.
 
-For `generate_ast`, a memo-clean pass still means all AST outputs are already
-valid. Therefore an `on_complete` hook should be able to insert
-`AstAvailable` even when `generate_ast` did not write any new `AstDef`.
+For local follow-up work, `on_complete` can be useful. It fires during the
+system's phase and its output is deferred if other normal systems in that phase
+also produced work. That avoids publishing a completion marker from a stale
+snapshot while upstream work is still being committed.
 
 The default useful meaning for per-system `on_complete` is:
 
@@ -98,6 +99,39 @@ system.on_always_complete(callback)
 
 Exact API names are open, but the semantics should be explicit.
 
+## Settled Hooks
+
+Readiness gates such as `AstAvailable` should usually use `on_settled`, not
+`on_complete`:
+
+```rust
+generate_ast.on_settled(|mut commands| {
+    commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
+})
+```
+
+`on_settled` is still colocated with one system, but it runs at the evaluation
+boundary:
+
+```text
+normal phases run until no tracked work changes
+on_settled hooks run for systems that are memo-clean
+if any hook publishes commands:
+  run normal phases again
+else:
+  run cleanup
+  return to caller
+```
+
+This means a system can publish a readiness token only after the whole bowl has
+stopped producing work that could make that system dirty again.
+
+`on_settled` hooks must be idempotent. A hook that writes tracked changes every
+time it runs will keep evaluation alive until the settle limit is reached.
+Singleton markers are the intended pattern because reinserting the same
+singleton can be made stable, and cleanup removes the ephemeral marker only
+after downstream systems have observed it.
+
 ## Lifecycle Hooks
 
 `Ephemeral` cleanup should not be bespoke insert/query logic. The bowl should
@@ -112,8 +146,8 @@ on_evaluation_start
 on_system_complete(system)
   runs after one registered system has finished its invocations for a generation
 
-on_evaluation_complete
-  runs after normal systems have settled, before the caller observes results
+on_system_settled(system)
+  runs after normal systems have settled and this system is memo-clean
 
 on_rest / on_idle
   runs when the bowl has no pending work and is about to return to callers

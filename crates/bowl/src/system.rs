@@ -335,6 +335,14 @@ pub(crate) trait Runnable: Send + Sync {
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun>;
+
+    fn run_settled<'a>(
+        &'a self,
+        _snapshot: &'a Snapshot,
+        _memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
+        async { SystemRun::empty() }.boxed_local()
+    }
 }
 
 /// Type-erased registered system.
@@ -369,6 +377,7 @@ pub trait IntoSystem<Marker>: Send + Sync + 'static {
 
 pub struct FunctionSystemMarker;
 pub struct OnCompleteMarker;
+pub struct OnSettledMarker;
 
 /// Callback run once after a system has finished iterating its driving query.
 pub trait CompleteCallback: Send + Sync + 'static {
@@ -398,6 +407,22 @@ pub trait SystemExt: Sized {
         }
     }
 
+    /// Runs `callback` after normal evaluation has stopped producing tracked
+    /// changes, but before cleanup and before the caller observes results.
+    ///
+    /// Settled hooks may run more than once while the bowl tries to settle.
+    /// Keep them idempotent: a hook that writes tracked changes every time will
+    /// keep the bowl alive until the settle limit is reached.
+    fn on_settled<C>(self, callback: C) -> OnSettled<Self, C>
+    where
+        C: CompleteCallback,
+    {
+        OnSettled {
+            system: self,
+            callback,
+        }
+    }
+
     /// Runs this system during `phase` instead of the default
     /// [`Phase::Evaluate`] phase.
     fn run_during(self, phase: Phase) -> RunDuring<Self> {
@@ -416,6 +441,12 @@ pub struct OnComplete<S, C> {
     callback: C,
 }
 
+/// System wrapper produced by [`SystemExt::on_settled`].
+pub struct OnSettled<S, C> {
+    system: S,
+    callback: C,
+}
+
 /// System wrapper produced by [`SystemExt::run_during`].
 pub struct RunDuring<S> {
     system: S,
@@ -423,6 +454,12 @@ pub struct RunDuring<S> {
 }
 
 struct OnCompleteSystem<C> {
+    id: SystemId,
+    system: BoxedSystem,
+    callback: C,
+}
+
+struct OnSettledSystem<C> {
     id: SystemId,
     system: BoxedSystem,
     callback: C,
@@ -462,6 +499,53 @@ where
     }
 }
 
+impl<C> Runnable for OnSettledSystem<C>
+where
+    C: CompleteCallback,
+{
+    fn run<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
+        self.system.run(snapshot, memo)
+    }
+
+    fn run_settled<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
+        async move {
+            let run = self.system.run(snapshot, memo).await;
+            let owner = SystemInvocation {
+                system: self.id,
+                keys: Vec::new(),
+            };
+            let should_emit_settled =
+                run.completed && run.outputs.is_empty() && !snapshot.has_derived_owned(&owner);
+
+            if !should_emit_settled {
+                return SystemRun::empty();
+            }
+
+            let commands = Commands::new();
+            self.callback.run(commands.clone());
+
+            SystemRun {
+                completed: true,
+                outputs: vec![SystemOutput {
+                    owner,
+                    commands: commands.take(),
+                    completion_only: false,
+                }],
+                memo_updates: Vec::new(),
+            }
+        }
+        .boxed_local()
+    }
+}
+
 impl<S, C, M> IntoSystem<(OnCompleteMarker, M)> for OnComplete<S, C>
 where
     S: IntoSystem<M>,
@@ -472,6 +556,25 @@ where
         let phase = system.phase;
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
+                id,
+                system,
+                callback: self.callback,
+            }),
+            phase,
+        }
+    }
+}
+
+impl<S, C, M> IntoSystem<(OnSettledMarker, M)> for OnSettled<S, C>
+where
+    S: IntoSystem<M>,
+    C: CompleteCallback,
+{
+    fn into_system(self, id: SystemId) -> BoxedSystem {
+        let system = self.system.into_system(id);
+        let phase = system.phase;
+        BoxedSystem {
+            runnable: Arc::new(OnSettledSystem {
                 id,
                 system,
                 callback: self.callback,
@@ -499,6 +602,14 @@ impl BoxedSystem {
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
         self.runnable.run(snapshot, memo)
+    }
+
+    pub(crate) fn run_settled<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
+        self.runnable.run_settled(snapshot, memo)
     }
 }
 
