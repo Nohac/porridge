@@ -1,6 +1,6 @@
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use std::{collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
 
-use futures::future::{FutureExt, LocalBoxFuture};
+use futures::future::{FutureExt, LocalBoxFuture, join_all};
 
 use crate::{
     Commands, Entity, Query, View, With,
@@ -28,10 +28,129 @@ pub(crate) struct SystemOutput {
     pub(crate) commands: Vec<Box<dyn CommandOp>>,
 }
 
+/// Outputs and memo writes produced by one system for one generation.
+///
+/// Systems read the previous memo table immutably while they run. Each system
+/// returns the memo entries it wants to publish, and the bowl merges them after
+/// all concurrent system futures complete.
+pub(crate) struct SystemRun {
+    pub(crate) outputs: Vec<SystemOutput>,
+    pub(crate) memo_updates: Vec<(SystemInvocation, MemoEntry)>,
+}
+
+impl SystemRun {
+    fn empty() -> Self {
+        Self {
+            outputs: Vec::new(),
+            memo_updates: Vec::new(),
+        }
+    }
+}
+
+struct PlannedInvocation<State> {
+    state: State,
+    owner: SystemInvocation,
+    deps: Vec<Dep>,
+}
+
+fn plan_query_invocations<Q, Filter>(
+    system: SystemId,
+    snapshot: &Snapshot,
+    memo: &HashMap<SystemInvocation, MemoEntry>,
+) -> Vec<PlannedInvocation<Q::State>>
+where
+    Q: QueryParam,
+    Filter: QueryFilter<Q>,
+{
+    filtered_rows::<Q, Filter>(snapshot)
+        .into_iter()
+        .filter_map(|state| {
+            let owner = SystemInvocation {
+                system,
+                keys: Q::keys(&state),
+            };
+            let deps = filtered_deps::<Q, Filter>(snapshot, &state);
+
+            memo.get(&owner)
+                .is_none_or(|entry| entry.deps != deps)
+                .then_some(PlannedInvocation { state, owner, deps })
+        })
+        .collect()
+}
+
+fn plan_two_query_invocations<Q0, Filter0, Q1, Filter1>(
+    system: SystemId,
+    snapshot: &Snapshot,
+    memo: &HashMap<SystemInvocation, MemoEntry>,
+) -> Vec<PlannedInvocation<(Q0::State, Q1::State)>>
+where
+    Q0: QueryParam,
+    Q1: QueryParam,
+    Filter0: QueryFilter<Q0>,
+    Filter1: QueryFilter<Q1>,
+{
+    let rows_0 = filtered_rows::<Q0, Filter0>(snapshot);
+    let rows_1 = filtered_rows::<Q1, Filter1>(snapshot);
+    let mut invocations = Vec::new();
+
+    for row_0 in &rows_0 {
+        for row_1 in &rows_1 {
+            let mut keys = Q0::keys(row_0);
+            keys.extend(Q1::keys(row_1));
+            let owner = SystemInvocation { system, keys };
+
+            let mut deps = filtered_deps::<Q0, Filter0>(snapshot, row_0);
+            deps.extend(filtered_deps::<Q1, Filter1>(snapshot, row_1));
+
+            if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+                continue;
+            }
+
+            invocations.push(PlannedInvocation {
+                state: (row_0.clone(), row_1.clone()),
+                owner,
+                deps,
+            });
+        }
+    }
+
+    invocations
+}
+
+fn finish_invocation(
+    owner: SystemInvocation,
+    deps: Vec<Dep>,
+    commands: Commands,
+) -> (SystemOutput, (SystemInvocation, MemoEntry)) {
+    let output = SystemOutput {
+        owner: owner.clone(),
+        commands: commands.take(),
+    };
+    let memo_update = (owner, MemoEntry { deps });
+
+    (output, memo_update)
+}
+
+async fn collect_invocations<Fut>(futures: Vec<Fut>) -> SystemRun
+where
+    Fut: Future<Output = (SystemOutput, (SystemInvocation, MemoEntry))>,
+{
+    let rows = join_all(futures).await;
+    let mut run = SystemRun::empty();
+
+    for (output, memo_update) in rows {
+        run.outputs.push(output);
+        run.memo_updates.push(memo_update);
+    }
+
+    run
+}
+
 /// Type-erased executable system.
 ///
-/// `Runnable` receives an immutable snapshot plus the memo table. It returns all
-/// command buffers that need to be committed for this generation.
+/// `Runnable` receives an immutable snapshot plus an immutable view of the memo
+/// table. It returns command buffers and memo updates that need to be committed
+/// for this generation.
 ///
 /// The returned future is local rather than `Send`. This lets ordinary async
 /// functions borrow snapshot data across `.await` without forcing the first
@@ -41,8 +160,8 @@ pub(crate) trait Runnable: Send + Sync {
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>>;
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun>;
 }
 
 /// Type-erased registered system.
@@ -116,15 +235,15 @@ where
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut outputs = self.system.0.run(snapshot, memo).await;
+            let mut run = self.system.0.run(snapshot, memo).await;
 
-            if !outputs.is_empty() {
+            if !run.outputs.is_empty() {
                 let commands = Commands::new();
                 self.callback.run(commands.clone());
-                outputs.push(SystemOutput {
+                run.outputs.push(SystemOutput {
                     owner: SystemInvocation {
                         system: self.id,
                         keys: Vec::new(),
@@ -133,7 +252,7 @@ where
                 });
             }
 
-            outputs
+            run
         }
         .boxed_local()
     }
@@ -184,33 +303,24 @@ where
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut outputs = Vec::new();
+            let row_futures = plan_query_invocations::<Q, Filter>(self.id, snapshot, memo)
+                .into_iter()
+                .map(|invocation| async move {
+                    let commands = Commands::new();
+                    (self.function)(
+                        Query::new(Q::fetch(snapshot, &invocation.state)),
+                        commands.clone(),
+                    )
+                    .await;
 
-            for row in filtered_rows::<Q, Filter>(snapshot) {
-                let owner = SystemInvocation {
-                    system: self.id,
-                    keys: Q::keys(&row),
-                };
-                let deps = filtered_deps::<Q, Filter>(snapshot, &row);
+                    finish_invocation(invocation.owner, invocation.deps, commands)
+                })
+                .collect::<Vec<_>>();
 
-                if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                    continue;
-                }
-
-                let commands = Commands::new();
-                (self.function)(Query::new(Q::fetch(snapshot, &row)), commands.clone()).await;
-
-                outputs.push(SystemOutput {
-                    owner: owner.clone(),
-                    commands: commands.take(),
-                });
-                memo.insert(owner, MemoEntry { deps });
-            }
-
-            outputs
+            collect_invocations(row_futures).await
         }
         .boxed_local()
     }
@@ -294,46 +404,27 @@ where
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut outputs = Vec::new();
-            let rows_0 = filtered_rows::<Q0, Filter0>(snapshot);
-            let rows_1 = filtered_rows::<Q1, Filter1>(snapshot);
+            let row_futures =
+                plan_two_query_invocations::<Q0, Filter0, Q1, Filter1>(self.id, snapshot, memo)
+                    .into_iter()
+                    .map(|invocation| async move {
+                        let (row_0, row_1) = invocation.state;
+                        let commands = Commands::new();
+                        (self.function)(
+                            Query::new(Q0::fetch(snapshot, &row_0)),
+                            Query::new(Q1::fetch(snapshot, &row_1)),
+                            commands.clone(),
+                        )
+                        .await;
 
-            for row_0 in &rows_0 {
-                for row_1 in &rows_1 {
-                    let mut keys = Q0::keys(row_0);
-                    keys.extend(Q1::keys(row_1));
-                    let owner = SystemInvocation {
-                        system: self.id,
-                        keys,
-                    };
+                        finish_invocation(invocation.owner, invocation.deps, commands)
+                    })
+                    .collect::<Vec<_>>();
 
-                    let mut deps = filtered_deps::<Q0, Filter0>(snapshot, row_0);
-                    deps.extend(filtered_deps::<Q1, Filter1>(snapshot, row_1));
-
-                    if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                        continue;
-                    }
-
-                    let commands = Commands::new();
-                    (self.function)(
-                        Query::new(Q0::fetch(snapshot, row_0)),
-                        Query::new(Q1::fetch(snapshot, row_1)),
-                        commands.clone(),
-                    )
-                    .await;
-
-                    outputs.push(SystemOutput {
-                        owner: owner.clone(),
-                        commands: commands.take(),
-                    });
-                    memo.insert(owner, MemoEntry { deps });
-                }
-            }
-
-            outputs
+            collect_invocations(row_futures).await
         }
         .boxed_local()
     }
@@ -360,47 +451,28 @@ where
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut outputs = Vec::new();
-            let rows_0 = filtered_rows::<Q0, Filter0>(snapshot);
-            let rows_1 = filtered_rows::<Q1, Filter1>(snapshot);
+            let row_futures =
+                plan_two_query_invocations::<Q0, Filter0, Q1, Filter1>(self.id, snapshot, memo)
+                    .into_iter()
+                    .map(|invocation| async move {
+                        let (row_0, row_1) = invocation.state;
+                        let commands = Commands::new();
+                        (self.function)(
+                            Query::new(Q0::fetch(snapshot, &row_0)),
+                            Query::new(Q1::fetch(snapshot, &row_1)),
+                            View::<V>::new(snapshot),
+                            commands.clone(),
+                        )
+                        .await;
 
-            for row_0 in &rows_0 {
-                for row_1 in &rows_1 {
-                    let mut keys = Q0::keys(row_0);
-                    keys.extend(Q1::keys(row_1));
-                    let owner = SystemInvocation {
-                        system: self.id,
-                        keys,
-                    };
+                        finish_invocation(invocation.owner, invocation.deps, commands)
+                    })
+                    .collect::<Vec<_>>();
 
-                    let mut deps = filtered_deps::<Q0, Filter0>(snapshot, row_0);
-                    deps.extend(filtered_deps::<Q1, Filter1>(snapshot, row_1));
-
-                    if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                        continue;
-                    }
-
-                    let commands = Commands::new();
-                    (self.function)(
-                        Query::new(Q0::fetch(snapshot, row_0)),
-                        Query::new(Q1::fetch(snapshot, row_1)),
-                        View::<V>::new(snapshot),
-                        commands.clone(),
-                    )
-                    .await;
-
-                    outputs.push(SystemOutput {
-                        owner: owner.clone(),
-                        commands: commands.take(),
-                    });
-                    memo.insert(owner, MemoEntry { deps });
-                }
-            }
-
-            outputs
+            collect_invocations(row_futures).await
         }
         .boxed_local()
     }
@@ -433,48 +505,29 @@ where
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut outputs = Vec::new();
-            let rows_0 = filtered_rows::<Q0, Filter0>(snapshot);
-            let rows_1 = filtered_rows::<Q1, Filter1>(snapshot);
+            let row_futures =
+                plan_two_query_invocations::<Q0, Filter0, Q1, Filter1>(self.id, snapshot, memo)
+                    .into_iter()
+                    .map(|invocation| async move {
+                        let (row_0, row_1) = invocation.state;
+                        let commands = Commands::new();
+                        (self.function)(
+                            Query::new(Q0::fetch(snapshot, &row_0)),
+                            Query::new(Q1::fetch(snapshot, &row_1)),
+                            View::<V0>::new(snapshot),
+                            View::<V1>::new(snapshot),
+                            commands.clone(),
+                        )
+                        .await;
 
-            for row_0 in &rows_0 {
-                for row_1 in &rows_1 {
-                    let mut keys = Q0::keys(row_0);
-                    keys.extend(Q1::keys(row_1));
-                    let owner = SystemInvocation {
-                        system: self.id,
-                        keys,
-                    };
+                        finish_invocation(invocation.owner, invocation.deps, commands)
+                    })
+                    .collect::<Vec<_>>();
 
-                    let mut deps = filtered_deps::<Q0, Filter0>(snapshot, row_0);
-                    deps.extend(filtered_deps::<Q1, Filter1>(snapshot, row_1));
-
-                    if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                        continue;
-                    }
-
-                    let commands = Commands::new();
-                    (self.function)(
-                        Query::new(Q0::fetch(snapshot, row_0)),
-                        Query::new(Q1::fetch(snapshot, row_1)),
-                        View::<V0>::new(snapshot),
-                        View::<V1>::new(snapshot),
-                        commands.clone(),
-                    )
-                    .await;
-
-                    outputs.push(SystemOutput {
-                        owner: owner.clone(),
-                        commands: commands.take(),
-                    });
-                    memo.insert(owner, MemoEntry { deps });
-                }
-            }
-
-            outputs
+            collect_invocations(row_futures).await
         }
         .boxed_local()
     }
@@ -636,38 +689,25 @@ where
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut outputs = Vec::new();
+            let row_futures = plan_query_invocations::<Q, Filter>(self.id, snapshot, memo)
+                .into_iter()
+                .map(|invocation| async move {
+                    let commands = Commands::new();
+                    (self.function)(
+                        Query::new(Q::fetch(snapshot, &invocation.state)),
+                        View::<V>::new(snapshot),
+                        commands.clone(),
+                    )
+                    .await;
 
-            for row in filtered_rows::<Q, Filter>(snapshot) {
-                let owner = SystemInvocation {
-                    system: self.id,
-                    keys: Q::keys(&row),
-                };
-                let deps = filtered_deps::<Q, Filter>(snapshot, &row);
+                    finish_invocation(invocation.owner, invocation.deps, commands)
+                })
+                .collect::<Vec<_>>();
 
-                if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                    continue;
-                }
-
-                let commands = Commands::new();
-                (self.function)(
-                    Query::new(Q::fetch(snapshot, &row)),
-                    View::<V>::new(snapshot),
-                    commands.clone(),
-                )
-                .await;
-
-                outputs.push(SystemOutput {
-                    owner: owner.clone(),
-                    commands: commands.take(),
-                });
-                memo.insert(owner, MemoEntry { deps });
-            }
-
-            outputs
+            collect_invocations(row_futures).await
         }
         .boxed_local()
     }
@@ -734,39 +774,26 @@ where
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
-        memo: &'a mut HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, Vec<SystemOutput>> {
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut outputs = Vec::new();
+            let row_futures = plan_query_invocations::<Q, Filter>(self.id, snapshot, memo)
+                .into_iter()
+                .map(|invocation| async move {
+                    let commands = Commands::new();
+                    (self.function)(
+                        Query::new(Q::fetch(snapshot, &invocation.state)),
+                        View::<V0>::new(snapshot),
+                        View::<V1>::new(snapshot),
+                        commands.clone(),
+                    )
+                    .await;
 
-            for row in filtered_rows::<Q, Filter>(snapshot) {
-                let owner = SystemInvocation {
-                    system: self.id,
-                    keys: Q::keys(&row),
-                };
-                let deps = filtered_deps::<Q, Filter>(snapshot, &row);
+                    finish_invocation(invocation.owner, invocation.deps, commands)
+                })
+                .collect::<Vec<_>>();
 
-                if memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
-                    continue;
-                }
-
-                let commands = Commands::new();
-                (self.function)(
-                    Query::new(Q::fetch(snapshot, &row)),
-                    View::<V0>::new(snapshot),
-                    View::<V1>::new(snapshot),
-                    commands.clone(),
-                )
-                .await;
-
-                outputs.push(SystemOutput {
-                    owner: owner.clone(),
-                    commands: commands.take(),
-                });
-                memo.insert(owner, MemoEntry { deps });
-            }
-
-            outputs
+            collect_invocations(row_futures).await
         }
         .boxed_local()
     }

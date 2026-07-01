@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex as StdMutex},
 };
 
-use futures::{channel::oneshot, lock::Mutex};
+use futures::{channel::oneshot, future::join_all, lock::Mutex};
 use variadics_please::all_tuples;
 
 use crate::{
@@ -263,10 +263,10 @@ impl Bowl {
 
     /// Registers a system.
     ///
-    /// Systems are stored in registration order. In the current minimal async
-    /// slice, systems are evaluated serially from an immutable snapshot. Later
-    /// versions can run invocation futures concurrently without changing this
-    /// public shape.
+    /// Systems are stored in registration order. During evaluation, systems
+    /// read from the same immutable snapshot and are polled concurrently from
+    /// the active runner. Their buffered outputs are still committed in
+    /// registration order.
     ///
     /// This method is async only because registration mutates shared internal
     /// state through an executor-agnostic mutex.
@@ -494,7 +494,7 @@ impl Bowl {
     ///   drain base inputs, mark running generation, clone snapshot/systems/memo
     ///
     /// run systems:
-    ///   no state lock is held while user code executes
+    ///   poll systems and invalid rows concurrently without holding state lock
     ///
     /// commit:
     ///   replace derived outputs owned by each invocation, advance generation,
@@ -510,8 +510,12 @@ impl Bowl {
         };
 
         let mut outputs = Vec::new();
-        for system in systems {
-            outputs.extend(system.0.run(&snapshot, &mut memo).await);
+        let runs = join_all(systems.iter().map(|system| system.0.run(&snapshot, &memo))).await;
+        for run in runs {
+            outputs.extend(run.outputs);
+            for (owner, entry) in run.memo_updates {
+                memo.insert(owner, entry);
+            }
         }
 
         let waiters = {

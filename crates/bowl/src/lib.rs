@@ -37,14 +37,14 @@
 //! +------------+                      +-------------+
 //! ```
 //!
-//! Public methods use `&self`, so callers can put a bowl behind `Arc` and share
-//! it between tasks. Internally, only one evaluation runner is active at a
-//! time; concurrent readers subscribe to the same in-flight generation instead
-//! of starting duplicate work.
+//! `Bowl` is an internally shared handle. Clone it into tasks instead of
+//! wrapping it in another `Arc`. Internally, only one evaluation runner is
+//! active at a time; concurrent readers subscribe to the same in-flight
+//! generation instead of starting duplicate work.
 //!
 //! Systems registered with [`Bowl::add_system`] are async functions. The first
-//! implementation polls systems serially from one runner future; parallel
-//! polling can be added later without changing the basic system signature.
+//! implementation uses local async concurrency: systems and invalid query rows
+//! are polled together, but they are not spawned onto worker threads.
 //!
 //! This crate is intentionally small right now and is the primary runtime for
 //! the prototype.
