@@ -49,6 +49,27 @@ A system never observes writes from the same tick it is running in.
 This is easy to parallelize and reason about. There is no immediate recursive
 triggering because all writes become visible in the next tick.
 
+This model also gives generation-scoped coordination facts a natural place to
+live. A system completion hook can insert an ephemeral marker after a barrier,
+and downstream systems can observe that marker on a later snapshot tick:
+
+```text
+tick N:
+  generate_ast reads parsed files
+
+barrier:
+  generate_ast outputs are applied
+  generate_ast on_complete inserts ephemeral AstAvailable
+
+tick N+1:
+  validation systems gated on AstAvailable run
+
+evaluation complete:
+  ephemeral markers are removed before outside callers observe the world
+```
+
+See `spec/lifecycle-and-ephemeral.md`.
+
 Possible API:
 
 ```rust

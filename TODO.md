@@ -23,7 +23,68 @@ Current shortcut:
 - This is enough for the playground, but it is not yet a full model for
   replacing complex derived output graphs.
 
-## 2. Harden BoundEntity Take Semantics
+## 2. Add Lifecycle Hooks And Ephemeral Coordination
+
+- Add lifecycle hook registration:
+  - `on_evaluation_start`
+  - `on_system_complete`
+  - `on_evaluation_complete`
+  - possibly `on_idle` / `on_rest`
+- Make `on_complete` mean "the system completed for this generation", not
+  "the system produced outputs".
+- Ensure memo-clean completion can still emit readiness markers.
+- Add an `Ephemeral` marker component for generation-scoped coordination facts.
+- Add remove/despawn commands so cleanup can be expressed as a normal hook.
+- Add an `EphemeralPlugin` that removes ephemeral facts at evaluation complete.
+- Update the playground so `AstAvailable` is an ephemeral singleton readiness
+  marker instead of a durable project fact.
+
+Current shortcut:
+- `on_complete` exists, but it currently depends on whether the wrapped system
+  produced outputs.
+- `AstAvailable` is durable in the playground, even though it is really a
+  readiness token for a single evaluation.
+- There is no plugin system or lifecycle hook registry.
+- There are no remove/despawn commands yet.
+
+See:
+- `spec/lifecycle-and-ephemeral.md`
+- `spec/ideas/execution-cycles.md`
+
+## 3. Add Singleton Component Support
+
+- Keep the components-only model.
+- Add singleton insertion/upsert support backed by an internal index:
+
+```rust
+singleton_entities: HashMap<ComponentId, Entity>
+```
+
+- Make singleton component revisions follow normal component revision rules.
+- For the first pass, use manual singleton marker insertion through the normal
+  `insert` path:
+
+```rust
+commands.insert((Singleton::<SystemImportDb>, SystemImportDb { .. }));
+commands.insert((Singleton::<AstAvailable>, AstAvailable, Ephemeral));
+```
+
+- Later, after recursive bundle flattening exists, add `.singleton()` as
+  ergonomic sugar.
+- Consider a `Single<T, F>` query/system param that validates exactly one
+  matching entity.
+- Keep insertion enforcement separate from query validation.
+
+Current shortcut:
+- Singleton-like facts are just ordinary components placed by convention.
+- The bowl does not enforce one entity per singleton component type.
+- There is no singleton index, `Singleton<T>` marker behavior, or `Single<T>`
+  query param.
+
+See:
+- `spec/singletons.md`
+
+## 4. Harden BoundEntity Take Semantics
 
 - Continue with the current `insert(...).await.bind().take::<T>().await` model.
 - Keep destructive reads as methods on `BoundEntity`, not normal queries.
@@ -40,7 +101,7 @@ Current shortcut:
 - Dropping a bound handle without `take` queues cleanup for the next bowl
   operation because `Drop` cannot `await`.
 
-## 3. Improve Bound Cleanup
+## 5. Improve Bound Cleanup
 
 - Make cleanup semantics explicit:
   - when cleanup runs
@@ -58,7 +119,7 @@ Current shortcut:
 - Drop cleanup is deferred to the next bowl operation.
 - Cleanup is scoped by system invocation keys that touched the bound entity.
 
-## 4. Add Indexed And Filtered Queries
+## 6. Add Indexed And Filtered Queries
 
 - Design typed filters in the query shape, for example:
 
@@ -90,7 +151,7 @@ Current shortcut:
 - There is no `Where`, `Eq`, `And`, `Or`, `Not`, or binding API in `bowl` yet.
 - The playground does manual filtering inside systems through `View`.
 
-## 5. Add Mutable Queries And Safe Update APIs
+## 7. Add Mutable Queries And Safe Update APIs
 
 - Support mutation through APIs like:
 
@@ -112,7 +173,7 @@ Current shortcut:
 - Base input mutation is modeled as inserting/replacing components, not as
   borrowing `&mut T`.
 
-## 6. Add Better Non-Settling And Cycle Diagnostics
+## 8. Add Better Non-Settling And Cycle Diagnostics
 
 - Replace the hard panic with structured errors.
 - Detect which systems and component types keep changing.
@@ -130,7 +191,7 @@ Current shortcut:
 - If the bowl does not stabilize within that limit, it panics.
 - There is no explanation of which systems caused the non-settling behavior.
 
-## 7. Clarify View Dependency Semantics
+## 9. Clarify View Dependency Semantics
 
 - Decide whether `View` should always remain ambient/non-invalidating.
 - Consider additional read types if needed:
@@ -144,7 +205,7 @@ Current shortcut:
   rerun a system unless the driving `Query` row changes.
 - The duplicate-definition checker relies on this behavior today.
 
-## 8. Add System Local State
+## 10. Add System Local State
 
 - Add a `Local<T>`-style parameter for stable per-system or per-invocation
   state.
@@ -158,7 +219,7 @@ Current shortcut:
 - Systems are pure async functions plus command buffers.
 - Any persistent state must currently be modeled as components.
 
-## 9. Add Explicit Ordering Only If Needed
+## 11. Add Explicit Ordering Only If Needed
 
 - Revisit `run_after` or `depends_on` after output-driven evaluation has been
   pushed further.
@@ -166,13 +227,13 @@ Current shortcut:
 - If ordering returns, make it system-level and cycle-checked.
 
 Current shortcut:
-- Systems run serially in registration order.
-- There is no `run_after`, `depends_on`, stage system, or `on_complete` in
-  `bowl`.
+- Systems and invalid rows are polled concurrently, but there is still no
+  explicit dependency scheduler.
+- There is no `run_after`, `depends_on`, or stage system in `bowl`.
 - The playground replaced `on_complete` by having `generate_ast` insert
   `AstAvailable` onto the project entity.
 
-## 10. Add Async Parallel System Execution
+## 12. Add Async Parallel System Execution
 
 - Keep system functions async.
 - Run independent system invocations concurrently once ownership and scheduling
@@ -185,11 +246,12 @@ Current shortcut:
   mode.
 
 Current shortcut:
-- Systems are async, but the runner polls them serially in registration order.
+- Systems and invalid query rows are polled with local `join_all`.
 - `Runnable` returns `LocalBoxFuture`, so the current implementation does not
-  require system futures to be `Send`.
+  require system futures to be `Send` and does not spawn work onto a
+  multi-threaded executor.
 
-## 11. Add Dependency Graph Introspection
+## 13. Add Dependency Graph Introspection
 
 - Expose enough internal data to inspect:
   - system invocation keys
@@ -203,7 +265,7 @@ Current shortcut:
 - Memo entries store dependency revisions, but there is no public tracing or
   graph visualization.
 
-## 12. Improve The Toy Language Playground
+## 14. Improve The Toy Language Playground
 
 - Keep expanding the playground as the main integration test.
 - Add a more realistic external `SystemImportDb` that can change over time.
@@ -219,7 +281,7 @@ Current shortcut:
 - `SystemImportDb` is a singleton component with hardcoded data.
 - Parser and AST extraction are pragmatic prototype code.
 
-## 13. Support Owned Query Results If Needed
+## 15. Support Owned Query Results If Needed
 
 - Add query forms that can return owned component values where appropriate.
 - Decide how this overlaps with `BoundEntity::take`.
@@ -230,7 +292,7 @@ Current shortcut:
 - `QueryResult::collect()` returns borrowed values tied to the owned snapshot.
 - There is no owned query path in `bowl`.
 
-## 14. Improve Macro Robustness
+## 16. Improve Macro Robustness
 
 - Keep `#[derive(Component)]` specialized around `bowl`.
 - Decide whether the macro should support renamed crates later.
@@ -242,7 +304,7 @@ Current shortcut:
   downstream crate renames the dependency.
 - The macro uses direct `proc_macro` token walking instead of `syn`.
 
-## 15. Add SyncBowl Wrapper
+## 17. Add SyncBowl Wrapper
 
 - Add a thin sync wrapper using `pollster`.
 - Keep async `Bowl` as the primary implementation.

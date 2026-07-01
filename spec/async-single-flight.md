@@ -236,6 +236,8 @@ running:
 
 complete:
   commands are applied
+  lifecycle completion hooks run
+  ephemeral cleanup runs
   generation increments
   waiters are notified
   if pending inputs exist, next generation is dirty
@@ -253,6 +255,16 @@ then query the current world immediately
 
 No system should run just because a caller asked a read-only question against an
 already evaluated generation.
+
+Lifecycle hooks must preserve the same single-flight invariant:
+
+```text
+only the active evaluator runs hooks
+waiters are notified after hook commands and cleanup are applied
+outside callers should not observe generation-scoped ephemeral facts
+```
+
+See `spec/lifecycle-and-ephemeral.md`.
 
 ## Sketch
 

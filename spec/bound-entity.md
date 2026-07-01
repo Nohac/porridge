@@ -1,7 +1,10 @@
 # Bound Entity Handles
 
 Bound entity handles are the request/response cleanup mechanism for `bowl`.
-They replace the earlier `Ephemeral` marker idea.
+They replace the earlier idea of using `Ephemeral` for request lifetimes.
+
+`Ephemeral` still has a separate role as a generation-scoped coordination
+marker. See `spec/lifecycle-and-ephemeral.md`.
 
 The core idea:
 
