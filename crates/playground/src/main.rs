@@ -1,12 +1,12 @@
 mod lang;
 
-use bowl::{Bowl, Entity, SystemExt, insert_on};
+use bowl::{Bowl, Commands, Entity, Singleton, SystemExt};
 
 use crate::lang::{
     analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
     grammar::{
         AstAvailable, AstDef, Diagnostic, FilePath, FileText, HoverInfo, HoverRequest, Position,
-        Project, SystemImportDb,
+        SystemImportDb,
     },
     service::hover_info,
 };
@@ -15,16 +15,20 @@ use crate::lang::{
 async fn main() {
     let db = Bowl::new();
 
-    let project = db.insert((Project,)).await.entity();
-
     db.add_system(parse_file).await;
-    db.add_system(generate_ast.on_complete(insert_on(project, AstAvailable)))
-        .await;
+    db.add_system(generate_ast.on_complete(|mut commands: Commands| {
+        commands.insert((Singleton::<AstAvailable>::new(), AstAvailable));
+    }))
+    .await;
     db.add_system(check_imports).await;
     db.add_system(check_duplicate_defs).await;
     db.add_system(hover_info).await;
 
-    db.insert((SystemImportDb::default(),)).await;
+    db.insert((
+        Singleton::<SystemImportDb>::new(),
+        SystemImportDb::default(),
+    ))
+    .await;
 
     db.insert((
         FilePath("main.porridge".to_string()),

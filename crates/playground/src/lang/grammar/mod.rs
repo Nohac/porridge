@@ -24,9 +24,6 @@ impl Default for SystemImportDb {
     }
 }
 
-#[derive(Component)]
-pub(crate) struct Project;
-
 #[derive(Component, Clone, Copy)]
 pub(crate) struct AstAvailable;
 

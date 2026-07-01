@@ -180,6 +180,7 @@ pub struct World {
     next_entity: u64,
     revision: Revision,
     stores: HashMap<TypeId, Box<dyn StoreDyn>>,
+    singleton_entities: HashMap<TypeId, Entity>,
 }
 
 /// Immutable read source for one generation.
@@ -195,6 +196,7 @@ impl World {
             next_entity: 0,
             revision: Revision(0),
             stores: HashMap::new(),
+            singleton_entities: HashMap::new(),
         }
     }
 
@@ -202,6 +204,17 @@ impl World {
     pub(crate) fn spawn_empty(&mut self) -> Entity {
         let entity = Entity(self.next_entity);
         self.next_entity += 1;
+        entity
+    }
+
+    /// Returns the entity for a singleton key, allocating one if needed.
+    pub(crate) fn singleton_entity_or_spawn(&mut self, key: TypeId) -> Entity {
+        if let Some(entity) = self.singleton_entities.get(&key) {
+            return *entity;
+        }
+
+        let entity = self.spawn_empty();
+        self.singleton_entities.insert(key, entity);
         entity
     }
 
@@ -232,6 +245,22 @@ impl World {
         origin: Origin,
         owner: Option<SystemInvocation>,
     ) {
+        if let Some(key) = T::singleton_key() {
+            match self.singleton_entities.get(&key) {
+                Some(existing) if *existing != entity => {
+                    panic!(
+                        "singleton component {} is already registered on entity {}",
+                        std::any::type_name::<T>(),
+                        existing.raw(),
+                    );
+                }
+                Some(_) => {}
+                None => {
+                    self.singleton_entities.insert(key, entity);
+                }
+            }
+        }
+
         let fingerprint = value.fingerprint();
         let revision = if T::tracked() {
             let old_revision = self
@@ -320,6 +349,9 @@ impl World {
             owners.extend(store.remove_entity(entity, &mut self.revision));
         }
 
+        self.singleton_entities
+            .retain(|_, singleton_entity| *singleton_entity != entity);
+
         owners
     }
 
@@ -337,6 +369,16 @@ impl World {
 
         if T::tracked() {
             bump(&mut self.revision);
+        }
+
+        if let Some(key) = T::singleton_key() {
+            if self
+                .singleton_entities
+                .get(&key)
+                .is_some_and(|singleton_entity| *singleton_entity == entity)
+            {
+                self.singleton_entities.remove(&key);
+            }
         }
 
         Some(removed.value)

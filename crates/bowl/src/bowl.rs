@@ -1,5 +1,5 @@
 use std::{
-    any::type_name,
+    any::{TypeId, type_name},
     collections::{HashMap, HashSet},
     fmt,
     sync::{Arc, Mutex as StdMutex},
@@ -304,7 +304,9 @@ impl Bowl {
         B: Bundle,
     {
         let mut state = self.inner.state.lock().await;
-        let entity = state.world.spawn_empty();
+        let entity = B::singleton_key()
+            .map(|key| state.world.singleton_entity_or_spawn(key))
+            .unwrap_or_else(|| state.world.spawn_empty());
         let mut commands = Vec::new();
         bundle.queue(entity, &mut commands);
         state.pending_inputs.extend(commands);
@@ -631,16 +633,38 @@ all_tuples!(impl_take_bundle_tuple, 2, 8, T);
 /// ```
 pub trait Bundle: Send + 'static {
     #[doc(hidden)]
+    fn singleton_key() -> Option<TypeId>;
+
+    #[doc(hidden)]
     fn queue(self, entity: Entity, commands: &mut Vec<Box<dyn BaseCommandOp>>);
 
     #[doc(hidden)]
     fn insert_derived(self, world: &mut World, entity: Entity, owner: SystemInvocation);
 }
 
+fn collect_singleton_key<T>(key: &mut Option<TypeId>)
+where
+    T: Component,
+{
+    let Some(next_key) = T::singleton_key() else {
+        return;
+    };
+
+    if key.replace(next_key).is_some() {
+        panic!("bundles can contain at most one singleton marker");
+    }
+}
+
 macro_rules! impl_bundle {
     ($($T:ident),*) => {
         impl<$($T: Component),*> Bundle for ($($T,)*)
         {
+            fn singleton_key() -> Option<TypeId> {
+                let mut key = None;
+                $(collect_singleton_key::<$T>(&mut key);)*
+                key
+            }
+
             #[allow(non_snake_case)]
             fn queue(self, entity: Entity, commands: &mut Vec<Box<dyn BaseCommandOp>>) {
                 let ($($T,)*) = self;
@@ -664,7 +688,7 @@ mod tests {
 
     use futures::executor::block_on;
 
-    use crate::{Bowl, Commands, Component, Entity, Query, View, With};
+    use crate::{Bowl, Commands, Component, Entity, Query, Singleton, View, With};
 
     struct A(u32);
     struct B(u32);
@@ -747,6 +771,11 @@ mod tests {
         let (entity, _a) = a_query.item();
         let (_ready, _c) = c_query.item();
         commands.entity(entity).insert(Count(bs.len()));
+    }
+
+    async fn write_singleton_count(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (_entity, a) = query.item();
+        commands.insert((Singleton::<Count>::new(), Count(a.0 as usize)));
     }
 
     async fn mixed_param_system(
@@ -915,6 +944,57 @@ mod tests {
 
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 1);
+        });
+    }
+
+    #[test]
+    fn singleton_insert_reuses_entity() {
+        block_on(async {
+            let bowl = Bowl::new();
+
+            let first = bowl
+                .insert((Singleton::<A>::new(), A(1), Request))
+                .await
+                .entity();
+            let second = bowl
+                .insert((Singleton::<A>::new(), A(2), Request))
+                .await
+                .entity();
+
+            let result = bowl.query::<(Entity, &A)>().await;
+            let rows = result.collect();
+
+            assert_eq!(first, second);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, first);
+            assert_eq!(rows[0].1.0, 2);
+        });
+    }
+
+    #[test]
+    fn derived_singleton_insert_reuses_entity() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(write_singleton_count).await;
+
+            bowl.insert((A(1),)).await;
+            bowl.insert((A(2),)).await;
+
+            let result = bowl.query::<(Entity, &Count)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 2);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "bundles can contain at most one singleton marker")]
+    fn bundle_rejects_multiple_singleton_markers() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((Singleton::<A>::new(), Singleton::<B>::new(), A(1), B(2)))
+                .await;
         });
     }
 

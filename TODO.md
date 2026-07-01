@@ -65,8 +65,8 @@ singleton_entities: HashMap<ComponentId, Entity>
   `insert` path:
 
 ```rust
-commands.insert((Singleton::<SystemImportDb>, SystemImportDb { .. }));
-commands.insert((Singleton::<AstAvailable>, AstAvailable, Ephemeral));
+commands.insert((Singleton::<SystemImportDb>::new(), SystemImportDb { .. }));
+commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
 ```
 
 - Later, after recursive bundle flattening exists, add `.singleton()` as

@@ -17,7 +17,7 @@ resource semantics.
 This is expressive:
 
 ```rust
-commands.insert((Singleton::<AstAvailable>, AstAvailable { data }, Ephemeral));
+commands.insert((Singleton::<AstAvailable>::new(), AstAvailable { data }, Ephemeral));
 ```
 
 but the singleton marker cannot enforce uniqueness by itself unless the bowl
@@ -54,7 +54,7 @@ The key is the singleton component type, not the `Singleton` marker type.
 For example:
 
 ```rust
-commands.insert((Singleton::<AstAvailable>, AstAvailable { data }, Ephemeral));
+commands.insert((Singleton::<AstAvailable>::new(), AstAvailable { data }, Ephemeral));
 ```
 
 uses:
@@ -85,7 +85,7 @@ The singleton behavior comes from bundle metadata.
 For the first implementation, use explicit singleton marker insertion:
 
 ```rust
-commands.insert((Singleton::<AstAvailable>, AstAvailable { data }, Ephemeral));
+commands.insert((Singleton::<AstAvailable>::new(), AstAvailable { data }, Ephemeral));
 ```
 
 This avoids needing recursive bundle flattening before singleton support exists.
@@ -93,7 +93,7 @@ This avoids needing recursive bundle flattening before singleton support exists.
 The marker is manual for now:
 
 ```rust
-Singleton::<AstAvailable>
+Singleton::<AstAvailable>::new()
 ```
 
 and it means:
@@ -200,7 +200,7 @@ create/remove presence -> query set changes
 Example:
 
 ```rust
-commands.insert((Singleton::<SystemImportDb>, SystemImportDb { imports }));
+commands.insert((Singleton::<SystemImportDb>::new(), SystemImportDb { imports }));
 ```
 
 If `SystemImportDb` is hash-stable and equivalent to the previous value, its
@@ -210,7 +210,7 @@ memo-clean.
 For ephemeral singleton markers:
 
 ```rust
-commands.insert((Singleton::<AstAvailable>, AstAvailable, Ephemeral));
+commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
 ```
 
 presence matters more than payload value. Cleanup removes the marker/entity at
@@ -234,7 +234,7 @@ Singleton insertion and singleton querying are related but separate features.
 An insertion helper enforces the invariant:
 
 ```rust
-commands.insert((Singleton::<SystemImportDb>, SystemImportDb { .. }));
+commands.insert((Singleton::<SystemImportDb>::new(), SystemImportDb { .. }));
 ```
 
 A query helper validates access:

@@ -100,7 +100,9 @@ struct SpawnCommand<B> {
 
 impl<B: Bundle> CommandOp for SpawnCommand<B> {
     fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
-        let entity = world.spawn_empty();
+        let entity = B::singleton_key()
+            .map(|key| world.singleton_entity_or_spawn(key))
+            .unwrap_or_else(|| world.spawn_empty());
         self.bundle.insert_derived(world, entity, owner.clone());
     }
 }

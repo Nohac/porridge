@@ -59,7 +59,7 @@ mod world;
 
 pub use bowl::{BoundEntity, Bowl, Bundle, InsertedEntity, TakeBundle, TakeError};
 pub use commands::Commands;
-pub use component::{Component, hash_component};
+pub use component::{Component, Singleton, hash_component};
 pub use entity::Entity;
 pub use macros::Component;
 pub use query::{Query, QueryFilter, QueryParam, QueryResult, View, With};

@@ -161,7 +161,7 @@ pub struct Ephemeral;
 Helpers are only sugar:
 
 ```rust
-commands.insert((Singleton::<AstAvailable>, AstAvailable { data }, Ephemeral));
+commands.insert((Singleton::<AstAvailable>::new(), AstAvailable { data }, Ephemeral));
 ```
 
 `Ephemeral` should initially mean entity lifetime. Cleanup despawns entities
