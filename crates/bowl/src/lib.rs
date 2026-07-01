@@ -32,6 +32,19 @@
 //! `.arg(...)` supplies typed runtime arguments for `Where` expressions. The
 //! `()` filter selects all rows.
 //!
+//! Mutable external queries use [`Mut<T>`](Mut) and run through a synchronous
+//! closure while the live world is locked:
+//!
+//! ```text
+//! bowl.query::<(Entity, Mut<FileText>), Where<Eq<FilePath>>>()
+//!   .arg(FilePath(path))
+//!   .for_each(|(_entity, text)| text.apply_delta(delta))
+//!   .await
+//! ```
+//!
+//! `Mut<T>` currently requires `T: Clone` so live writes can preserve immutable
+//! snapshots with clone-on-write storage.
+//!
 //! Evaluation is generation based:
 //!
 //! ```text
@@ -74,7 +87,7 @@ pub use component::{Component, ComponentHookContext, Singleton, hash_component};
 pub use entity::Entity;
 pub use macros::Component;
 pub use query::{
-    And, Eq, ExternalQueryFilter, FilterExpr, Gte, Not, Or, Query, QueryFilter, QueryParam,
-    QueryResult, View, Where, With, Without,
+    And, Eq, ExternalFilter, ExternalQueryFilter, FilterExpr, Gte, Mut, MutQueryParam, Not, Or,
+    Query, QueryFilter, QueryParam, QueryResult, View, Where, With, Without,
 };
 pub use system::{CompleteCallback, IntoSystem, Phase, SystemExt, insert_on};

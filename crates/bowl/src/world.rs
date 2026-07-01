@@ -413,6 +413,44 @@ impl World {
         Some(removed.value)
     }
 
+    /// Mutates one component in the live world and updates revision metadata.
+    ///
+    /// If `T` provides a fingerprint and the fingerprint is unchanged after the
+    /// closure runs, the component keeps its existing revision. Components
+    /// without fingerprints conservatively bump on every mutable access.
+    pub(crate) fn update_component<T, F, R>(&mut self, entity: Entity, f: F) -> Option<bool>
+    where
+        T: Component + Clone,
+        F: FnOnce(&mut T) -> R,
+    {
+        let next_revision = Revision(self.revision.0 + 1);
+        let changed = {
+            let store = self.store_mut_existing::<T>()?;
+            let entry = store.entries.get_mut(&entity)?;
+            let before_fingerprint = entry.value.fingerprint();
+
+            f(Arc::make_mut(&mut entry.value));
+
+            let after_fingerprint = entry.value.fingerprint();
+            entry.fingerprint = after_fingerprint;
+
+            let changed = T::tracked()
+                && (before_fingerprint.is_none() || before_fingerprint != after_fingerprint);
+
+            if changed {
+                entry.revision = next_revision;
+            }
+
+            changed
+        };
+
+        if changed {
+            self.revision = next_revision;
+        }
+
+        Some(changed)
+    }
+
     /// Upper bound used for simple entity scans.
     pub(crate) fn next_entity_raw(&self) -> u64 {
         self.next_entity

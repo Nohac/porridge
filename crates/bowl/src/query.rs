@@ -8,7 +8,7 @@ use variadics_please::all_tuples;
 
 use crate::{
     Component, Entity,
-    world::{Revision, Snapshot},
+    world::{Revision, Snapshot, World},
 };
 
 /// A tracked system input.
@@ -88,6 +88,14 @@ pub struct Not<F>(PhantomData<F>);
 /// Requires component `T` to be absent from the row entity.
 #[derive(Debug, Clone, Copy)]
 pub struct Without<T>(PhantomData<T>);
+
+/// Mutable component projection for external mutation queries.
+///
+/// `Mut<T>` does not represent a long-lived mutable borrow. It is only valid in
+/// `Bowl::query(...).for_each(...)`, where the mutable borrow is scoped to one
+/// synchronous closure call while the live world is locked.
+#[derive(Debug, Clone, Copy)]
+pub struct Mut<T>(PhantomData<T>);
 
 /// Runtime values bound to external query filters.
 #[derive(Default)]
@@ -175,7 +183,6 @@ where
 pub struct QueryResult<Q, F = ()>
 where
     Q: QueryParam,
-    F: ExternalQueryFilter<Q>,
 {
     snapshot: Snapshot,
     rows: Vec<Q::State>,
@@ -261,6 +268,67 @@ pub trait QueryParam {
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
     /// Fetches the user-facing item for a previously enumerated row.
     fn fetch<'a>(snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a>;
+}
+
+/// Query-shaped mutable projection over the live world.
+pub trait MutQueryParam {
+    type State: Clone + EntityQueryState;
+    type Item<'a>;
+
+    /// Enumerates candidate row states from the current live world.
+    fn rows(snapshot: &Snapshot) -> Vec<Self::State>;
+    /// Mutates one previously-enumerated row.
+    fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
+    where
+        F: for<'a> FnOnce(Self::Item<'a>);
+}
+
+impl<T> MutQueryParam for (Mut<T>,)
+where
+    T: Component + Clone,
+{
+    type State = Entity;
+    type Item<'a> = &'a mut T;
+
+    fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
+        (0..snapshot.next_entity_raw())
+            .map(Entity)
+            .filter(|entity| snapshot.has::<T>(*entity))
+            .collect()
+    }
+
+    fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
+    where
+        F: for<'a> FnOnce(Self::Item<'a>),
+    {
+        world
+            .update_component::<T, _, _>(*state, |component| f(component))
+            .unwrap_or(false)
+    }
+}
+
+impl<T> MutQueryParam for (Entity, Mut<T>)
+where
+    T: Component + Clone,
+{
+    type State = Entity;
+    type Item<'a> = (Entity, &'a mut T);
+
+    fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
+        (0..snapshot.next_entity_raw())
+            .map(Entity)
+            .filter(|entity| snapshot.has::<T>(*entity))
+            .collect()
+    }
+
+    fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
+    where
+        F: for<'a> FnOnce(Self::Item<'a>),
+    {
+        world
+            .update_component::<T, _, _>(*state, |component| f((*state, component)))
+            .unwrap_or(false)
+    }
 }
 
 impl QueryParam for Entity {
@@ -441,47 +509,59 @@ where
     }
 }
 
-/// Filter used by external bowl queries.
-pub trait ExternalQueryFilter<Q: QueryParam>: 'static {
-    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &Q::State) -> bool;
+/// Filter over an external query row state.
+pub trait ExternalFilter<State>: 'static {
+    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &State) -> bool;
 }
 
-impl<Q: QueryParam> ExternalQueryFilter<Q> for () {
-    fn matches(_snapshot: &Snapshot, _args: &QueryArgs, _state: &Q::State) -> bool {
+impl<State> ExternalFilter<State> for () {
+    fn matches(_snapshot: &Snapshot, _args: &QueryArgs, _state: &State) -> bool {
         true
     }
 }
 
-impl<Q, F> ExternalQueryFilter<Q> for Where<F>
+impl<State, F> ExternalFilter<State> for Where<F>
 where
-    Q: QueryParam,
-    Q::State: EntityQueryState,
+    State: EntityQueryState,
     F: FilterExpr,
 {
-    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &Q::State) -> bool {
+    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &State) -> bool {
         F::matches(state.entity(), snapshot, args)
     }
 }
 
-impl<Q, T> ExternalQueryFilter<Q> for With<T>
+impl<State, T> ExternalFilter<State> for With<T>
 where
-    Q: QueryParam,
-    Q::State: EntityQueryState,
+    State: EntityQueryState,
     T: Component,
 {
-    fn matches(snapshot: &Snapshot, _args: &QueryArgs, state: &Q::State) -> bool {
+    fn matches(snapshot: &Snapshot, _args: &QueryArgs, state: &State) -> bool {
         snapshot.has::<T>(state.entity())
     }
 }
 
-impl<Q, T> ExternalQueryFilter<Q> for Without<T>
+impl<State, T> ExternalFilter<State> for Without<T>
 where
-    Q: QueryParam,
-    Q::State: EntityQueryState,
+    State: EntityQueryState,
     T: Component,
 {
-    fn matches(snapshot: &Snapshot, _args: &QueryArgs, state: &Q::State) -> bool {
+    fn matches(snapshot: &Snapshot, _args: &QueryArgs, state: &State) -> bool {
         !snapshot.has::<T>(state.entity())
+    }
+}
+
+/// Filter used by external read-only bowl queries.
+pub trait ExternalQueryFilter<Q: QueryParam>: 'static {
+    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &Q::State) -> bool;
+}
+
+impl<Q, F> ExternalQueryFilter<Q> for F
+where
+    Q: QueryParam,
+    F: ExternalFilter<Q::State>,
+{
+    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &Q::State) -> bool {
+        F::matches(snapshot, args, state)
     }
 }
 
@@ -565,6 +645,20 @@ pub(crate) fn external_filtered_rows<Q, F>(snapshot: &Snapshot, args: &QueryArgs
 where
     Q: QueryParam,
     F: ExternalQueryFilter<Q>,
+{
+    Q::rows(snapshot)
+        .into_iter()
+        .filter(|state| F::matches(snapshot, args, state))
+        .collect()
+}
+
+pub(crate) fn external_filtered_mut_rows<Q, F>(
+    snapshot: &Snapshot,
+    args: &QueryArgs,
+) -> Vec<Q::State>
+where
+    Q: MutQueryParam,
+    F: ExternalFilter<Q::State>,
 {
     Q::rows(snapshot)
         .into_iter()

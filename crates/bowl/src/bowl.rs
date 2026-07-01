@@ -14,7 +14,7 @@ use variadics_please::all_tuples;
 use crate::{
     Component, Entity, IntoSystem, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
-    query::{ExternalQueryFilter, QueryArgs, QueryParam},
+    query::{ExternalFilter, ExternalQueryFilter, MutQueryParam, QueryArgs, QueryParam},
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
     world::{Snapshot, SystemId, SystemInvocation, World},
 };
@@ -115,14 +115,18 @@ pub struct BoundEntity {
 ///
 /// `QueryBuilder` can be awaited directly to produce a [`QueryResult`], or it
 /// can first receive runtime filter arguments with [`QueryBuilder::arg`].
-pub struct QueryBuilder<Q, F>
-where
-    Q: QueryParam,
-    F: ExternalQueryFilter<Q>,
-{
+pub struct QueryBuilder<Q, F> {
     bowl: Bowl,
     args: QueryArgs,
     _marker: PhantomData<(Q, F)>,
+}
+
+impl<Q, F> QueryBuilder<Q, F> {
+    /// Adds a typed runtime argument used by `Where` filter expressions.
+    pub fn arg<T: Component>(mut self, value: T) -> Self {
+        self.args.insert(value);
+        self
+    }
 }
 
 impl<Q, F> QueryBuilder<Q, F>
@@ -130,17 +134,45 @@ where
     Q: QueryParam,
     F: ExternalQueryFilter<Q>,
 {
-    /// Adds a typed runtime argument used by `Where` filter expressions.
-    pub fn arg<T: Component>(mut self, value: T) -> Self {
-        self.args.insert(value);
-        self
-    }
-
     async fn materialize(self) -> QueryResult<Q, F> {
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
         let snapshot = self.bowl.snapshot().await;
         QueryResult::new(snapshot, &self.args)
+    }
+}
+
+impl<Q, F> QueryBuilder<Q, F>
+where
+    Q: MutQueryParam,
+    F: ExternalFilter<Q::State>,
+{
+    /// Mutates every row matched by this query.
+    ///
+    /// The closure runs synchronously while the live world is locked. Do not
+    /// call back into the same bowl from inside the closure.
+    pub async fn for_each<Func>(self, mut func: Func)
+    where
+        Func: for<'a> FnMut(Q::Item<'a>),
+    {
+        self.bowl.settle().await;
+        self.bowl.drain_deferred_bound_cleanup().await;
+
+        let mut state = self.bowl.inner.state.lock().await;
+        let rows = crate::query::external_filtered_mut_rows::<Q, F>(&state.world, &self.args);
+        let mut changed = false;
+
+        for row in rows {
+            changed |= Q::for_each_mut(&mut state.world, &row, |item| func(item));
+        }
+
+        if changed {
+            state.normal_clean = false;
+            if state.pending_generation.is_none() {
+                let next_generation = state.next_generation;
+                state.pending_generation = Some(next_generation);
+            }
+        }
     }
 }
 
@@ -391,11 +423,7 @@ impl Bowl {
     ///
     /// A read-only query never starts duplicate work if another caller is
     /// already evaluating the target generation.
-    pub fn query<Q, F>(&self) -> QueryBuilder<Q, F>
-    where
-        Q: QueryParam,
-        F: ExternalQueryFilter<Q>,
-    {
+    pub fn query<Q, F>(&self) -> QueryBuilder<Q, F> {
         QueryBuilder {
             bowl: self.clone(),
             args: QueryArgs::default(),
@@ -859,7 +887,7 @@ mod tests {
     use futures::executor::block_on;
 
     use crate::{
-        And, Bowl, Commands, Component, ComponentHookContext, Entity, Eq, Gte, Phase, Query,
+        And, Bowl, Commands, Component, ComponentHookContext, Entity, Eq, Gte, Mut, Phase, Query,
         Singleton, SystemExt, View, Where, With,
     };
 
@@ -875,9 +903,9 @@ mod tests {
     struct Note;
     struct Hooked;
     struct UntrackedMarker;
-    #[derive(PartialEq)]
+    #[derive(Clone, PartialEq)]
     struct Label(&'static str);
-    #[derive(PartialEq, PartialOrd)]
+    #[derive(Clone, PartialEq, PartialOrd)]
     struct Rank(u32);
 
     impl Component for A {}
@@ -983,6 +1011,11 @@ mod tests {
     async fn write_singleton_count(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (_entity, a) = query.item();
         commands.insert((Singleton::<Count>::new(), Count(a.0 as usize)));
+    }
+
+    async fn copy_rank_to_count(query: Query<(Entity, &Rank)>, mut commands: Commands) {
+        let (entity, rank) = query.item();
+        commands.entity(entity).insert(Count(rank.0 as usize));
     }
 
     async fn startup_phase(query: Query<(Entity, &A)>, mut commands: Commands) {
@@ -1400,6 +1433,51 @@ mod tests {
 
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 2);
+        });
+    }
+
+    #[test]
+    fn external_queries_can_mutate_bound_rows() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(copy_rank_to_count).await;
+            bowl.insert((Label("main"), Rank(1))).await;
+            bowl.insert((Label("lib"), Rank(2))).await;
+
+            let counts = bowl.query::<(Entity, &Count), ()>().await;
+            assert_eq!(
+                counts
+                    .collect()
+                    .iter()
+                    .map(|(_, count)| count.0)
+                    .sum::<usize>(),
+                3
+            );
+
+            bowl.query::<(Entity, Mut<Rank>), Where<Eq<Label>>>()
+                .arg(Label("main"))
+                .for_each(|(_entity, rank)| {
+                    rank.0 = 10;
+                })
+                .await;
+
+            let ranks = bowl
+                .query::<(Entity, &Rank), Where<Eq<Label>>>()
+                .arg(Label("main"))
+                .await;
+            let rows = ranks.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 10);
+
+            let counts = bowl.query::<(Entity, &Count), ()>().await;
+            assert_eq!(
+                counts
+                    .collect()
+                    .iter()
+                    .map(|(_, count)| count.0)
+                    .sum::<usize>(),
+                12
+            );
         });
     }
 
