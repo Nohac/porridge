@@ -669,6 +669,7 @@ mod tests {
     struct A(u32);
     struct B(u32);
     struct C(u32);
+    struct D(u32);
     struct Count(usize);
     struct Sum(u32);
     struct Request;
@@ -679,6 +680,7 @@ mod tests {
     impl Component for A {}
     impl Component for B {}
     impl Component for C {}
+    impl Component for D {}
     impl Component for Count {}
     impl Component for Sum {}
     impl Component for Request {}
@@ -745,6 +747,24 @@ mod tests {
         let (entity, _a) = a_query.item();
         let (_ready, _c) = c_query.item();
         commands.entity(entity).insert(Count(bs.len()));
+    }
+
+    async fn mixed_param_system(
+        a_query: Query<(Entity, &A)>,
+        bs: View<'_, (Entity, &B)>,
+        mut commands: Commands,
+        c_query: Query<(Entity, &C)>,
+        d_query: Query<(Entity, &D)>,
+        counts: View<'_, (Entity, &Count)>,
+    ) {
+        let (entity, a) = a_query.item();
+        let (_c_entity, c) = c_query.item();
+        let (_d_entity, d) = d_query.item();
+        commands.entity(entity).insert(Sum(a.0
+            + c.0
+            + d.0
+            + bs.len() as u32
+            + counts.len() as u32));
     }
 
     async fn answer_request(query: Query<(Entity, &Request)>, mut commands: Commands) {
@@ -895,6 +915,26 @@ mod tests {
 
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 1);
+        });
+    }
+
+    #[test]
+    fn system_params_support_arbitrary_mixed_order() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(mixed_param_system).await;
+
+            bowl.insert((A(1),)).await;
+            bowl.insert((B(10),)).await;
+            bowl.insert((B(20),)).await;
+            bowl.insert((C(2),)).await;
+            bowl.insert((D(3),)).await;
+
+            let result = bowl.query::<(Entity, &Sum)>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 8);
         });
     }
 
