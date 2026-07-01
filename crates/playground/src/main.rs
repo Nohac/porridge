@@ -1,12 +1,12 @@
 mod lang;
 
-use bowl::{Bowl, Commands, Entity, Phase, Query, Singleton, SystemExt, With};
+use bowl::{Bowl, Commands, Entity, Gte, Phase, Query, Singleton, SystemExt, Where, With};
 
 use crate::lang::{
     analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
     grammar::{
         AstAvailable, AstDef, Diagnostic, Ephemeral, FilePath, FileText, HoverInfo, HoverRequest,
-        Position, SystemImportDb,
+        Position, Severity, SystemImportDb,
     },
     service::hover_info,
 };
@@ -50,13 +50,13 @@ async fn main() {
     .await;
 
     println!("query diagnostics");
-    let diagnostics = db.query::<(Entity, &Diagnostic)>().await;
+    let diagnostics = db.query::<(Entity, &Diagnostic), ()>().await;
     for (entity, diagnostic) in diagnostics.collect() {
         println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
     println!("\ndefinitions");
-    let definitions = db.query::<(Entity, &AstDef)>().await;
+    let definitions = db.query::<(Entity, &AstDef), ()>().await;
     for (entity, def) in definitions.collect() {
         println!(
             "entity {}: {} `{}` at {:?}",
@@ -68,13 +68,22 @@ async fn main() {
     }
 
     println!("query diagnostics again");
-    let diagnostics = db.query::<(Entity, &Diagnostic)>().await;
+    let diagnostics = db.query::<(Entity, &Diagnostic), ()>().await;
+    for (entity, diagnostic) in diagnostics.collect() {
+        println!("entity {}: {}", entity.raw(), diagnostic.0);
+    }
+
+    println!("\ndiagnostics at warning or above");
+    let diagnostics = db
+        .query::<(Entity, &Diagnostic), Where<Gte<Severity>>>()
+        .arg(Severity::Warning)
+        .await;
     for (entity, diagnostic) in diagnostics.collect() {
         println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
     println!("\nast available markers");
-    let ast_available = db.query::<(Entity, &AstAvailable)>().await;
+    let ast_available = db.query::<(Entity, &AstAvailable), ()>().await;
     for (entity, _) in ast_available.collect() {
         println!("entity {}", entity.raw());
     }
@@ -119,7 +128,7 @@ async fn main() {
         println!("{}", info.0);
     }
 
-    let hover_facts = db.query::<(Entity, &HoverInfo)>().await;
+    let hover_facts = db.query::<(Entity, &HoverInfo), ()>().await;
     println!("hover facts after request: {}", hover_facts.collect().len());
 }
 

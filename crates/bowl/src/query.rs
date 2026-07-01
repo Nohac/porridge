@@ -1,4 +1,8 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    marker::PhantomData,
+};
 
 use variadics_please::all_tuples;
 
@@ -52,6 +56,57 @@ impl<T, F> Query<T, F> {
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct With<T>(PhantomData<T>);
+
+/// Query filter wrapper used by external bowl queries.
+///
+/// Unlike system-side [`Query<T, F>`] filters, `Where<F>` can use runtime
+/// arguments supplied through `Bowl::query(...).arg(...)`.
+#[derive(Debug, Clone, Copy)]
+pub struct Where<F>(PhantomData<F>);
+
+/// Requires component `T` on the row entity to equal the bound query argument.
+#[derive(Debug, Clone, Copy)]
+pub struct Eq<T>(PhantomData<T>);
+
+/// Requires component `T` on the row entity to be greater than or equal to the
+/// bound query argument.
+#[derive(Debug, Clone, Copy)]
+pub struct Gte<T>(PhantomData<T>);
+
+/// Boolean conjunction of two query filter expressions.
+#[derive(Debug, Clone, Copy)]
+pub struct And<A, B>(PhantomData<(A, B)>);
+
+/// Boolean disjunction of two query filter expressions.
+#[derive(Debug, Clone, Copy)]
+pub struct Or<A, B>(PhantomData<(A, B)>);
+
+/// Boolean negation of one query filter expression.
+#[derive(Debug, Clone, Copy)]
+pub struct Not<F>(PhantomData<F>);
+
+/// Requires component `T` to be absent from the row entity.
+#[derive(Debug, Clone, Copy)]
+pub struct Without<T>(PhantomData<T>);
+
+/// Runtime values bound to external query filters.
+#[derive(Default)]
+pub struct QueryArgs {
+    values: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+}
+
+impl QueryArgs {
+    pub(crate) fn insert<T: Component>(&mut self, value: T) {
+        self.values.insert(TypeId::of::<T>(), Box::new(value));
+    }
+
+    fn get<T: Component>(&self) -> &T {
+        self.values
+            .get(&TypeId::of::<T>())
+            .and_then(|value| value.downcast_ref())
+            .expect("missing query argument")
+    }
+}
 
 /// Ambient read-only snapshot access.
 ///
@@ -120,7 +175,7 @@ where
 pub struct QueryResult<Q, F = ()>
 where
     Q: QueryParam,
-    F: QueryFilter<Q>,
+    F: ExternalQueryFilter<Q>,
 {
     snapshot: Snapshot,
     rows: Vec<Q::State>,
@@ -130,11 +185,11 @@ where
 impl<Q, F> QueryResult<Q, F>
 where
     Q: QueryParam,
-    F: QueryFilter<Q>,
+    F: ExternalQueryFilter<Q>,
 {
     /// Creates a result over every row of `Q` in `snapshot`.
-    pub(crate) fn new(snapshot: Snapshot) -> Self {
-        let rows = filtered_rows::<Q, F>(&snapshot);
+    pub(crate) fn new(snapshot: Snapshot, args: &QueryArgs) -> Self {
+        let rows = external_filtered_rows::<Q, F>(&snapshot, args);
         Self {
             snapshot,
             rows,
@@ -371,6 +426,130 @@ where
     }
 }
 
+impl<Q, T> QueryFilter<Q> for Without<T>
+where
+    Q: QueryParam,
+    Q::State: EntityQueryState,
+    T: Component,
+{
+    fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+        !snapshot.has::<T>(state.entity())
+    }
+
+    fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
+        Vec::new()
+    }
+}
+
+/// Filter used by external bowl queries.
+pub trait ExternalQueryFilter<Q: QueryParam>: 'static {
+    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &Q::State) -> bool;
+}
+
+impl<Q: QueryParam> ExternalQueryFilter<Q> for () {
+    fn matches(_snapshot: &Snapshot, _args: &QueryArgs, _state: &Q::State) -> bool {
+        true
+    }
+}
+
+impl<Q, F> ExternalQueryFilter<Q> for Where<F>
+where
+    Q: QueryParam,
+    Q::State: EntityQueryState,
+    F: FilterExpr,
+{
+    fn matches(snapshot: &Snapshot, args: &QueryArgs, state: &Q::State) -> bool {
+        F::matches(state.entity(), snapshot, args)
+    }
+}
+
+impl<Q, T> ExternalQueryFilter<Q> for With<T>
+where
+    Q: QueryParam,
+    Q::State: EntityQueryState,
+    T: Component,
+{
+    fn matches(snapshot: &Snapshot, _args: &QueryArgs, state: &Q::State) -> bool {
+        snapshot.has::<T>(state.entity())
+    }
+}
+
+impl<Q, T> ExternalQueryFilter<Q> for Without<T>
+where
+    Q: QueryParam,
+    Q::State: EntityQueryState,
+    T: Component,
+{
+    fn matches(snapshot: &Snapshot, _args: &QueryArgs, state: &Q::State) -> bool {
+        !snapshot.has::<T>(state.entity())
+    }
+}
+
+/// Runtime-argument filter expression used inside [`Where`].
+pub trait FilterExpr: 'static {
+    fn matches(entity: Entity, snapshot: &Snapshot, args: &QueryArgs) -> bool;
+}
+
+impl<T> FilterExpr for Eq<T>
+where
+    T: Component + PartialEq,
+{
+    fn matches(entity: Entity, snapshot: &Snapshot, args: &QueryArgs) -> bool {
+        snapshot
+            .get::<T>(entity)
+            .is_some_and(|value| value == args.get::<T>())
+    }
+}
+
+impl<T> FilterExpr for Gte<T>
+where
+    T: Component + PartialOrd,
+{
+    fn matches(entity: Entity, snapshot: &Snapshot, args: &QueryArgs) -> bool {
+        snapshot
+            .get::<T>(entity)
+            .is_some_and(|value| value >= args.get::<T>())
+    }
+}
+
+impl<T: Component> FilterExpr for With<T> {
+    fn matches(entity: Entity, snapshot: &Snapshot, _args: &QueryArgs) -> bool {
+        snapshot.has::<T>(entity)
+    }
+}
+
+impl<T: Component> FilterExpr for Without<T> {
+    fn matches(entity: Entity, snapshot: &Snapshot, _args: &QueryArgs) -> bool {
+        !snapshot.has::<T>(entity)
+    }
+}
+
+impl<A, B> FilterExpr for And<A, B>
+where
+    A: FilterExpr,
+    B: FilterExpr,
+{
+    fn matches(entity: Entity, snapshot: &Snapshot, args: &QueryArgs) -> bool {
+        A::matches(entity, snapshot, args) && B::matches(entity, snapshot, args)
+    }
+}
+
+impl<A, B> FilterExpr for Or<A, B>
+where
+    A: FilterExpr,
+    B: FilterExpr,
+{
+    fn matches(entity: Entity, snapshot: &Snapshot, args: &QueryArgs) -> bool {
+        A::matches(entity, snapshot, args) || B::matches(entity, snapshot, args)
+    }
+}
+
+impl<F: FilterExpr> FilterExpr for Not<F> {
+    fn matches(entity: Entity, snapshot: &Snapshot, args: &QueryArgs) -> bool {
+        !F::matches(entity, snapshot, args)
+    }
+}
+
 pub(crate) fn filtered_rows<Q, F>(snapshot: &Snapshot) -> Vec<Q::State>
 where
     Q: QueryParam,
@@ -379,6 +558,17 @@ where
     Q::rows(snapshot)
         .into_iter()
         .filter(|state| F::matches(snapshot, state))
+        .collect()
+}
+
+pub(crate) fn external_filtered_rows<Q, F>(snapshot: &Snapshot, args: &QueryArgs) -> Vec<Q::State>
+where
+    Q: QueryParam,
+    F: ExternalQueryFilter<Q>,
+{
+    Q::rows(snapshot)
+        .into_iter()
+        .filter(|state| F::matches(snapshot, args, state))
         .collect()
 }
 

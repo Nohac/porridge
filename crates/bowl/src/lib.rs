@@ -21,6 +21,17 @@
 //!   applied only after the current snapshot tick completes
 //! ```
 //!
+//! External queries use the same row/filter split:
+//!
+//! ```text
+//! bowl.query::<(Entity, &Diagnostic), Where<Gte<Severity>>>()
+//!   .arg(Severity::Warning)
+//!   .await
+//! ```
+//!
+//! `.arg(...)` supplies typed runtime arguments for `Where` expressions. The
+//! `()` filter selects all rows.
+//!
 //! Evaluation is generation based:
 //!
 //! ```text
@@ -57,10 +68,13 @@ mod query;
 mod system;
 mod world;
 
-pub use bowl::{BoundEntity, Bowl, Bundle, InsertedEntity, TakeBundle, TakeError};
+pub use bowl::{BoundEntity, Bowl, Bundle, InsertedEntity, QueryBuilder, TakeBundle, TakeError};
 pub use commands::Commands;
 pub use component::{Component, ComponentHookContext, Singleton, hash_component};
 pub use entity::Entity;
 pub use macros::Component;
-pub use query::{Query, QueryFilter, QueryParam, QueryResult, View, With};
+pub use query::{
+    And, Eq, ExternalQueryFilter, FilterExpr, Gte, Not, Or, Query, QueryFilter, QueryParam,
+    QueryResult, View, Where, With, Without,
+};
 pub use system::{CompleteCallback, IntoSystem, Phase, SystemExt, insert_on};
