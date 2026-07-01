@@ -51,6 +51,7 @@ pub(crate) struct MemoEntry {
 pub(crate) struct SystemOutput {
     pub(crate) owner: SystemInvocation,
     pub(crate) commands: Vec<Box<dyn CommandOp>>,
+    pub(crate) completion_only: bool,
 }
 
 /// Outputs and memo writes produced by one system for one generation.
@@ -296,6 +297,7 @@ fn finish_invocation(
     let output = SystemOutput {
         owner: owner.clone(),
         commands: commands.take(),
+        completion_only: false,
     };
     let memo_update = (owner, MemoEntry { deps });
 
@@ -450,6 +452,7 @@ where
                 run.outputs.push(SystemOutput {
                     owner,
                     commands: commands.take(),
+                    completion_only: true,
                 });
             }
 

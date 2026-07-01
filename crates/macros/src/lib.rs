@@ -3,12 +3,26 @@ use proc_macro::{Delimiter, TokenStream, TokenTree};
 #[proc_macro_derive(Component, attributes(component))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let use_hash = has_hash_attribute(input.clone());
+    let untracked = has_untracked_attribute(input.clone());
     let Some(name) = type_name(input) else {
         return compile_error("Component can only be derived for structs and enums");
     };
 
-    if use_hash {
-        format!(
+    match (use_hash, untracked) {
+        (true, true) => format!(
+            "impl ::bowl::Component for {name} {{
+                fn tracked() -> bool {{
+                    false
+                }}
+
+                fn fingerprint(&self) -> ::core::option::Option<u64> {{
+                    ::core::option::Option::Some(::bowl::hash_component(self))
+                }}
+            }}"
+        )
+        .parse()
+        .expect("generated component impl should parse"),
+        (true, false) => format!(
             "impl ::bowl::Component for {name} {{
                 fn fingerprint(&self) -> ::core::option::Option<u64> {{
                     ::core::option::Option::Some(::bowl::hash_component(self))
@@ -16,16 +30,28 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             }}"
         )
         .parse()
-        .expect("generated component impl should parse")
-    } else {
-        format!("impl ::bowl::Component for {name} {{}}")
+        .expect("generated component impl should parse"),
+        (false, true) => format!(
+            "impl ::bowl::Component for {name} {{
+                fn tracked() -> bool {{
+                    false
+                }}
+            }}"
+        )
+        .parse()
+        .expect("generated component impl should parse"),
+        (false, false) => format!("impl ::bowl::Component for {name} {{}}")
             .parse()
-            .expect("generated component impl should parse")
+            .expect("generated component impl should parse"),
     }
 }
 
 fn has_hash_attribute(input: TokenStream) -> bool {
     component_attribute_contains(input, "hash")
+}
+
+fn has_untracked_attribute(input: TokenStream) -> bool {
+    component_attribute_contains(input, "untracked")
 }
 
 fn component_attribute_contains(input: TokenStream, needle: &str) -> bool {

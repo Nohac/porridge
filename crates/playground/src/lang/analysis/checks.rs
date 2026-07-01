@@ -1,6 +1,4 @@
-use crate::lang::grammar::{
-    AstAvailable, AstDef, Diagnostic, ImportDecl, Severity, SystemImportDb,
-};
+use crate::lang::grammar::{AstDef, Diagnostic, ImportDecl, Severity, SystemImportDb};
 use bowl::{Commands, Entity, Query, View};
 
 fn emit_diagnostic(
@@ -35,15 +33,10 @@ pub(crate) async fn check_imports(
 
 pub(crate) async fn check_duplicate_defs(
     query: Query<(Entity, &AstDef)>,
-    ast_available: View<'_, (Entity, &AstAvailable)>,
     defs: View<'_, (Entity, &AstDef)>,
     mut commands: Commands,
 ) {
     let (entity, def) = query.item();
-
-    if ast_available.iter().next().is_none() {
-        return;
-    }
 
     println!("check_duplicate_defs({})", entity.raw());
 

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fmt};
 
-use bowl::{Component, Entity};
+use bowl::{Component, ComponentHookContext, Entity};
 
 pub(crate) mod lexer;
 pub(crate) mod parser;
@@ -24,10 +24,25 @@ impl Default for SystemImportDb {
     }
 }
 
-#[derive(Component, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub(crate) struct AstAvailable;
 
+impl Component for AstAvailable {
+    fn tracked() -> bool {
+        false
+    }
+
+    fn on_insert(context: ComponentHookContext) {
+        println!("AstAvailable insert({})", context.entity().raw());
+    }
+
+    fn on_remove(context: ComponentHookContext) {
+        println!("AstAvailable remove({})", context.entity().raw());
+    }
+}
+
 #[derive(Component)]
+#[component(untracked)]
 pub(crate) struct Ephemeral;
 
 #[derive(Component, Hash)]

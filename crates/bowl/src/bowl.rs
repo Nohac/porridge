@@ -375,8 +375,6 @@ impl Bowl {
     /// Runs generations until the bowl has no pending work and the last
     /// generation produced no tracked changes.
     async fn settle(&self) {
-        let mut last_revision = None;
-
         for _ in 0..DEFAULT_SETTLE_LIMIT {
             let target = {
                 let state = self.inner.state.lock().await;
@@ -405,15 +403,10 @@ impl Bowl {
             };
 
             if clean && revision == settled_revision {
-                return;
-            }
-
-            if clean && last_revision == Some(revision) {
                 self.run_cleanup_phase().await;
                 return;
             }
 
-            last_revision = Some(revision);
             self.enqueue_next_generation().await;
         }
 
@@ -436,7 +429,7 @@ impl Bowl {
         .await;
 
         if !runs.is_empty() {
-            commit_system_runs(&mut memo, &self.inner.state, runs).await;
+            commit_system_runs(&mut memo, &self.inner.state, runs, true).await;
         }
 
         let mut state = self.inner.state.lock().await;
@@ -536,6 +529,8 @@ impl Bowl {
             return;
         };
 
+        let mut normal_phase_changed = false;
+
         for phase in Phase::ordered(startup) {
             let snapshot = self.snapshot().await;
             let runs = join_all(
@@ -550,12 +545,25 @@ impl Bowl {
                 continue;
             }
 
-            commit_system_runs(&mut memo, &self.inner.state, runs).await;
+            let commit_completion_outputs = runs
+                .iter()
+                .flat_map(|run| run.outputs.iter())
+                .all(|output| output.completion_only);
+            normal_phase_changed |= commit_system_runs(
+                &mut memo,
+                &self.inner.state,
+                runs,
+                commit_completion_outputs,
+            )
+            .await;
         }
 
         let waiters = {
             let mut state = self.inner.state.lock().await;
             state.memo = memo;
+            if !normal_phase_changed {
+                state.settled_revision = state.world.revision_raw();
+            }
             state.completed_generation = generation;
             state.running_generation = None;
             std::mem::take(&mut state.waiters)
@@ -604,23 +612,30 @@ async fn commit_system_runs(
     memo: &mut HashMap<SystemInvocation, MemoEntry>,
     state: &Mutex<State>,
     runs: Vec<SystemRun>,
-) {
+    commit_completion_outputs: bool,
+) -> bool {
     let mut outputs = Vec::new();
 
     for run in runs {
-        outputs.extend(run.outputs);
+        outputs.extend(
+            run.outputs
+                .into_iter()
+                .filter(|output| commit_completion_outputs || !output.completion_only),
+        );
         for (owner, entry) in run.memo_updates {
             memo.insert(owner, entry);
         }
     }
 
     let mut state = state.lock().await;
+    let before_revision = state.world.revision_raw();
     for output in outputs {
         state.world.remove_derived_owned(&output.owner);
         for command in output.commands {
             command.apply(&mut state.world, &output.owner);
         }
     }
+    state.world.revision_raw() != before_revision
 }
 
 fn remove_memo_touched_by(memo: &mut HashMap<SystemInvocation, MemoEntry>, keys: &HashSet<Entity>) {
@@ -757,6 +772,7 @@ mod tests {
     struct NonCloneAnswer(u32);
     struct Note;
     struct Hooked;
+    struct UntrackedMarker;
 
     impl Component for A {}
     impl Component for B {}
@@ -768,6 +784,11 @@ mod tests {
     impl Component for Answer {}
     impl Component for NonCloneAnswer {}
     impl Component for Note {}
+    impl Component for UntrackedMarker {
+        fn tracked() -> bool {
+            false
+        }
+    }
     impl Component for Hooked {
         fn on_insert(context: ComponentHookContext) {
             assert!(context.entity().raw() < u64::MAX);
@@ -790,6 +811,7 @@ mod tests {
     static HOOK_INSERTS: AtomicUsize = AtomicUsize::new(0);
     static HOOK_REMOVES: AtomicUsize = AtomicUsize::new(0);
     static HOOK_ENTITY_REMOVES: AtomicUsize = AtomicUsize::new(0);
+    static HOOK_TEST_LOCK: StdMutex<()> = StdMutex::new(());
     static PHASE_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
 
     async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands) {
@@ -887,6 +909,47 @@ mod tests {
     async fn remove_hooked_entity(query: Query<(Entity, &Hooked)>, mut commands: Commands) {
         let (entity, _hooked) = query.item();
         commands.remove(entity);
+    }
+
+    async fn mark_b_processed(query: Query<(Entity, &B)>, mut commands: Commands) {
+        let (entity, _b) = query.item();
+        commands.entity(entity).insert(D(1));
+    }
+
+    async fn count_after_note(
+        _: Query<Entity, With<Note>>,
+        query: Query<(Entity, &A)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _a) = query.item();
+        commands.entity(entity).insert(Count(1));
+    }
+
+    async fn count_bs_after_note(
+        _: Query<Entity, With<Note>>,
+        query: Query<(Entity, &D)>,
+        processed: View<'_, (Entity, &D)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _d) = query.item();
+        commands.entity(entity).insert(Count(processed.len()));
+    }
+
+    async fn answer_after_untracked_marker(
+        _: Query<Entity, With<UntrackedMarker>>,
+        query: Query<(Entity, &Request)>,
+        processed: View<'_, (Entity, &D)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _request) = query.item();
+        commands.entity(entity).insert(Answer(processed.len() as u32));
+    }
+
+    async fn cleanup_untracked_marker(
+        query: Query<Entity, With<UntrackedMarker>>,
+        mut commands: Commands,
+    ) {
+        commands.remove(query.item());
     }
 
     async fn mixed_param_system(
@@ -1147,6 +1210,7 @@ mod tests {
     #[test]
     fn component_lifecycle_hooks_fire_for_insert_take_and_entity_remove() {
         block_on(async {
+            let _guard = HOOK_TEST_LOCK.lock().expect("hook test lock poisoned");
             HOOK_INSERTS.store(0, Ordering::SeqCst);
             HOOK_REMOVES.store(0, Ordering::SeqCst);
             HOOK_ENTITY_REMOVES.store(0, Ordering::SeqCst);
@@ -1174,6 +1238,7 @@ mod tests {
     #[test]
     fn remove_command_removes_entity_and_fires_lifecycle_hooks() {
         block_on(async {
+            let _guard = HOOK_TEST_LOCK.lock().expect("hook test lock poisoned");
             HOOK_INSERTS.store(0, Ordering::SeqCst);
             HOOK_REMOVES.store(0, Ordering::SeqCst);
             HOOK_ENTITY_REMOVES.store(0, Ordering::SeqCst);
@@ -1186,6 +1251,97 @@ mod tests {
             assert_eq!(HOOK_INSERTS.load(Ordering::SeqCst), 1);
             assert_eq!(HOOK_REMOVES.load(Ordering::SeqCst), 1);
             assert_eq!(HOOK_ENTITY_REMOVES.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn untracked_components_do_not_invalidate_clean_systems() {
+        block_on(async {
+            REQUEST_RUNS.store(0, Ordering::SeqCst);
+
+            let bowl = Bowl::new();
+            bowl.add_system(make_b).await;
+            bowl.insert((A(1),)).await;
+
+            assert_eq!(bowl.query::<(Entity, &B)>().await.len(), 1);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+
+            bowl.insert((UntrackedMarker,)).await;
+
+            assert_eq!(bowl.query::<(Entity, &B)>().await.len(), 1);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn cleanup_runs_after_normal_phases_settle() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_b_uncounted.on_complete(|mut commands: Commands| {
+                commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
+            }))
+            .await;
+            bowl.add_system(count_after_note.run_during(Phase::Complete))
+                .await;
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((A(1),)).await;
+
+            let counts = bowl.query::<(Entity, &Count)>().await;
+
+            assert_eq!(counts.len(), 1);
+            assert_eq!(bowl.query::<(Entity, &Note)>().await.len(), 0);
+        });
+    }
+
+    #[test]
+    fn on_complete_waits_for_same_phase_upstream_work_to_settle() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_b_uncounted).await;
+            bowl.add_system(mark_b_processed.on_complete(|mut commands: Commands| {
+                commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
+            }))
+            .await;
+            bowl.add_system(count_bs_after_note.run_during(Phase::Complete))
+                .await;
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((B(0),)).await;
+            assert_eq!(bowl.query::<(Entity, &Count)>().await.len(), 1);
+
+            bowl.insert((A(1),)).await;
+
+            let result = bowl.query::<(Entity, &Count)>().await;
+            let counts = result.collect();
+
+            assert_eq!(counts.len(), 2);
+            assert!(counts.iter().all(|(_, count)| count.0 == 2));
+        });
+    }
+
+    #[test]
+    fn on_complete_does_not_publish_gate_while_upstream_work_is_pending() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_b_uncounted).await;
+            bowl.add_system(mark_b_processed.on_complete(|mut commands: Commands| {
+                commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
+            }))
+            .await;
+            bowl.add_system(answer_after_untracked_marker.run_during(Phase::Complete))
+                .await;
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((B(0),)).await;
+            bowl.query::<(Entity, &D)>().await;
+
+            let answer = bowl.insert((A(1), Request)).await.bind();
+
+            assert_eq!(answer.take::<Answer>().await.unwrap().0, 2);
         });
     }
 

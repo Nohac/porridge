@@ -42,6 +42,17 @@ DiagnosticsFlushed
 An ephemeral fact is still an ordinary component. The difference is its
 lifetime: it exists only for the current evaluation cycle.
 
+Ephemeral readiness tokens should usually be untracked:
+
+```rust
+#[derive(Component)]
+#[component(untracked)]
+struct AstAvailable;
+```
+
+That lets systems observe the token during the generation without making token
+creation/removal look like durable input churn.
+
 ## Completion Semantics
 
 System completion must not mean "the system emitted outputs".
@@ -155,8 +166,14 @@ Cleanup
 
 Commands are applied between startup/evaluate/complete phases, so later normal
 phases can observe facts produced by earlier normal phases in the same
-generation. Cleanup runs once at the end of settlement, before outside callers
-observe query results.
+generation. Cleanup uses the same command buffer model, but it is held until
+normal phases stop producing tracked changes. Cleanup is committed before
+outside callers observe query results.
+
+Cleanup writes are terminal for the current evaluation. They may bump component
+revisions, but that revision movement is folded into the settled baseline after
+normal systems are already clean, instead of forcing another normal evaluation
+tick by itself.
 
 ## Plugins
 

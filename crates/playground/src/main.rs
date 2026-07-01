@@ -20,9 +20,11 @@ async fn main() {
         commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
     }))
     .await;
-    db.add_system(check_imports).await;
-    db.add_system(check_duplicate_defs).await;
-    db.add_system(hover_info).await;
+    db.add_system(check_imports.run_during(Phase::Complete))
+        .await;
+    db.add_system(check_duplicate_defs.run_during(Phase::Complete))
+        .await;
+    db.add_system(hover_info.run_during(Phase::Complete)).await;
     db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup))
         .await;
 
