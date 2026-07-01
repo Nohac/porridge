@@ -6,7 +6,7 @@ The motivating example is `AstAvailable`:
 
 ```rust
 generate_ast.on_complete(|mut commands| {
-    commands.insert((Singleton, Ephemeral, AstAvailable));
+    commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
 })
 ```
 
@@ -111,7 +111,7 @@ on_rest / on_idle
 The minimum needed hook is:
 
 ```rust
-bowl.on_evaluation_complete(cleanup_ephemeral);
+bowl.add_system(cleanup_ephemeral.run_during(Phase::Cleanup));
 ```
 
 Lifecycle hooks should be expressed using the same command buffer model as
@@ -123,12 +123,40 @@ async fn cleanup_ephemeral(
     mut commands: Commands,
 ) {
     for entity in ephemerals {
-        commands.entity(entity).despawn();
+        commands.remove(entity);
     }
 }
 ```
 
-This requires remove/despawn commands.
+This uses normal buffered remove commands.
+
+`run_during` is the coarse system scheduling hook:
+
+```rust
+db.add_system(parse_file); // default: Phase::Evaluate
+db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup));
+```
+
+Current phases:
+
+```text
+Startup
+  runs once before the first evaluate phase
+
+Evaluate
+  default phase for ordinary systems
+
+Complete
+  runs after evaluate systems in the same generation
+
+Cleanup
+  runs after evaluate/complete have settled
+```
+
+Commands are applied between startup/evaluate/complete phases, so later normal
+phases can observe facts produced by earlier normal phases in the same
+generation. Cleanup runs once at the end of settlement, before outside callers
+observe query results.
 
 ## Plugins
 
@@ -164,7 +192,7 @@ Helpers are only sugar:
 commands.insert((Singleton::<AstAvailable>::new(), AstAvailable { data }, Ephemeral));
 ```
 
-`Ephemeral` should initially mean entity lifetime. Cleanup despawns entities
+`Ephemeral` should initially mean entity lifetime. Cleanup removes entities
 marked with `Ephemeral`, including ephemeral singleton entities, and updates any
 internal indexes such as singleton caches. Component-scoped ephemeral cleanup can
 be added later if a real use case needs it.

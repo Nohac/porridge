@@ -27,6 +27,9 @@ impl Default for SystemImportDb {
 #[derive(Component, Clone, Copy)]
 pub(crate) struct AstAvailable;
 
+#[derive(Component)]
+pub(crate) struct Ephemeral;
+
 #[derive(Component, Hash)]
 #[component(hash)]
 pub(crate) struct BelongsToFile(pub(crate) Entity);

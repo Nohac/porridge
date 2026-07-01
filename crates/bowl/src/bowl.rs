@@ -12,7 +12,7 @@ use crate::{
     Component, Entity, IntoSystem, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
     query::QueryParam,
-    system::{BoxedSystem, MemoEntry},
+    system::{BoxedSystem, MemoEntry, Phase, SystemRun},
     world::{Snapshot, SystemId, SystemInvocation, World},
 };
 
@@ -67,6 +67,7 @@ struct State {
     pending_inputs: Vec<Box<dyn BaseCommandOp>>,
     waiters: Vec<oneshot::Sender<()>>,
     settled_revision: u64,
+    startup_ran: bool,
 }
 
 /// Result of inserting a new entity into the next evaluation generation.
@@ -254,6 +255,7 @@ impl Bowl {
                     pending_inputs: Vec::new(),
                     waiters: Vec::new(),
                     settled_revision: 0,
+                    startup_ran: false,
                 }),
                 runner: Mutex::new(()),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
@@ -407,8 +409,7 @@ impl Bowl {
             }
 
             if clean && last_revision == Some(revision) {
-                let mut state = self.inner.state.lock().await;
-                state.settled_revision = revision;
+                self.run_cleanup_phase().await;
                 return;
             }
 
@@ -417,6 +418,30 @@ impl Bowl {
         }
 
         panic!("bowl did not settle within {DEFAULT_SETTLE_LIMIT} generations");
+    }
+
+    async fn run_cleanup_phase(&self) {
+        let (systems, mut memo) = {
+            let mut state = self.inner.state.lock().await;
+            (state.systems.clone(), std::mem::take(&mut state.memo))
+        };
+
+        let snapshot = self.snapshot().await;
+        let runs = join_all(
+            systems
+                .iter()
+                .filter(|system| system.phase == Phase::Cleanup)
+                .map(|system| system.run(&snapshot, &memo)),
+        )
+        .await;
+
+        if !runs.is_empty() {
+            commit_system_runs(&mut memo, &self.inner.state, runs).await;
+        }
+
+        let mut state = self.inner.state.lock().await;
+        state.memo = memo;
+        state.settled_revision = state.world.revision_raw();
     }
 
     async fn enqueue_next_generation(&self) {
@@ -507,28 +532,29 @@ impl Bowl {
     /// when a caller wins the runner race after another caller already completed
     /// the work it was waiting for.
     async fn run_evaluation(&self, _runner: futures::lock::MutexGuard<'_, ()>) {
-        let Some((generation, snapshot, systems, mut memo)) = self.start_evaluation().await else {
+        let Some((generation, systems, mut memo, startup)) = self.start_evaluation().await else {
             return;
         };
 
-        let mut outputs = Vec::new();
-        let runs = join_all(systems.iter().map(|system| system.0.run(&snapshot, &memo))).await;
-        for run in runs {
-            outputs.extend(run.outputs);
-            for (owner, entry) in run.memo_updates {
-                memo.insert(owner, entry);
+        for phase in Phase::ordered(startup) {
+            let snapshot = self.snapshot().await;
+            let runs = join_all(
+                systems
+                    .iter()
+                    .filter(|system| system.phase == *phase)
+                    .map(|system| system.run(&snapshot, &memo)),
+            )
+            .await;
+
+            if runs.is_empty() {
+                continue;
             }
+
+            commit_system_runs(&mut memo, &self.inner.state, runs).await;
         }
 
         let waiters = {
             let mut state = self.inner.state.lock().await;
-            for output in outputs {
-                state.world.remove_derived_owned(&output.owner);
-                for command in output.commands {
-                    command.apply(&mut state.world, &output.owner);
-                }
-            }
-
             state.memo = memo;
             state.completed_generation = generation;
             state.running_generation = None;
@@ -550,9 +576,9 @@ impl Bowl {
         &self,
     ) -> Option<(
         u64,
-        Snapshot,
         Vec<BoxedSystem>,
         HashMap<SystemInvocation, MemoEntry>,
+        bool,
     )> {
         let mut state = self.inner.state.lock().await;
         let generation = state.pending_generation.take()?;
@@ -564,12 +590,36 @@ impl Bowl {
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
+        let startup = !state.startup_ran;
+        state.startup_ran = true;
 
-        let snapshot = state.world.clone();
         let systems = state.systems.clone();
         let memo = std::mem::take(&mut state.memo);
 
-        Some((generation, snapshot, systems, memo))
+        Some((generation, systems, memo, startup))
+    }
+}
+
+async fn commit_system_runs(
+    memo: &mut HashMap<SystemInvocation, MemoEntry>,
+    state: &Mutex<State>,
+    runs: Vec<SystemRun>,
+) {
+    let mut outputs = Vec::new();
+
+    for run in runs {
+        outputs.extend(run.outputs);
+        for (owner, entry) in run.memo_updates {
+            memo.insert(owner, entry);
+        }
+    }
+
+    let mut state = state.lock().await;
+    for output in outputs {
+        state.world.remove_derived_owned(&output.owner);
+        for command in output.commands {
+            command.apply(&mut state.world, &output.owner);
+        }
     }
 }
 
@@ -684,11 +734,17 @@ all_tuples!(impl_bundle, 1, 8, T);
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        Mutex as StdMutex,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     use futures::executor::block_on;
 
-    use crate::{Bowl, Commands, Component, Entity, Query, Singleton, View, With};
+    use crate::{
+        Bowl, Commands, Component, ComponentHookContext, Entity, Phase, Query, Singleton,
+        SystemExt, View, With,
+    };
 
     struct A(u32);
     struct B(u32);
@@ -700,6 +756,7 @@ mod tests {
     struct Answer(u32);
     struct NonCloneAnswer(u32);
     struct Note;
+    struct Hooked;
 
     impl Component for A {}
     impl Component for B {}
@@ -711,9 +768,29 @@ mod tests {
     impl Component for Answer {}
     impl Component for NonCloneAnswer {}
     impl Component for Note {}
+    impl Component for Hooked {
+        fn on_insert(context: ComponentHookContext) {
+            assert!(context.entity().raw() < u64::MAX);
+            HOOK_INSERTS.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn on_remove(context: ComponentHookContext) {
+            assert!(context.entity().raw() < u64::MAX);
+            HOOK_REMOVES.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn on_entity_remove(context: ComponentHookContext) {
+            assert!(context.entity().raw() < u64::MAX);
+            HOOK_ENTITY_REMOVES.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     static REQUEST_RUNS: AtomicUsize = AtomicUsize::new(0);
     static CLEAN_RUNS: AtomicUsize = AtomicUsize::new(0);
+    static HOOK_INSERTS: AtomicUsize = AtomicUsize::new(0);
+    static HOOK_REMOVES: AtomicUsize = AtomicUsize::new(0);
+    static HOOK_ENTITY_REMOVES: AtomicUsize = AtomicUsize::new(0);
+    static PHASE_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
 
     async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (entity, a) = query.item();
@@ -776,6 +853,40 @@ mod tests {
     async fn write_singleton_count(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (_entity, a) = query.item();
         commands.insert((Singleton::<Count>::new(), Count(a.0 as usize)));
+    }
+
+    async fn startup_phase(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (entity, _a) = query.item();
+        PHASE_LOG
+            .lock()
+            .expect("phase log lock poisoned")
+            .push("startup");
+        commands.entity(entity).insert(B(1));
+    }
+
+    async fn evaluate_phase(query: Query<(Entity, &A)>, bs: View<'_, (Entity, &B)>) {
+        let (_entity, _a) = query.item();
+        if bs.len() == 1 {
+            PHASE_LOG
+                .lock()
+                .expect("phase log lock poisoned")
+                .push("evaluate-after-startup");
+        }
+    }
+
+    async fn cleanup_phase(query: Query<(Entity, &A)>, bs: View<'_, (Entity, &B)>) {
+        let (_entity, _a) = query.item();
+        if bs.len() == 1 {
+            PHASE_LOG
+                .lock()
+                .expect("phase log lock poisoned")
+                .push("cleanup");
+        }
+    }
+
+    async fn remove_hooked_entity(query: Query<(Entity, &Hooked)>, mut commands: Commands) {
+        let (entity, _hooked) = query.item();
+        commands.remove(entity);
     }
 
     async fn mixed_param_system(
@@ -995,6 +1106,86 @@ mod tests {
             let bowl = Bowl::new();
             bowl.insert((Singleton::<A>::new(), Singleton::<B>::new(), A(1), B(2)))
                 .await;
+        });
+    }
+
+    #[test]
+    fn systems_can_run_during_specific_phases() {
+        block_on(async {
+            PHASE_LOG.lock().expect("phase log lock poisoned").clear();
+
+            let bowl = Bowl::new();
+            bowl.add_system(startup_phase.run_during(Phase::Startup))
+                .await;
+            bowl.add_system(evaluate_phase).await;
+            bowl.add_system(cleanup_phase.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((A(1),)).await;
+            bowl.query::<(Entity, &B)>().await;
+
+            let log = PHASE_LOG.lock().expect("phase log lock poisoned").clone();
+            assert_eq!(log, ["startup", "evaluate-after-startup", "cleanup"]);
+
+            bowl.insert((A(2),)).await;
+            bowl.query::<(Entity, &B)>().await;
+
+            let log = PHASE_LOG.lock().expect("phase log lock poisoned").clone();
+            assert_eq!(
+                log,
+                [
+                    "startup",
+                    "evaluate-after-startup",
+                    "cleanup",
+                    "evaluate-after-startup",
+                    "cleanup"
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn component_lifecycle_hooks_fire_for_insert_take_and_entity_remove() {
+        block_on(async {
+            HOOK_INSERTS.store(0, Ordering::SeqCst);
+            HOOK_REMOVES.store(0, Ordering::SeqCst);
+            HOOK_ENTITY_REMOVES.store(0, Ordering::SeqCst);
+
+            let bowl = Bowl::new();
+            let hooked = bowl.insert((Hooked,)).await.bind();
+            hooked.take::<Hooked>().await.unwrap();
+
+            assert_eq!(HOOK_INSERTS.load(Ordering::SeqCst), 1);
+            assert_eq!(HOOK_REMOVES.load(Ordering::SeqCst), 1);
+            assert_eq!(HOOK_ENTITY_REMOVES.load(Ordering::SeqCst), 0);
+
+            {
+                let _hooked = bowl.insert((Hooked,)).await.bind();
+            }
+
+            bowl.query::<Entity>().await;
+
+            assert_eq!(HOOK_INSERTS.load(Ordering::SeqCst), 2);
+            assert_eq!(HOOK_REMOVES.load(Ordering::SeqCst), 2);
+            assert_eq!(HOOK_ENTITY_REMOVES.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn remove_command_removes_entity_and_fires_lifecycle_hooks() {
+        block_on(async {
+            HOOK_INSERTS.store(0, Ordering::SeqCst);
+            HOOK_REMOVES.store(0, Ordering::SeqCst);
+            HOOK_ENTITY_REMOVES.store(0, Ordering::SeqCst);
+
+            let bowl = Bowl::new();
+            bowl.add_system(remove_hooked_entity).await;
+            bowl.insert((Hooked,)).await;
+
+            assert_eq!(bowl.query::<(Entity, &Hooked)>().await.len(), 0);
+            assert_eq!(HOOK_INSERTS.load(Ordering::SeqCst), 1);
+            assert_eq!(HOOK_REMOVES.load(Ordering::SeqCst), 1);
+            assert_eq!(HOOK_ENTITY_REMOVES.load(Ordering::SeqCst), 1);
         });
     }
 

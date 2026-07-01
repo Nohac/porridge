@@ -10,6 +10,31 @@ use crate::{
 };
 use variadics_please::all_tuples;
 
+/// Coarse phase in which a system runs during one evaluation generation.
+///
+/// Systems registered without configuration run during [`Phase::Evaluate`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Phase {
+    /// Runs once before the first evaluate phase.
+    Startup,
+    /// Default phase for ordinary fact-producing systems.
+    Evaluate,
+    /// Runs after evaluate systems in the same generation.
+    Complete,
+    /// Runs after complete systems in the same generation.
+    Cleanup,
+}
+
+impl Phase {
+    pub(crate) const fn ordered(startup: bool) -> &'static [Phase] {
+        if startup {
+            &[Phase::Startup, Phase::Evaluate, Phase::Complete]
+        } else {
+            &[Phase::Evaluate, Phase::Complete]
+        }
+    }
+}
+
 /// Memoized dependency record for one system invocation.
 ///
 /// Invocation identity lives in [`SystemInvocation`]; this entry records the
@@ -34,6 +59,7 @@ pub(crate) struct SystemOutput {
 /// returns the memo entries it wants to publish, and the bowl merges them after
 /// all concurrent system futures complete.
 pub(crate) struct SystemRun {
+    pub(crate) completed: bool,
     pub(crate) outputs: Vec<SystemOutput>,
     pub(crate) memo_updates: Vec<(SystemInvocation, MemoEntry)>,
 }
@@ -41,10 +67,16 @@ pub(crate) struct SystemRun {
 impl SystemRun {
     fn empty() -> Self {
         Self {
+            completed: false,
             outputs: Vec::new(),
             memo_updates: Vec::new(),
         }
     }
+}
+
+struct PlannedRun<State> {
+    completed: bool,
+    invocations: Vec<PlannedInvocation<State>>,
 }
 
 struct PlannedInvocation<State> {
@@ -229,11 +261,13 @@ fn plan_invocations<Params>(
     system: SystemId,
     snapshot: &Snapshot,
     memo: &HashMap<SystemInvocation, MemoEntry>,
-) -> Vec<PlannedInvocation<Params::State>>
+) -> PlannedRun<Params::State>
 where
     Params: SystemParam,
 {
-    Params::states(snapshot)
+    let states = Params::states(snapshot);
+    let completed = !states.is_empty();
+    let invocations = states
         .into_iter()
         .filter_map(|state| {
             let owner = SystemInvocation {
@@ -246,7 +280,12 @@ where
                 .is_none_or(|entry| entry.deps != deps)
                 .then_some(PlannedInvocation { state, owner, deps })
         })
-        .collect()
+        .collect();
+
+    PlannedRun {
+        completed,
+        invocations,
+    }
 }
 
 fn finish_invocation(
@@ -298,7 +337,24 @@ pub(crate) trait Runnable: Send + Sync {
 
 /// Type-erased registered system.
 #[derive(Clone)]
-pub struct BoxedSystem(pub(crate) Arc<dyn Runnable>);
+pub struct BoxedSystem {
+    pub(crate) runnable: Arc<dyn Runnable>,
+    pub(crate) phase: Phase,
+}
+
+impl BoxedSystem {
+    fn new(runnable: Arc<dyn Runnable>) -> Self {
+        Self {
+            runnable,
+            phase: Phase::Evaluate,
+        }
+    }
+
+    fn run_during(mut self, phase: Phase) -> Self {
+        self.phase = phase;
+        self
+    }
+}
 
 /// Converts a user function into a registered system.
 ///
@@ -339,6 +395,15 @@ pub trait SystemExt: Sized {
             callback,
         }
     }
+
+    /// Runs this system during `phase` instead of the default
+    /// [`Phase::Evaluate`] phase.
+    fn run_during(self, phase: Phase) -> RunDuring<Self> {
+        RunDuring {
+            system: self,
+            phase,
+        }
+    }
 }
 
 impl<S> SystemExt for S {}
@@ -347,6 +412,12 @@ impl<S> SystemExt for S {}
 pub struct OnComplete<S, C> {
     system: S,
     callback: C,
+}
+
+/// System wrapper produced by [`SystemExt::run_during`].
+pub struct RunDuring<S> {
+    system: S,
+    phase: Phase,
 }
 
 struct OnCompleteSystem<C> {
@@ -365,16 +436,19 @@ where
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut run = self.system.0.run(snapshot, memo).await;
+            let mut run = self.system.run(snapshot, memo).await;
+            let owner = SystemInvocation {
+                system: self.id,
+                keys: Vec::new(),
+            };
+            let should_emit_completion =
+                run.completed && (!run.outputs.is_empty() || !snapshot.has_derived_owned(&owner));
 
-            if !run.outputs.is_empty() {
+            if should_emit_completion {
                 let commands = Commands::new();
                 self.callback.run(commands.clone());
                 run.outputs.push(SystemOutput {
-                    owner: SystemInvocation {
-                        system: self.id,
-                        keys: Vec::new(),
-                    },
+                    owner,
                     commands: commands.take(),
                 });
             }
@@ -392,11 +466,36 @@ where
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
-        BoxedSystem(Arc::new(OnCompleteSystem {
-            id,
-            system,
-            callback: self.callback,
-        }))
+        let phase = system.phase;
+        BoxedSystem {
+            runnable: Arc::new(OnCompleteSystem {
+                id,
+                system,
+                callback: self.callback,
+            }),
+            phase,
+        }
+    }
+}
+
+impl<S, M> IntoSystem<(RunDuringMarker, M)> for RunDuring<S>
+where
+    S: IntoSystem<M>,
+{
+    fn into_system(self, id: SystemId) -> BoxedSystem {
+        self.system.into_system(id).run_during(self.phase)
+    }
+}
+
+pub struct RunDuringMarker;
+
+impl BoxedSystem {
+    pub(crate) fn run<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
+        self.runnable.run(snapshot, memo)
     }
 }
 
@@ -428,7 +527,9 @@ where
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let row_futures = plan_invocations::<F::Param>(self.id, snapshot, memo)
+            let planned = plan_invocations::<F::Param>(self.id, snapshot, memo);
+            let row_futures = planned
+                .invocations
                 .into_iter()
                 .map(|invocation| async move {
                     let commands = Commands::new();
@@ -439,7 +540,9 @@ where
                 })
                 .collect::<Vec<_>>();
 
-            collect_invocations(row_futures).await
+            let mut run = collect_invocations(row_futures).await;
+            run.completed = planned.completed;
+            run
         }
         .boxed_local()
     }
@@ -485,7 +588,7 @@ where
     F::Param: Send + Sync + 'static,
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
-        BoxedSystem(Arc::new(FunctionSystem {
+        BoxedSystem::new(Arc::new(FunctionSystem {
             id,
             function: self,
             _marker: PhantomData::<Marker>,

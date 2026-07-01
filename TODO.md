@@ -30,22 +30,25 @@ Current shortcut:
   - `on_system_complete`
   - `on_evaluation_complete`
   - possibly `on_idle` / `on_rest`
+- Use coarse system phases through `system.run_during(Phase::...)` where a
+  full lifecycle hook would be too much API.
 - Make `on_complete` mean "the system completed for this generation", not
   "the system produced outputs".
 - Ensure memo-clean completion can still emit readiness markers.
 - Add an `Ephemeral` marker component for generation-scoped coordination facts.
-- Add remove/despawn commands so cleanup can be expressed as a normal hook.
+- Add remove commands so cleanup can be expressed as a normal hook.
 - Add an `EphemeralPlugin` that removes ephemeral facts at evaluation complete.
-- Update the playground so `AstAvailable` is an ephemeral singleton readiness
-  marker instead of a durable project fact.
 
 Current shortcut:
+- `Phase` and `SystemExt::run_during` exist for `Startup`, `Evaluate`,
+  `Complete`, and `Cleanup`.
+- `Component` has lifecycle hooks for insert, remove, and entity removal.
 - `on_complete` exists, but it currently depends on whether the wrapped system
   produced outputs.
-- `AstAvailable` is durable in the playground, even though it is really a
-  readiness token for a single evaluation.
+- The playground models `AstAvailable` as an ephemeral singleton readiness
+  marker with a cleanup-phase system.
+- Buffered entity/component remove commands exist.
 - There is no plugin system or lifecycle hook registry.
-- There are no remove/despawn commands yet.
 
 See:
 - `spec/lifecycle-and-ephemeral.md`

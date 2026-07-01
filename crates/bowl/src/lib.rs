@@ -59,8 +59,8 @@ mod world;
 
 pub use bowl::{BoundEntity, Bowl, Bundle, InsertedEntity, TakeBundle, TakeError};
 pub use commands::Commands;
-pub use component::{Component, Singleton, hash_component};
+pub use component::{Component, ComponentHookContext, Singleton, hash_component};
 pub use entity::Entity;
 pub use macros::Component;
 pub use query::{Query, QueryFilter, QueryParam, QueryResult, View, With};
-pub use system::{CompleteCallback, IntoSystem, SystemExt, insert_on};
+pub use system::{CompleteCallback, IntoSystem, Phase, SystemExt, insert_on};

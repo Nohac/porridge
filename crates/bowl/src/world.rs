@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Component, Entity};
+use crate::{Component, Entity, component::ComponentHookContext};
 
 /// Monotonic revision assigned to tracked component writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -70,6 +70,7 @@ trait StoreDyn: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision);
+    fn has_derived_owned(&self, owner: &SystemInvocation) -> bool;
     fn remove_derived_touched_by(
         &mut self,
         keys: &HashSet<Entity>,
@@ -114,13 +115,25 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision) {
         let before = self.entries.len();
-        self.entries.retain(|_, entry| {
-            entry.origin != Origin::Derived || entry.owner.as_ref() != Some(owner)
+        self.entries.retain(|entity, entry| {
+            let remove = entry.origin == Origin::Derived && entry.owner.as_ref() == Some(owner);
+
+            if remove {
+                T::on_remove(ComponentHookContext::new(*entity));
+            }
+
+            !remove
         });
 
         if T::tracked() && self.entries.len() != before {
             bump(revision);
         }
+    }
+
+    fn has_derived_owned(&self, owner: &SystemInvocation) -> bool {
+        self.entries
+            .values()
+            .any(|entry| entry.origin == Origin::Derived && entry.owner.as_ref() == Some(owner))
     }
 
     fn remove_derived_touched_by(
@@ -139,6 +152,7 @@ impl<T: Component> StoreDyn for Store<T> {
 
             if remove {
                 removed.push(*entity);
+                T::on_remove(ComponentHookContext::new(*entity));
             }
 
             !remove
@@ -155,6 +169,10 @@ impl<T: Component> StoreDyn for Store<T> {
         let Some(removed) = self.entries.remove(&entity) else {
             return Vec::new();
         };
+
+        let context = ComponentHookContext::new(entity);
+        T::on_entity_remove(context);
+        T::on_remove(context);
 
         if T::tracked() {
             bump(revision);
@@ -292,6 +310,8 @@ impl World {
                 owner,
             },
         );
+
+        T::on_insert(ComponentHookContext::new(entity));
     }
 
     /// Borrows a component from the world/snapshot.
@@ -325,6 +345,13 @@ impl World {
         for store in self.stores.values_mut() {
             store.remove_derived_owned(owner, &mut self.revision);
         }
+    }
+
+    /// Returns whether any derived component is currently owned by `owner`.
+    pub(crate) fn has_derived_owned(&self, owner: &SystemInvocation) -> bool {
+        self.stores
+            .values()
+            .any(|store| store.has_derived_owned(owner))
     }
 
     /// Removes derived components whose owner key set intersects `keys`.
@@ -366,6 +393,8 @@ impl World {
         T: Component,
     {
         let removed = self.store_mut_existing::<T>()?.entries.remove(&entity)?;
+
+        T::on_remove(ComponentHookContext::new(entity));
 
         if T::tracked() {
             bump(&mut self.revision);

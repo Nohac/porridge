@@ -47,6 +47,14 @@ impl Commands {
             .push(Box::new(SpawnCommand { bundle }));
     }
 
+    /// Buffers removing an entity and all attached components.
+    pub fn remove(&mut self, entity: Entity) {
+        self.inner
+            .lock()
+            .expect("command buffer lock poisoned")
+            .push(Box::new(RemoveEntityCommand { entity }));
+    }
+
     /// Drains buffered command operations after the system invocation returns.
     pub(crate) fn take(self) -> Vec<Box<dyn CommandOp>> {
         std::mem::take(&mut *self.inner.lock().expect("command buffer lock poisoned"))
@@ -73,6 +81,18 @@ impl EntityCommands<'_> {
             .push(Box::new(InsertCommand {
                 entity: self.entity,
                 value,
+            }));
+    }
+
+    /// Buffers removing component `T` from this entity.
+    pub fn remove<T: Component>(&mut self) {
+        self.commands
+            .inner
+            .lock()
+            .expect("command buffer lock poisoned")
+            .push(Box::new(RemoveComponentCommand::<T> {
+                entity: self.entity,
+                _marker: std::marker::PhantomData,
             }));
     }
 }
@@ -104,6 +124,27 @@ impl<B: Bundle> CommandOp for SpawnCommand<B> {
             .map(|key| world.singleton_entity_or_spawn(key))
             .unwrap_or_else(|| world.spawn_empty());
         self.bundle.insert_derived(world, entity, owner.clone());
+    }
+}
+
+struct RemoveEntityCommand {
+    entity: Entity,
+}
+
+impl CommandOp for RemoveEntityCommand {
+    fn apply(self: Box<Self>, world: &mut World, _owner: &SystemInvocation) {
+        world.remove_entity(self.entity);
+    }
+}
+
+struct RemoveComponentCommand<T> {
+    entity: Entity,
+    _marker: std::marker::PhantomData<fn() -> T>,
+}
+
+impl<T: Component> CommandOp for RemoveComponentCommand<T> {
+    fn apply(self: Box<Self>, world: &mut World, _owner: &SystemInvocation) {
+        world.remove_component::<T>(self.entity);
     }
 }
 

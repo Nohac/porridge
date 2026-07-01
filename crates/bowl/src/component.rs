@@ -5,6 +5,25 @@ use std::{
     marker::PhantomData,
 };
 
+use crate::Entity;
+
+/// Context passed to component lifecycle hooks.
+#[derive(Debug, Clone, Copy)]
+pub struct ComponentHookContext {
+    entity: Entity,
+}
+
+impl ComponentHookContext {
+    pub(crate) const fn new(entity: Entity) -> Self {
+        Self { entity }
+    }
+
+    /// Entity whose component lifecycle changed.
+    pub fn entity(self) -> Entity {
+        self.entity
+    }
+}
+
 /// Data that can be attached to an [`Entity`](crate::Entity).
 ///
 /// Components must be `Send + Sync` because `Bowl` is designed to be shared
@@ -28,6 +47,16 @@ pub trait Component: Send + Sync + 'static {
     fn singleton_key() -> Option<TypeId> {
         None
     }
+
+    /// Runs after this component type is inserted or replaced on an entity.
+    fn on_insert(_context: ComponentHookContext) {}
+
+    /// Runs when this component type is removed from an entity.
+    fn on_remove(_context: ComponentHookContext) {}
+
+    /// Runs before this component type is removed as part of removing the whole
+    /// entity.
+    fn on_entity_remove(_context: ComponentHookContext) {}
 }
 
 /// Marker component that routes a bundle through the singleton index for `T`.

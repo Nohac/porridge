@@ -1,12 +1,12 @@
 mod lang;
 
-use bowl::{Bowl, Commands, Entity, Singleton, SystemExt};
+use bowl::{Bowl, Commands, Entity, Phase, Query, Singleton, SystemExt, With};
 
 use crate::lang::{
     analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
     grammar::{
-        AstAvailable, AstDef, Diagnostic, FilePath, FileText, HoverInfo, HoverRequest, Position,
-        SystemImportDb,
+        AstAvailable, AstDef, Diagnostic, Ephemeral, FilePath, FileText, HoverInfo, HoverRequest,
+        Position, SystemImportDb,
     },
     service::hover_info,
 };
@@ -17,12 +17,14 @@ async fn main() {
 
     db.add_system(parse_file).await;
     db.add_system(generate_ast.on_complete(|mut commands: Commands| {
-        commands.insert((Singleton::<AstAvailable>::new(), AstAvailable));
+        commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
     }))
     .await;
     db.add_system(check_imports).await;
     db.add_system(check_duplicate_defs).await;
     db.add_system(hover_info).await;
+    db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup))
+        .await;
 
     db.insert((
         Singleton::<SystemImportDb>::new(),
@@ -117,4 +119,9 @@ async fn main() {
 
     let hover_facts = db.query::<(Entity, &HoverInfo)>().await;
     println!("hover facts after request: {}", hover_facts.collect().len());
+}
+
+async fn cleanup_ephemeral(query: Query<Entity, With<Ephemeral>>, mut commands: Commands) {
+    let entity = query.item();
+    commands.remove(entity);
 }
