@@ -522,7 +522,7 @@ impl Bowl {
         let progress = if runs.is_empty() {
             CommitProgress::default()
         } else {
-            commit_system_runs(&mut memo, &self.inner.state, runs, true).await
+            commit_system_runs(&mut memo, &self.inner.state, runs).await
         };
 
         let mut state = self.inner.state.lock().await;
@@ -550,7 +550,7 @@ impl Bowl {
         .await;
 
         if !runs.is_empty() {
-            commit_system_runs(&mut memo, &self.inner.state, runs, true).await;
+            commit_system_runs(&mut memo, &self.inner.state, runs).await;
         }
 
         let mut state = self.inner.state.lock().await;
@@ -666,18 +666,9 @@ impl Bowl {
                 continue;
             }
 
-            let commit_completion_outputs = runs
-                .iter()
-                .flat_map(|run| run.outputs.iter())
-                .all(|output| output.completion_only);
-            normal_phase_changed |= commit_system_runs(
-                &mut memo,
-                &self.inner.state,
-                runs,
-                commit_completion_outputs,
-            )
-            .await
-            .needs_followup;
+            normal_phase_changed |= commit_system_runs(&mut memo, &self.inner.state, runs)
+                .await
+                .needs_followup;
         }
 
         let waiters = {
@@ -738,16 +729,11 @@ async fn commit_system_runs(
     memo: &mut HashMap<SystemInvocation, MemoEntry>,
     state: &Mutex<State>,
     runs: Vec<SystemRun>,
-    commit_completion_outputs: bool,
 ) -> CommitProgress {
     let mut outputs = Vec::new();
 
     for run in runs {
-        outputs.extend(
-            run.outputs
-                .into_iter()
-                .filter(|output| commit_completion_outputs || !output.completion_only),
-        );
+        outputs.extend(run.outputs);
         for (owner, entry) in run.memo_updates {
             memo.insert(owner, entry);
         }
@@ -952,10 +938,20 @@ mod tests {
     static HOOK_ENTITY_REMOVES: AtomicUsize = AtomicUsize::new(0);
     static HOOK_TEST_LOCK: StdMutex<()> = StdMutex::new(());
     static PHASE_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
+    static SYSTEM_HOOK_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
 
     async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (entity, a) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(B(a.0 + 1));
+    }
+
+    async fn make_b_with_hook_log(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (entity, a) = query.item();
+        SYSTEM_HOOK_LOG
+            .lock()
+            .expect("system hook log lock poisoned")
+            .push("row");
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
@@ -1597,7 +1593,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_complete(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
                 commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
             }))
             .await;
@@ -1624,7 +1620,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_complete(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
                 commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
             }))
             .await;
@@ -1665,6 +1661,53 @@ mod tests {
             assert_eq!(
                 bowl.query::<(Entity, &UntrackedMarker), ()>().await.len(),
                 0
+            );
+        });
+    }
+
+    #[test]
+    fn on_start_and_on_complete_wrap_planned_system_work() {
+        block_on(async {
+            SYSTEM_HOOK_LOG
+                .lock()
+                .expect("system hook log lock poisoned")
+                .clear();
+
+            let bowl = Bowl::new();
+            bowl.add_system(
+                make_b_with_hook_log
+                    .on_start(|_commands: Commands| {
+                        SYSTEM_HOOK_LOG
+                            .lock()
+                            .expect("system hook log lock poisoned")
+                            .push("start");
+                    })
+                    .on_complete(|_commands: Commands| {
+                        SYSTEM_HOOK_LOG
+                            .lock()
+                            .expect("system hook log lock poisoned")
+                            .push("complete");
+                    }),
+            )
+            .await;
+
+            bowl.insert((A(1),)).await;
+            bowl.query::<(Entity, &B), ()>().await;
+
+            assert_eq!(
+                *SYSTEM_HOOK_LOG
+                    .lock()
+                    .expect("system hook log lock poisoned"),
+                vec!["start", "row", "complete"]
+            );
+
+            bowl.query::<(Entity, &B), ()>().await;
+
+            assert_eq!(
+                *SYSTEM_HOOK_LOG
+                    .lock()
+                    .expect("system hook log lock poisoned"),
+                vec!["start", "row", "complete"]
             );
         });
     }

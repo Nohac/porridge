@@ -8,8 +8,8 @@ use bowl::{
 use crate::lang::{
     analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
     grammar::{
-        AstAvailable, AstDef, Diagnostic, Ephemeral, FilePath, FileText, HoverInfo, HoverRequest,
-        Position, Severity, SystemImportDb,
+        AstAvailable, AstDef, CstAvailable, Diagnostic, Ephemeral, FilePath, FileText, HoverInfo,
+        HoverRequest, Position, Severity, SystemImportDb,
     },
     service::hover_info,
 };
@@ -18,7 +18,10 @@ use crate::lang::{
 async fn main() {
     let db = Bowl::new();
 
-    db.add_system(parse_file).await;
+    db.add_system(parse_file.on_settled(|mut commands: Commands| {
+        commands.insert((Singleton::<CstAvailable>::new(), CstAvailable, Ephemeral));
+    }))
+    .await;
     db.add_system(generate_ast.on_settled(|mut commands: Commands| {
         commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
     }))

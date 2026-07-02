@@ -41,6 +41,23 @@ impl Component for AstAvailable {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct CstAvailable;
+
+impl Component for CstAvailable {
+    fn tracked() -> bool {
+        false
+    }
+
+    fn on_insert(context: ComponentHookContext) {
+        println!("CstAvailable insert({})", context.entity().raw());
+    }
+
+    fn on_remove(context: ComponentHookContext) {
+        println!("CstAvailable remove({})", context.entity().raw());
+    }
+}
+
 #[derive(Component)]
 #[component(untracked)]
 pub(crate) struct Ephemeral;

@@ -91,5 +91,5 @@ pub use query::{
     Query, QueryFilter, QueryParam, QueryResult, View, Where, With, Without,
 };
 pub use system::{
-    CompleteCallback, IntoSystem, Phase, SystemExt, WorldMetaView, cleanup_stale_derived, insert_on,
+    IntoSystem, Phase, SystemCallback, SystemExt, WorldMetaView, cleanup_stale_derived, insert_on,
 };

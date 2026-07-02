@@ -51,7 +51,6 @@ pub(crate) struct MemoEntry {
 pub(crate) struct SystemOutput {
     pub(crate) owner: SystemInvocation,
     pub(crate) commands: Vec<Box<dyn CommandOp>>,
-    pub(crate) completion_only: bool,
 }
 
 /// Outputs and memo writes produced by one system for one generation.
@@ -349,7 +348,6 @@ fn finish_invocation(
     let output = SystemOutput {
         owner: owner.clone(),
         commands: commands.take(),
-        completion_only: false,
     };
     let memo_update = (owner, MemoEntry { deps });
 
@@ -382,6 +380,10 @@ where
 /// implementation to solve cross-thread spawning. The bowl can still be shared;
 /// this only constrains where the evaluation future may be polled.
 pub(crate) trait Runnable: Send + Sync {
+    fn has_work(&self, _snapshot: &Snapshot, _memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
+        false
+    }
+
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
@@ -416,6 +418,10 @@ impl BoxedSystem {
         self.phase = phase;
         self
     }
+
+    fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
+        self.runnable.has_work(snapshot, memo)
+    }
 }
 
 /// Converts a user function into a registered system.
@@ -428,15 +434,16 @@ pub trait IntoSystem<Marker>: Send + Sync + 'static {
 }
 
 pub struct FunctionSystemMarker;
+pub struct OnStartMarker;
 pub struct OnCompleteMarker;
 pub struct OnSettledMarker;
 
-/// Callback run once after a system has finished iterating its driving query.
-pub trait CompleteCallback: Send + Sync + 'static {
+/// Callback run around system batches.
+pub trait SystemCallback: Send + Sync + 'static {
     fn run(&self, commands: Commands);
 }
 
-impl<F> CompleteCallback for F
+impl<F> SystemCallback for F
 where
     F: Fn(Commands) + Send + Sync + 'static,
 {
@@ -447,11 +454,23 @@ where
 
 /// Extension methods for system configuration.
 pub trait SystemExt: Sized {
+    /// Runs `callback` once before this system starts processing invocations
+    /// that are invalid for the current snapshot.
+    fn on_start<C>(self, callback: C) -> OnStart<Self, C>
+    where
+        C: SystemCallback,
+    {
+        OnStart {
+            system: self,
+            callback,
+        }
+    }
+
     /// Runs `callback` once after this system has completed all invocations that
     /// were invalid for the current snapshot.
     fn on_complete<C>(self, callback: C) -> OnComplete<Self, C>
     where
-        C: CompleteCallback,
+        C: SystemCallback,
     {
         OnComplete {
             system: self,
@@ -467,7 +486,7 @@ pub trait SystemExt: Sized {
     /// keep the bowl alive until the settle limit is reached.
     fn on_settled<C>(self, callback: C) -> OnSettled<Self, C>
     where
-        C: CompleteCallback,
+        C: SystemCallback,
     {
         OnSettled {
             system: self,
@@ -486,6 +505,12 @@ pub trait SystemExt: Sized {
 }
 
 impl<S> SystemExt for S {}
+
+/// System wrapper produced by [`SystemExt::on_start`].
+pub struct OnStart<S, C> {
+    system: S,
+    callback: C,
+}
 
 /// System wrapper produced by [`SystemExt::on_complete`].
 pub struct OnComplete<S, C> {
@@ -511,16 +536,64 @@ struct OnCompleteSystem<C> {
     callback: C,
 }
 
+struct OnStartSystem<C> {
+    id: SystemId,
+    system: BoxedSystem,
+    callback: C,
+}
+
 struct OnSettledSystem<C> {
     id: SystemId,
     system: BoxedSystem,
     callback: C,
 }
 
+impl<C> Runnable for OnStartSystem<C>
+where
+    C: SystemCallback,
+{
+    fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
+        self.system.has_work(snapshot, memo)
+    }
+
+    fn run<'a>(
+        &'a self,
+        snapshot: &'a Snapshot,
+        memo: &'a HashMap<SystemInvocation, MemoEntry>,
+    ) -> LocalBoxFuture<'a, SystemRun> {
+        async move {
+            let has_work = self.system.has_work(snapshot, memo);
+            let start_commands = has_work.then(|| {
+                let commands = Commands::new();
+                self.callback.run(commands.clone());
+                SystemOutput {
+                    owner: SystemInvocation {
+                        system: self.id,
+                        keys: Vec::new(),
+                    },
+                    commands: commands.take(),
+                }
+            });
+            let mut run = self.system.run(snapshot, memo).await;
+
+            if let Some(output) = start_commands {
+                run.outputs.insert(0, output);
+            }
+
+            run
+        }
+        .boxed_local()
+    }
+}
+
 impl<C> Runnable for OnCompleteSystem<C>
 where
-    C: CompleteCallback,
+    C: SystemCallback,
 {
+    fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
+        self.system.has_work(snapshot, memo)
+    }
+
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
@@ -532,16 +605,13 @@ where
                 system: self.id,
                 keys: Vec::new(),
             };
-            let should_emit_completion =
-                run.completed && (!run.outputs.is_empty() || !snapshot.has_derived_owned(&owner));
 
-            if should_emit_completion {
+            if !run.outputs.is_empty() {
                 let commands = Commands::new();
                 self.callback.run(commands.clone());
                 run.outputs.push(SystemOutput {
                     owner,
                     commands: commands.take(),
-                    completion_only: true,
                 });
             }
 
@@ -553,8 +623,12 @@ where
 
 impl<C> Runnable for OnSettledSystem<C>
 where
-    C: CompleteCallback,
+    C: SystemCallback,
 {
+    fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
+        self.system.has_work(snapshot, memo)
+    }
+
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
@@ -589,7 +663,6 @@ where
                 outputs: vec![SystemOutput {
                     owner,
                     commands: commands.take(),
-                    completion_only: false,
                 }],
                 memo_updates: Vec::new(),
             }
@@ -601,7 +674,7 @@ where
 impl<S, C, M> IntoSystem<(OnCompleteMarker, M)> for OnComplete<S, C>
 where
     S: IntoSystem<M>,
-    C: CompleteCallback,
+    C: SystemCallback,
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
@@ -617,10 +690,29 @@ where
     }
 }
 
+impl<S, C, M> IntoSystem<(OnStartMarker, M)> for OnStart<S, C>
+where
+    S: IntoSystem<M>,
+    C: SystemCallback,
+{
+    fn into_system(self, id: SystemId) -> BoxedSystem {
+        let system = self.system.into_system(id);
+        let phase = system.phase;
+        BoxedSystem {
+            runnable: Arc::new(OnStartSystem {
+                id,
+                system,
+                callback: self.callback,
+            }),
+            phase,
+        }
+    }
+}
+
 impl<S, C, M> IntoSystem<(OnSettledMarker, M)> for OnSettled<S, C>
 where
     S: IntoSystem<M>,
-    C: CompleteCallback,
+    C: SystemCallback,
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
@@ -666,7 +758,7 @@ impl BoxedSystem {
 }
 
 /// Builds a completion callback that inserts `component` on `entity`.
-pub fn insert_on<T>(entity: Entity, component: T) -> impl CompleteCallback
+pub fn insert_on<T>(entity: Entity, component: T) -> impl SystemCallback
 where
     T: crate::Component + Clone,
 {
@@ -707,6 +799,12 @@ where
     F: SystemParamFunction<Marker>,
     F::Param: Send + Sync + 'static,
 {
+    fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
+        !plan_invocations::<F::Param>(self.id, snapshot, memo)
+            .invocations
+            .is_empty()
+    }
+
     fn run<'a>(
         &'a self,
         snapshot: &'a Snapshot,
