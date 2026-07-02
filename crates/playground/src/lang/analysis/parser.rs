@@ -4,7 +4,7 @@ use crate::lang::grammar::{
     lexer::Token,
     parser::{CstData, Node, NodeRef, Parser, Rule},
 };
-use bowl::{Commands, Entity, Query};
+use bowl::{Commands, DerivedFrom, Entity, Query};
 
 pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands) {
     let (file, text) = query.item();
@@ -19,7 +19,7 @@ pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: 
     });
 
     for diag in diags {
-        commands.entity(file).insert(Diagnostic(diag.message));
+        commands.insert((DerivedFrom::new(file), Diagnostic(diag.message)));
     }
 }
 
@@ -33,8 +33,12 @@ pub(crate) async fn generate_ast(
 
     for fact in ast_facts(&parsed.cst, &text.0) {
         match fact {
-            AstFact::Import(import) => commands.insert((BelongsToFile(file), import)),
-            AstFact::Def(def) => commands.insert((BelongsToFile(file), def)),
+            AstFact::Import(import) => {
+                commands.insert((DerivedFrom::new(file), BelongsToFile(file), import))
+            }
+            AstFact::Def(def) => {
+                commands.insert((DerivedFrom::new(file), BelongsToFile(file), def))
+            }
         }
     }
 }

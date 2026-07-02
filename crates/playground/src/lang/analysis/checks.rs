@@ -1,30 +1,28 @@
 use crate::lang::grammar::{AstDef, Diagnostic, ImportDecl, Severity, SystemImportDb};
-use bowl::{Commands, Entity, Query, View};
+use bowl::{Commands, DerivedFrom, Entity, Query, View};
 
 fn emit_diagnostic(
     commands: &mut Commands,
-    entity: Entity,
+    derived_from: DerivedFrom,
     severity: Severity,
     message: impl Into<String>,
 ) {
-    let mut entity = commands.entity(entity);
-    entity.insert(severity);
-    entity.insert(Diagnostic(message.into()));
+    commands.insert((derived_from, severity, Diagnostic(message.into())));
 }
 
 pub(crate) async fn check_imports(
     query: Query<(Entity, &ImportDecl)>,
-    system_imports: View<'_, &SystemImportDb>,
+    system_imports: View<'_, (Entity, &SystemImportDb)>,
     mut commands: Commands,
 ) {
     println!("check_imports");
     let (import, import_decl) = query.item();
-    let system = system_imports.iter().next().unwrap();
+    let (system_entity, system) = system_imports.iter().next().unwrap();
 
     if !system.0.contains(&import_decl.path) {
         emit_diagnostic(
             &mut commands,
-            import,
+            DerivedFrom::many([import, system_entity]),
             Severity::Warning,
             format!("unknown import `{}`", import_decl.path),
         );
@@ -49,7 +47,7 @@ pub(crate) async fn check_duplicate_defs(
 
     emit_diagnostic(
         &mut commands,
-        entity,
+        DerivedFrom::many([entity, previous]),
         Severity::Error,
         format!(
             "duplicate definition `{}`; previous {} is entity {}",

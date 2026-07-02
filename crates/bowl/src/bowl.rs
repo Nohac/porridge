@@ -887,8 +887,8 @@ mod tests {
     use futures::executor::block_on;
 
     use crate::{
-        And, Bowl, Commands, Component, ComponentHookContext, Entity, Eq, Gte, Mut, Phase, Query,
-        Singleton, SystemExt, View, Where, With,
+        And, Bowl, Commands, Component, ComponentHookContext, DerivedFrom, Entity, Eq, Gte, Mut,
+        Phase, Query, Singleton, SystemExt, View, Where, With, cleanup_stale_derived,
     };
 
     struct A(u32);
@@ -901,6 +901,8 @@ mod tests {
     struct Answer(u32);
     struct NonCloneAnswer(u32);
     struct Note;
+    #[derive(Clone, PartialEq)]
+    struct MutableA(u32);
     struct Hooked;
     struct UntrackedMarker;
     #[derive(Clone, PartialEq)]
@@ -918,6 +920,7 @@ mod tests {
     impl Component for Answer {}
     impl Component for NonCloneAnswer {}
     impl Component for Note {}
+    impl Component for MutableA {}
     impl Component for Label {}
     impl Component for Rank {}
     impl Component for UntrackedMarker {
@@ -1126,6 +1129,31 @@ mod tests {
         commands.entity(entity).insert(NonCloneAnswer(42));
     }
 
+    async fn make_derived_from_answer_from_view(
+        query: Query<(Entity, &Request)>,
+        values: View<'_, (Entity, &MutableA)>,
+        mut commands: Commands,
+    ) {
+        let (_request, _request_marker) = query.item();
+        let (entity, a) = values.iter().next().unwrap();
+        commands.insert((DerivedFrom::new(entity), Answer(a.0)));
+    }
+
+    async fn make_multi_derived_from_answer_from_view(
+        query: Query<(Entity, &Request)>,
+        values: View<'_, (Entity, &MutableA)>,
+        labels: View<'_, (Entity, &Label)>,
+        mut commands: Commands,
+    ) {
+        let (_request, _request_marker) = query.item();
+        let (value_entity, value) = values.iter().next().unwrap();
+        let (label_entity, _label) = labels.iter().next().unwrap();
+        commands.insert((
+            DerivedFrom::many([value_entity, label_entity]),
+            Answer(value.0),
+        ));
+    }
+
     #[test]
     fn query_runs_pending_generation() {
         block_on(async {
@@ -1160,6 +1188,67 @@ mod tests {
 
             assert_eq!(bowl.query::<(Entity, &C), ()>().await.len(), 1);
             assert_eq!(CLEAN_RUNS.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn derived_from_cleanup_removes_outputs_when_owner_revision_changes() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_derived_from_answer_from_view).await;
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+                .await;
+
+            let inserted = bowl.insert((MutableA(1),)).await;
+            bowl.insert((Request,)).await;
+            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let rows = result.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 1);
+
+            bowl.query::<(Entity, Mut<MutableA>), ()>()
+                .for_each(|(entity, value)| {
+                    if entity == inserted.entity() {
+                        value.0 = 2;
+                    }
+                })
+                .await;
+
+            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let rows = result.collect();
+            assert_eq!(rows.len(), 0);
+        });
+    }
+
+    #[test]
+    fn derived_from_many_cleanup_removes_outputs_when_any_owner_revision_changes() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_multi_derived_from_answer_from_view)
+                .await;
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((MutableA(1),)).await;
+            let label = bowl.insert((Label("before"),)).await;
+            bowl.insert((Request,)).await;
+
+            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let rows = result.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 1);
+
+            bowl.query::<(Entity, Mut<Label>), ()>()
+                .for_each(|(entity, label_value)| {
+                    if entity == label.entity() {
+                        label_value.0 = "after";
+                    }
+                })
+                .await;
+
+            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let rows = result.collect();
+            assert_eq!(rows.len(), 0);
         });
     }
 

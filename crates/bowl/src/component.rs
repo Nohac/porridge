@@ -5,7 +5,7 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::Entity;
+use crate::{Entity, world::Revision};
 
 /// Context passed to component lifecycle hooks.
 #[derive(Debug, Clone, Copy)]
@@ -96,6 +96,94 @@ where
 
     fn singleton_key() -> Option<TypeId> {
         Some(TypeId::of::<T>())
+    }
+}
+
+/// Marks an entity as derived from one or more source entities.
+///
+/// This is useful for facts that should disappear when the inputs they were
+/// derived from change. For example, a diagnostic derived from an import and a
+/// project import database can be attached to both:
+///
+/// ```text
+/// let derived = DerivedFrom::many([import, import_db]);
+/// ```
+///
+/// Internally, the bowl captures the current revision of each source entity
+/// when this component is inserted. [`crate::cleanup_stale_derived`] removes
+/// the derived entity if any source entity changes or is removed.
+///
+/// ```text
+/// diagnostic
+///   DerivedFrom([import @ rev 10, import_db @ rev 20])
+///
+/// import_db changes to rev 21
+///   cleanup removes diagnostic
+/// ```
+///
+/// This is intentionally entity-scoped. Changing any tracked component on the
+/// source entity invalidates the derived entity.
+#[derive(Debug, Clone)]
+pub struct DerivedFrom {
+    anchors: Vec<DerivedAnchor>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DerivedAnchor {
+    entity: Entity,
+    revision: Option<Revision>,
+}
+
+impl DerivedFrom {
+    /// Marks this entity as derived from one source entity.
+    ///
+    /// The actual revision is resolved by the bowl when the component is
+    /// inserted, so callers do not need to traffic in revision values.
+    pub fn new(entity: Entity) -> Self {
+        Self::many([entity])
+    }
+
+    /// Marks this entity as derived from every source entity in `entities`.
+    ///
+    /// The derived entity remains current only while every captured source
+    /// entity stays at the same revision.
+    pub fn many(entities: impl IntoIterator<Item = Entity>) -> Self {
+        Self {
+            anchors: entities
+                .into_iter()
+                .map(|entity| DerivedAnchor {
+                    entity,
+                    revision: None,
+                })
+                .collect(),
+        }
+    }
+
+    /// Source entities this derived output is attached to.
+    pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.anchors.iter().map(|anchor| anchor.entity)
+    }
+
+    pub(crate) fn capture(&mut self, mut revision: impl FnMut(Entity) -> Option<Revision>) {
+        for anchor in &mut self.anchors {
+            anchor.revision = revision(anchor.entity);
+        }
+    }
+
+    pub(crate) fn is_current_revision(
+        &self,
+        mut revision: impl FnMut(Entity) -> Option<Revision>,
+    ) -> bool {
+        !self.anchors.is_empty()
+            && self.anchors.iter().all(|anchor| {
+                anchor.revision.is_some() && anchor.revision == revision(anchor.entity)
+            })
+    }
+}
+
+impl Component for DerivedFrom {
+    fn tracked() -> bool {
+        false
     }
 }
 

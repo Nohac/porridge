@@ -3,7 +3,7 @@ use std::{collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
 use futures::future::{FutureExt, LocalBoxFuture, join_all};
 
 use crate::{
-    Commands, Entity, Query, View,
+    Commands, DerivedFrom, Entity, Query, View,
     commands::CommandOp,
     query::{Dep, QueryFilter, QueryParam, filtered_deps, filtered_rows},
     world::{Snapshot, SystemId, SystemInvocation},
@@ -113,6 +113,9 @@ pub(crate) trait SystemParam {
         state: &Self::State,
         commands: &Commands,
     ) -> Self::Item<'a>;
+    fn always_run() -> bool {
+        false
+    }
 }
 
 impl<Q, Filter> SystemParam for Query<Q, Filter>
@@ -198,6 +201,52 @@ impl SystemParam for Commands {
     }
 }
 
+/// Read-only world metadata available to systems.
+///
+/// This is intentionally narrower than a full world reference. It exposes
+/// metadata needed by infrastructure-like systems, such as revision-scoped
+/// cleanup, without allowing component reads outside `Query`/`View`.
+pub struct WorldMetaView<'a> {
+    snapshot: &'a Snapshot,
+}
+
+impl WorldMetaView<'_> {
+    /// Returns whether `derived_from` still matches its owner entity's current
+    /// revision in this snapshot.
+    pub fn is_current(&self, derived_from: &DerivedFrom) -> bool {
+        derived_from.is_current_revision(|entity| self.snapshot.entity_revision(entity))
+    }
+}
+
+impl SystemParam for WorldMetaView<'_> {
+    type State = ();
+    type Item<'a> = WorldMetaView<'a>;
+
+    fn states(_snapshot: &Snapshot) -> Vec<Self::State> {
+        vec![()]
+    }
+
+    fn keys(_state: &Self::State) -> Vec<Entity> {
+        Vec::new()
+    }
+
+    fn deps(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Dep> {
+        Vec::new()
+    }
+
+    fn fetch<'a>(
+        snapshot: &'a Snapshot,
+        _state: &Self::State,
+        _commands: &Commands,
+    ) -> Self::Item<'a> {
+        WorldMetaView { snapshot }
+    }
+
+    fn always_run() -> bool {
+        true
+    }
+}
+
 macro_rules! impl_system_param_tuple {
     ($($P:ident),*) => {
         impl<$($P: SystemParam),*> SystemParam for ($($P,)*)
@@ -241,6 +290,10 @@ macro_rules! impl_system_param_tuple {
                 let ($($P,)*) = state;
                 ($($P::fetch(snapshot, $P, commands),)*)
             }
+
+            fn always_run() -> bool {
+                false $(|| $P::always_run())*
+            }
         }
     };
 }
@@ -277,8 +330,7 @@ where
             };
             let deps = Params::deps(snapshot, &state);
 
-            memo.get(&owner)
-                .is_none_or(|entry| entry.deps != deps)
+            (Params::always_run() || memo.get(&owner).is_none_or(|entry| entry.deps != deps))
                 .then_some(PlannedInvocation { state, owner, deps })
         })
         .collect();
@@ -620,6 +672,26 @@ where
 {
     move |mut commands: Commands| {
         commands.entity(entity).insert(component.clone());
+    }
+}
+
+/// Cleanup system for entities tagged with [`DerivedFrom`].
+///
+/// Register this during [`Phase::Cleanup`] to remove derived entities whose
+/// owner entity has changed since insertion:
+///
+/// ```text
+/// bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup));
+/// ```
+pub async fn cleanup_stale_derived(
+    query: Query<(Entity, &DerivedFrom)>,
+    meta: WorldMetaView<'_>,
+    mut commands: Commands,
+) {
+    let (entity, derived_from) = query.item();
+
+    if !meta.is_current(derived_from) {
+        commands.remove(entity);
     }
 }
 

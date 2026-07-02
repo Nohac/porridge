@@ -13,7 +13,7 @@ pub(crate) struct FilePath(pub(crate) String);
 #[component(hash)]
 pub(crate) struct FileText(pub(crate) String);
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub(crate) struct SystemImportDb(pub(crate) HashSet<String>);
 
 impl Default for SystemImportDb {

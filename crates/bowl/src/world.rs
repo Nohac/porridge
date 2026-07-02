@@ -4,10 +4,13 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Component, Entity, component::ComponentHookContext};
+use crate::{
+    Component, Entity,
+    component::{ComponentHookContext, DerivedFrom},
+};
 
 /// Monotonic revision assigned to tracked component writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Revision(pub(crate) u64);
 
 /// Stable id assigned to a registered system.
@@ -69,6 +72,7 @@ trait StoreDyn: Send + Sync {
     fn clone_box(&self) -> Box<dyn StoreDyn>;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn revision_for_entity(&self, entity: Entity) -> Option<Revision>;
     fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision);
     fn has_derived_owned(&self, owner: &SystemInvocation) -> bool;
     fn remove_derived_touched_by(
@@ -111,6 +115,10 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn revision_for_entity(&self, entity: Entity) -> Option<Revision> {
+        self.entries.get(&entity).map(|entry| entry.revision)
     }
 
     fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision) {
@@ -259,10 +267,14 @@ impl World {
     fn insert<T: Component>(
         &mut self,
         entity: Entity,
-        value: T,
+        mut value: T,
         origin: Origin,
         owner: Option<SystemInvocation>,
     ) {
+        if let Some(derived_from) = (&mut value as &mut dyn Any).downcast_mut::<DerivedFrom>() {
+            derived_from.capture(|entity| self.entity_revision(entity));
+        }
+
         if let Some(key) = T::singleton_key() {
             match self.singleton_entities.get(&key) {
                 Some(existing) if *existing != entity => {
@@ -328,6 +340,18 @@ impl World {
             .entries
             .get(&entity)
             .map(|entry| entry.revision)
+    }
+
+    /// Returns the current entity revision.
+    ///
+    /// Entity revisions are computed as the newest component revision currently
+    /// attached to the entity. This keeps the storage model simple while giving
+    /// revision-scoped relations a stable "owner changed" signal.
+    pub(crate) fn entity_revision(&self, entity: Entity) -> Option<Revision> {
+        self.stores
+            .values()
+            .filter_map(|store| store.revision_for_entity(entity))
+            .max()
     }
 
     /// Returns whether an entity has a component of type `T`.

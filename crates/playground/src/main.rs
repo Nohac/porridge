@@ -1,6 +1,9 @@
 mod lang;
 
-use bowl::{Bowl, Commands, Entity, Gte, Phase, Query, Singleton, SystemExt, Where, With};
+use bowl::{
+    Bowl, Commands, Entity, Gte, Mut, Phase, Query, Singleton, SystemExt, Where, With,
+    cleanup_stale_derived,
+};
 
 use crate::lang::{
     analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
@@ -25,6 +28,8 @@ async fn main() {
     db.add_system(check_duplicate_defs.run_during(Phase::Complete))
         .await;
     db.add_system(hover_info.run_during(Phase::Complete)).await;
+    db.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+        .await;
     db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup))
         .await;
 
@@ -33,6 +38,14 @@ async fn main() {
         SystemImportDb::default(),
     ))
     .await;
+
+    println!("\nregister std.net import with Mut<SystemImportDb>");
+    db.query::<(Entity, Mut<SystemImportDb>), ()>()
+        .for_each(|(entity, imports)| {
+            println!("mutating import database entity {}", entity.raw());
+            imports.0.insert("std.net".to_string());
+        })
+        .await;
 
     db.insert((
         FilePath("main.porridge".to_string()),
