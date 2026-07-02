@@ -5,7 +5,7 @@ This spec describes generation-scoped facts and lifecycle hooks for `bowl`.
 The motivating example is `AstAvailable`:
 
 ```rust
-generate_ast.on_complete(|mut commands| {
+generate_ast.on_settled(|mut commands| {
     commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
 })
 ```
@@ -53,51 +53,35 @@ struct AstAvailable;
 That lets systems observe the token during the generation without making token
 creation/removal look like durable input churn.
 
-## Completion Semantics
+## System Batch Hooks
 
-System completion must not mean "the system emitted outputs".
+System batch hooks are local to one system's currently planned work.
 
-For memoized systems, these are all completions:
-
-```text
-system ran at least one invalid invocation
-system had matching invocations, but all were memo-clean
-```
-
-The default should be match-sensitive:
+`on_start` means:
 
 ```text
-matched + changed      -> fire on_complete
-matched + memo-clean   -> fire on_complete
-no matches             -> do not fire on_complete
+the system is about to process at least one invalid/planned invocation
 ```
 
-This avoids publishing a readiness token too early when another system later
-inserts facts that would make the system match. A system with no matches has
-not completed work for any actual row; it has simply had nothing to consider.
-
-For local follow-up work, `on_complete` can be useful. It fires during the
-system's phase and its output is deferred if other normal systems in that phase
-also produced work. That avoids publishing a completion marker from a stale
-snapshot while upstream work is still being committed.
-
-The default useful meaning for per-system `on_complete` is:
+`on_complete` means:
 
 ```text
-the system has finished considering at least one matching invocation for this
-generation
+the system finished processing the invalid/planned invocations it started
 ```
 
-If "no matches" should also count as completion, that should be an explicit
-variant rather than the default:
+Neither hook should fire for memo-clean systems or systems with no planned
+work. This keeps `on_complete` from acting like a global phase gate.
+
+These hooks are useful for local bookkeeping around real work:
 
 ```rust
-system.on_complete(callback)
-system.on_complete(callback).including_empty()
-system.on_always_complete(callback)
+some_system
+    .on_start(|mut commands| commands.insert((WorkStarted, Ephemeral)))
+    .on_complete(|mut commands| commands.insert((WorkFinished, Ephemeral)))
 ```
 
-Exact API names are open, but the semantics should be explicit.
+They are not the right tool for "all ASTs are available" style gates, because
+other systems may still be producing facts.
 
 ## Settled Hooks
 
@@ -110,14 +94,16 @@ generate_ast.on_settled(|mut commands| {
 })
 ```
 
-`on_settled` is still colocated with one system, but it runs at the evaluation
+`on_settled` is colocated with one system, but it runs at the global evaluation
 boundary:
 
 ```text
-normal phases run until no tracked work changes
+normal work runs until no tracked work changes
+no runnable invocations remain
+no running invocations remain
 on_settled hooks run for systems that are memo-clean
 if any hook publishes commands:
-  run normal phases again
+  continue evaluation
 else:
   run cleanup
   return to caller
@@ -132,6 +118,29 @@ Singleton markers are the intended pattern because reinserting the same
 singleton can be made stable, and cleanup removes the ephemeral marker only
 after downstream systems have observed it.
 
+## Ephemeral Singleton Phase Gates
+
+An ephemeral singleton emitted from `on_settled` is a phase transition gate:
+
+```text
+facts settle
+  -> on_settled publishes AstAvailable
+  -> systems gated on AstAvailable run
+  -> cleanup removes AstAvailable
+  -> caller observes durable outputs only
+```
+
+This is the preferred replacement for hard-coded stages. Downstream systems can
+stay declarative by querying for the gate:
+
+```rust
+fn check_project(
+    _: Query<Entity, With<AstAvailable>>,
+    defs: Query<(Entity, &AstDef)>,
+    ...
+)
+```
+
 ## Lifecycle Hooks
 
 `Ephemeral` cleanup should not be bespoke insert/query logic. The bowl should
@@ -144,7 +153,7 @@ on_evaluation_start
   runs after pending input is applied, before normal systems read the snapshot
 
 on_system_complete(system)
-  runs after one registered system has finished its invocations for a generation
+  runs after one registered system has finished planned invalid work
 
 on_system_settled(system)
   runs after normal systems have settled and this system is memo-clean
@@ -261,7 +270,9 @@ tick 1 snapshot:
 
 barrier:
   generate_ast outputs applied
-  generate_ast on_complete inserts ephemeral AstAvailable
+
+settled:
+  generate_ast on_settled inserts ephemeral AstAvailable
 
 tick 2 snapshot:
   check_duplicate_defs sees AstAvailable
@@ -280,10 +291,10 @@ ephemeral cleanup happens after systems that need the token have had a chance
 to run, but before the bowl returns to outside callers
 ```
 
-`on_complete` command buffers therefore need to be injected back into the
-evaluation loop. They cannot be final callbacks after all systems have settled:
-downstream systems must be able to observe completion markers in a later
-snapshot tick within the same overall evaluation.
+`on_settled` command buffers therefore need to be injected back into the
+evaluation loop. They cannot be final callbacks after cleanup: downstream
+systems must be able to observe phase-transition markers before the bowl
+returns to outside callers.
 
 ## Relationship To BoundEntity
 
@@ -314,7 +325,6 @@ Readiness markers such as `AstAvailable` should usually be ephemeral.
 
 ## Open Questions
 
-- Should `on_complete` fire for zero matching rows by default?
 - Should lifecycle hooks be async systems, sync callbacks, or both?
 - Should hooks participate in memoization?
 - Are hook outputs owned by the hook invocation, by a synthetic system id, or

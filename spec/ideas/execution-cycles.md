@@ -50,8 +50,9 @@ This is easy to parallelize and reason about. There is no immediate recursive
 triggering because all writes become visible in the next tick.
 
 This model also gives generation-scoped coordination facts a natural place to
-live. A system completion hook can insert an ephemeral marker after a barrier,
-and downstream systems can observe that marker on a later snapshot tick:
+live. A settled hook can insert an ephemeral marker after normal work has
+stabilized, and downstream systems can observe that marker on a later snapshot
+tick:
 
 ```text
 tick N:
@@ -59,7 +60,9 @@ tick N:
 
 barrier:
   generate_ast outputs are applied
-  generate_ast on_complete inserts ephemeral AstAvailable
+
+settled:
+  generate_ast on_settled inserts ephemeral AstAvailable
 
 tick N+1:
   validation systems gated on AstAvailable run
@@ -216,6 +219,51 @@ the best default:
 Forward-only transactions may still be useful as an optional execution mode for
 event-driven or lower-latency workflows.
 
+## Streaming Replanning
+
+The newer likely direction is streaming replanning. It keeps the snapshot rule
+for each invocation, but removes the full-batch barrier:
+
+```text
+plan from current world
+run invocations concurrently
+
+when one invocation completes:
+  validate captured deps
+  commit if still current
+  re-plan from updated world
+  start newly runnable invocations
+```
+
+This gives lower latency without letting systems observe mutable world state
+while they are running. Each invocation still reads one immutable snapshot.
+
+The important sets are:
+
+```text
+memo
+  completed clean invocations and their dependency revisions
+
+running
+  invocations currently awaiting
+
+pending inputs
+  external writes waiting to enter the world
+```
+
+The key safety rule:
+
+```text
+an invocation result can commit only if its captured dependencies still match
+the live world
+```
+
+If a feedback loop continuously changes facts, streaming still does not settle.
+The difference is that the non-converging loop can make progress one committed
+invocation at a time rather than one whole batch at a time.
+
+See `spec/streaming-evaluation.md`.
+
 The important distinction:
 
 ```text
@@ -224,6 +272,10 @@ snapshot ticks:
 
 forward-only transactions:
   lower latency, more complex, needs deferral rules
+
+streaming replanning:
+  lower latency, keeps immutable invocation snapshots, commits completed work
+  immediately after dependency validation
 ```
 
 ## Open Questions

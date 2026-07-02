@@ -1,6 +1,11 @@
 # Async Single-Flight Evaluation
 
-This spec describes the async execution model for Porridge/Bowl.
+This spec describes the async single-flight model for Porridge/Bowl.
+
+The original implementation used generation barriers: plan work, run systems,
+apply all commands, repeat. The likely next runtime keeps the single-flight
+invariant but changes the internal runner to streaming commits. See
+`spec/streaming-evaluation.md`.
 
 The core invariant:
 
@@ -27,7 +32,7 @@ generation
   A monotonically increasing completed-world version.
 
 evaluation
-  One scheduler pass over a snapshot, producing buffered commands.
+  A single-flight run that drives pending work until the bowl settles.
 
 pending input
   Base writes submitted by callers while an evaluation is idle or running.
@@ -440,12 +445,24 @@ Async systems should read from immutable snapshots, not the mutable world.
 world N
   -> snapshot N
   -> systems read snapshot N and await freely
-  -> commands are buffered
-  -> barrier applies commands
-  -> world N+1
+  -> commands are buffered per invocation
+  -> runner applies commands after validating deps
+  -> world advances
 ```
 
 This avoids holding mutable world borrows across `.await`.
+
+In the streaming model, snapshots are still immutable, but the barrier moves
+from "all planned invocations" to "one completed invocation":
+
+```text
+invocation starts from snapshot N
+invocation awaits
+invocation completes
+runner checks captured deps against live world
+if current, command buffer commits immediately
+if stale, command buffer is discarded
+```
 
 Sync and async systems can coexist:
 
@@ -491,17 +508,20 @@ This model gives:
 
 It does not decide:
 
-- whether an evaluation is one tick or settle-to-fixpoint
+- whether the current implementation keeps barrier mode or moves fully to
+  streaming mode
 - how non-convergence is reported
 - whether systems run serially, parallel, or in ranked waves
 - how deferred writes interact with output ownership
 
-Those belong to the execution-cycle model.
+Those belong to the execution-cycle and streaming-evaluation models.
 
 ## Open Questions
 
 - Should plain `query()` run one generation or settle until clean?
 - Should callers be able to request `query_current()` without evaluation?
+- Should callers be able to subscribe to in-progress streaming commits, or only
+  settled snapshots?
 - Should request inserts always force a new generation, even if equivalent
   hashed components already exist?
 - What does cancellation mean for a waiter?
