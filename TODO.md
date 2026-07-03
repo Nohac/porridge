@@ -205,8 +205,7 @@ let diagnostics = db.scoop::<Query<
     (Entity, &Diagnostic),
     Where<And<Eq<FilePath>, Gte<Severity>>>,
 >>()
-.arg(FilePath(path))
-.arg(Severity::Warning)
+.args((FilePath(path), Severity::Warning))
 .await;
 let rows = diagnostics.collect();
 ```
@@ -230,10 +229,11 @@ let rows = diagnostics.collect();
 Current shortcut:
 - Queries scan entity ids from `0..next_entity`.
 - External queries support `Where`, `Eq`, `Gte`, `And`, `Or`, `Not`, `With`,
-  `Without`, and typed `.arg(...)`.
+  `Without`, and typed `.args(...)`.
 - There are no indexes; all filters scan.
-- Runtime args are keyed by component type, so two args of the same type in one
-  filter are ambiguous.
+- Shared runtime args are keyed by component type. Use `Named<Tag, Query<...>>`
+  plus `.args_for::<Tag>(...)` when separate queries in one scoop need different
+  args of the same component type.
 
 ## 8. Improve Mutable Queries And Safe Update APIs
 
@@ -241,7 +241,7 @@ Current shortcut:
 
 ```rust
 db.scoop::<Query<(Entity, Mut<RopeyFile>), Where<Eq<FilePath>>>>()
-    .arg(FilePath(target))
+    .args(FilePath(target))
     .for_each(|(_entity, file)| {
         file.apply_delta(delta);
     })

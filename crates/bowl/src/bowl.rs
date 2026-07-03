@@ -14,7 +14,9 @@ use variadics_please::all_tuples;
 use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
-    query::{ExternalFilter, ExternalQueryFilter, MutQueryParam, QueryArgs, QueryParam},
+    query::{
+        ArgBundle, ExternalFilter, ExternalQueryFilter, MutQueryParam, Named, QueryArgs, QueryParam,
+    },
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
     world::{Snapshot, SystemId, SystemInvocation, World},
 };
@@ -114,7 +116,7 @@ pub struct BoundEntity {
 /// Builder for an external bowl scoop.
 ///
 /// `ScoopBuilder` can be awaited directly to produce the requested result, or
-/// it can first receive runtime filter arguments with [`ScoopBuilder::arg`].
+/// it can first receive runtime filter arguments with [`ScoopBuilder::args`].
 pub struct ScoopBuilder<S> {
     bowl: Bowl,
     args: QueryArgs,
@@ -122,9 +124,22 @@ pub struct ScoopBuilder<S> {
 }
 
 impl<S> ScoopBuilder<S> {
-    /// Adds a typed runtime argument used by `Where` filter expressions.
-    pub fn arg<T: Component>(mut self, value: T) -> Self {
-        self.args.insert(value);
+    /// Adds one or more shared runtime arguments used by `Where` filter
+    /// expressions.
+    pub fn args(mut self, values: impl ArgBundle) -> Self {
+        values.insert_into(&mut self.args, None);
+        self
+    }
+
+    /// Adds one or more runtime arguments scoped to a named query.
+    ///
+    /// `Named<Tag, Query<...>>` filters check args for `Tag` first, then fall
+    /// back to shared args inserted with [`ScoopBuilder::args`].
+    pub fn args_for<Tag>(mut self, values: impl ArgBundle) -> Self
+    where
+        Tag: 'static,
+    {
+        values.insert_into(&mut self.args, Some(TypeId::of::<Tag>()));
         self
     }
 }
@@ -137,7 +152,7 @@ where
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
         let snapshot = self.bowl.snapshot().await;
-        S::materialize(&snapshot, &self.args)
+        S::materialize(&snapshot, &self.args, None)
     }
 }
 
@@ -158,7 +173,46 @@ where
         self.bowl.drain_deferred_bound_cleanup().await;
 
         let mut state = self.bowl.inner.state.lock().await;
-        let rows = crate::query::external_filtered_mut_rows::<Q, F>(&state.world, &self.args);
+        let rows = crate::query::external_filtered_mut_rows::<Q, F>(&state.world, &self.args, None);
+        let mut changed = false;
+
+        for row in rows {
+            changed |= Q::for_each_mut(&mut state.world, &row, |item| func(item));
+        }
+
+        if changed {
+            state.normal_clean = false;
+            if state.pending_generation.is_none() {
+                let next_generation = state.next_generation;
+                state.pending_generation = Some(next_generation);
+            }
+        }
+    }
+}
+
+impl<Tag, Q, F> ScoopBuilder<Named<Tag, Query<Q, F>>>
+where
+    Tag: 'static,
+    Q: MutQueryParam,
+    F: ExternalFilter<Q::State>,
+{
+    /// Mutates every row matched by this named query.
+    ///
+    /// Scoped args from `args_for::<Tag>(...)` override shared args inserted
+    /// with `args(...)`.
+    pub async fn for_each<Func>(self, mut func: Func)
+    where
+        Func: for<'a> FnMut(Q::Item<'a>),
+    {
+        self.bowl.settle().await;
+        self.bowl.drain_deferred_bound_cleanup().await;
+
+        let mut state = self.bowl.inner.state.lock().await;
+        let rows = crate::query::external_filtered_mut_rows::<Q, F>(
+            &state.world,
+            &self.args,
+            Some(TypeId::of::<Tag>()),
+        );
         let mut changed = false;
 
         for row in rows {
@@ -197,7 +251,7 @@ pub trait ExternalScoop {
     type Output;
 
     #[doc(hidden)]
-    fn materialize(snapshot: &Snapshot, args: &QueryArgs) -> Self::Output;
+    fn materialize(snapshot: &Snapshot, args: &QueryArgs, scope: Option<TypeId>) -> Self::Output;
 }
 
 impl<Q, F> ExternalScoop for Query<Q, F>
@@ -207,8 +261,24 @@ where
 {
     type Output = QueryResult<Q, F>;
 
-    fn materialize(snapshot: &Snapshot, args: &QueryArgs) -> Self::Output {
-        QueryResult::new(snapshot.clone(), args)
+    fn materialize(snapshot: &Snapshot, args: &QueryArgs, scope: Option<TypeId>) -> Self::Output {
+        QueryResult::new(snapshot.clone(), args, scope)
+    }
+}
+
+impl<Tag, S> ExternalScoop for Named<Tag, S>
+where
+    Tag: 'static,
+    S: ExternalScoop,
+{
+    type Output = S::Output;
+
+    fn materialize(
+        _snapshot: &Snapshot,
+        _args: &QueryArgs,
+        _scope: Option<TypeId>,
+    ) -> Self::Output {
+        S::materialize(_snapshot, _args, Some(TypeId::of::<Tag>()))
     }
 }
 
@@ -832,8 +902,8 @@ macro_rules! impl_external_scoop_tuple {
         {
             type Output = ($($S::Output,)*);
 
-            fn materialize(snapshot: &Snapshot, args: &QueryArgs) -> Self::Output {
-                ($($S::materialize(snapshot, args),)*)
+            fn materialize(snapshot: &Snapshot, args: &QueryArgs, scope: Option<TypeId>) -> Self::Output {
+                ($($S::materialize(snapshot, args, scope),)*)
             }
         }
     };
@@ -912,7 +982,7 @@ mod tests {
 
     use crate::{
         And, Bowl, Commands, Component, ComponentHookContext, DerivedFrom, Entity, Eq, Gte, Mut,
-        Phase, Query, Singleton, SystemExt, View, Where, With, cleanup_stale_derived,
+        Named, Phase, Query, Singleton, SystemExt, View, Where, With, cleanup_stale_derived,
     };
 
     struct A(u32);
@@ -1549,14 +1619,21 @@ mod tests {
 
             let result = bowl
                 .scoop::<Query<(Entity, &A), Where<And<Eq<Label>, Gte<Rank>>>>>()
-                .arg(Label("main"))
-                .arg(Rank(2))
+                .args((Label("main"), Rank(2)))
                 .await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 2);
         });
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate query argument")]
+    fn query_args_reject_duplicate_arg_types_in_same_scope() {
+        let _builder = Bowl::new()
+            .scoop::<Query<(Entity, &A), Where<Eq<Label>>>>()
+            .args((Label("main"), Label("lib")));
     }
 
     #[test]
@@ -1568,12 +1645,36 @@ mod tests {
 
             let (all, main) = bowl
                 .scoop::<(Query<(Entity, &A)>, Query<(Entity, &A), Where<Eq<Label>>>)>()
-                .arg(Label("main"))
+                .args(Label("main"))
                 .await;
 
             assert_eq!(all.len(), 2);
             assert_eq!(main.len(), 1);
             assert_eq!(main.collect()[0].1.0, 1);
+        });
+    }
+
+    #[test]
+    fn named_scoops_bind_args_to_individual_queries() {
+        block_on(async {
+            struct Main;
+            struct Lib;
+
+            let bowl = Bowl::new();
+            bowl.insert((A(1), Label("main"))).await;
+            bowl.insert((A(2), Label("lib"))).await;
+
+            let (main, lib) = bowl
+                .scoop::<(
+                    Named<Main, Query<(Entity, &A), Where<Eq<Label>>>>,
+                    Named<Lib, Query<(Entity, &A), Where<Eq<Label>>>>,
+                )>()
+                .args_for::<Main>(Label("main"))
+                .args_for::<Lib>(Label("lib"))
+                .await;
+
+            assert_eq!(main.collect()[0].1.0, 1);
+            assert_eq!(lib.collect()[0].1.0, 2);
         });
     }
 
@@ -1596,7 +1697,7 @@ mod tests {
             );
 
             bowl.scoop::<Query<(Entity, Mut<Rank>), Where<Eq<Label>>>>()
-                .arg(Label("main"))
+                .args(Label("main"))
                 .for_each(|(_entity, rank)| {
                     rank.0 = 10;
                 })
@@ -1604,7 +1705,7 @@ mod tests {
 
             let ranks = bowl
                 .scoop::<Query<(Entity, &Rank), Where<Eq<Label>>>>()
-                .arg(Label("main"))
+                .args(Label("main"))
                 .await;
             let rows = ranks.collect();
             assert_eq!(rows.len(), 1);

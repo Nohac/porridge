@@ -394,15 +394,40 @@ Use `Where<...>` with typed runtime arguments for filtered reads.
 # async fn example(bowl: Bowl) {
 let warnings = bowl
     .scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
-    .arg(Severity::Warning)
+    .args(Severity::Warning)
     .await;
 # let _ = warnings;
 # }
 ```
 
-Filter args are shared by every query in one scoop request. If two queries need
-different values of the same arg type, use different wrapper component types for
-now.
+Filter args are shared by every query in one scoop request. Use
+`Named<Tag, Query<...>>` when two queries need different values of the same arg
+type:
+
+```rust
+# use bowl::{Bowl, Component, Entity, Eq, Named, Query, Where};
+# #[derive(Component, PartialEq, Eq)]
+# struct SourcePath(String);
+# #[derive(Component)]
+# struct Import;
+# #[derive(Component)]
+# struct Diagnostic(String);
+# async fn example(bowl: Bowl) {
+struct Imports;
+struct Diagnostics;
+
+let (imports, diagnostics) = bowl
+    .scoop::<(
+        Named<Imports, Query<(Entity, &Import), Where<Eq<SourcePath>>>>,
+        Named<Diagnostics, Query<(Entity, &Diagnostic), Where<Eq<SourcePath>>>>,
+    )>()
+    .args_for::<Imports>(SourcePath("src/main.por".to_string()))
+    .args_for::<Diagnostics>(SourcePath("src/lib.por".to_string()))
+    .await;
+
+# let _ = (imports, diagnostics);
+# }
+```
 
 Available filter building blocks include:
 
@@ -434,7 +459,7 @@ state through `&Bowl`.
 # }
 # async fn example(bowl: Bowl) {
 bowl.scoop::<Query<(Entity, Mut<SourceText>), Where<Eq<SourcePath>>>>()
-    .arg(SourcePath("src/main.por".to_string()))
+    .args(SourcePath("src/main.por".to_string()))
     .for_each(|(_entity, text)| {
         text.replace("module main");
     })
@@ -737,7 +762,7 @@ Long-running clients can update input facts without needing `&mut Bowl`.
 # struct EditableText(String);
 # async fn example(bowl: Bowl) {
 bowl.scoop::<Query<(Mut<EditableText>,), Where<Eq<SourcePath>>>>()
-    .arg(SourcePath("src/main.por".to_string()))
+    .args(SourcePath("src/main.por".to_string()))
     .for_each(|text| {
         text.0.push_str("\nmodule extra");
     })

@@ -25,11 +25,11 @@
 //!
 //! ```text
 //! bowl.scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
-//!   .arg(Severity::Warning)
+//!   .args(Severity::Warning)
 //!   .await
 //! ```
 //!
-//! `.arg(...)` supplies typed runtime arguments for `Where` expressions. The
+//! `.args(...)` supplies typed runtime arguments for `Where` expressions. The
 //! `()` filter selects all rows.
 //!
 //! Mutable external queries use [`Mut<T>`](Mut) and run through a synchronous
@@ -37,7 +37,7 @@
 //!
 //! ```text
 //! bowl.scoop::<Query<(Entity, Mut<FileText>), Where<Eq<FilePath>>>>()
-//!   .arg(FilePath(path))
+//!   .args(FilePath(path))
 //!   .for_each(|(_entity, text)| text.apply_delta(delta))
 //!   .await
 //! ```
@@ -89,8 +89,8 @@ pub use component::{Component, ComponentHookContext, DerivedFrom, Singleton, has
 pub use entity::Entity;
 pub use macros::Component;
 pub use query::{
-    And, Eq, ExternalFilter, ExternalQueryFilter, FilterExpr, Gte, Mut, MutQueryParam, Not, Or,
-    Query, QueryFilter, QueryParam, QueryResult, View, Where, With, Without,
+    And, ArgBundle, Eq, ExternalFilter, ExternalQueryFilter, FilterExpr, Gte, Mut, MutQueryParam,
+    Named, Not, Or, Query, QueryFilter, QueryParam, QueryResult, View, Where, With, Without,
 };
 pub use system::{
     IntoSystem, Phase, SystemCallback, SystemExt, WorldMetaView, cleanup_stale_derived, insert_on,

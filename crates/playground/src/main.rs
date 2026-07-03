@@ -1,7 +1,7 @@
 mod lang;
 
 use bowl::{
-    Bowl, Commands, Entity, Gte, Mut, Phase, Query, Singleton, SystemExt, Where, With,
+    Bowl, Commands, Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt, Where, With,
     cleanup_stale_derived,
 };
 
@@ -65,6 +65,23 @@ async fn main() {
     ))
     .await;
 
+    println!("\nnamed multi-scoop by file path");
+    struct MainSource;
+    struct LibSource;
+    let (main_source, lib_source) = db
+        .scoop::<(
+            Named<MainSource, Query<(Entity, &FileText), Where<Eq<FilePath>>>>,
+            Named<LibSource, Query<(Entity, &FileText), Where<Eq<FilePath>>>>,
+        )>()
+        .args_for::<MainSource>(FilePath("main.porridge".to_string()))
+        .args_for::<LibSource>(FilePath("lib.porridge".to_string()))
+        .await;
+    println!(
+        "main/lib source matches: {}/{}",
+        main_source.len(),
+        lib_source.len()
+    );
+
     println!("query diagnostics");
     let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;
     for (entity, diagnostic) in diagnostics.collect() {
@@ -92,7 +109,7 @@ async fn main() {
     println!("\ndiagnostics at warning or above");
     let diagnostics = db
         .scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
-        .arg(Severity::Warning)
+        .args(Severity::Warning)
         .await;
     for (entity, diagnostic) in diagnostics.collect() {
         println!("entity {}: {}", entity.raw(), diagnostic.0);

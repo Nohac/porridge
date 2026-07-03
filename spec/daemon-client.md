@@ -161,7 +161,7 @@ Mutable external queries:
 
 ```rust
 bowl.scoop::<Query<(Entity, Mut<FileText>), Where<Eq<FilePath>>>>()
-    .arg(path)
+    .args(path)
     .for_each(|(_entity, text)| text.apply_delta(delta))
     .await;
 ```
