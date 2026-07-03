@@ -9,6 +9,8 @@ use bowl::{Commands, DerivedFrom, Entity, Query};
 pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands) {
     let (file, text) = query.item();
 
+    crate::short_sleep().await;
+
     println!("parse_file({})", file.raw());
 
     let mut diags = Vec::new();
@@ -28,6 +30,8 @@ pub(crate) async fn generate_ast(
     mut commands: Commands,
 ) {
     let (file, parsed, text) = query.item();
+
+    crate::short_sleep().await;
 
     println!("generate_ast({})", file.raw());
 

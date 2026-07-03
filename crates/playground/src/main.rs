@@ -1,5 +1,7 @@
 mod lang;
 
+use std::time::Duration;
+
 use bowl::{
     Bowl, Commands, Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt, Where, With,
     cleanup_stale_derived,
@@ -166,6 +168,13 @@ async fn main() {
 }
 
 async fn cleanup_ephemeral(query: Query<Entity, With<Ephemeral>>, mut commands: Commands) {
+    short_sleep().await;
+
     let entity = query.item();
     commands.remove(entity);
+}
+
+pub(crate) async fn short_sleep() {
+    let millis = 50 + rand::random::<u64>() % 751;
+    tokio::time::sleep(Duration::from_millis(millis)).await;
 }

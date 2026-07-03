@@ -20,6 +20,9 @@ This is still a prototype. The API is intentionally small and some internals are
 still being shaped, but the current runtime is useful enough to explore real
 compiler and service patterns.
 
+For a more precise model of inputs, derived state, memoization, streaming
+evaluation, and settled reads, see [spec/formal-semantics.md](spec/formal-semantics.md).
+
 ## Quick Example
 
 ```rust
@@ -577,7 +580,25 @@ evaluation stops producing tracked changes, before cleanup and before the caller
 observes query results.
 
 Keep `on_settled` idempotent. A settled hook that writes tracked changes every
-time can keep the bowl alive until the settle limit is reached.
+time can keep the bowl alive until the commit limit is reached, unless the
+limit is disabled.
+
+### Commit Limit
+
+A bowl settles when normal phases reach a fixed point. The commit limit is only
+a guardrail for accidental feedback loops; it counts accepted non-cleanup
+commits during one external evaluation attempt.
+
+```rust
+# use bowl::{Bowl, CommitLimit};
+let bowl = Bowl::new();
+bowl.set_commit_limit(CommitLimit::Max(10_000));
+bowl.set_commit_limit(CommitLimit::None);
+```
+
+`CommitLimit::None` is useful for open-ended experiments or daemon-like systems.
+Because bowl operations are async, callers can use executor-specific
+cancellation or timeout wrappers outside the bowl.
 
 ### Derived Outputs
 

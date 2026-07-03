@@ -74,6 +74,17 @@ impl SystemRun {
     }
 }
 
+impl MemoEntry {
+    pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
+        self.deps.iter().all(|dep| dep.is_current(snapshot))
+    }
+}
+
+pub(crate) struct PlannedSystemRun<'a> {
+    pub(crate) owner: SystemInvocation,
+    pub(crate) run: LocalBoxFuture<'a, SystemRun>,
+}
+
 struct PlannedRun<State> {
     completed: bool,
     invocations: Vec<PlannedInvocation<State>>,
@@ -390,6 +401,12 @@ pub(crate) trait Runnable: Send + Sync {
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun>;
 
+    fn stream_runs<'a>(
+        &'a self,
+        snapshot: Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> Vec<PlannedSystemRun<'a>>;
+
     fn run_settled<'a>(
         &'a self,
         _snapshot: &'a Snapshot,
@@ -483,7 +500,8 @@ pub trait SystemExt: Sized {
     ///
     /// Settled hooks may run more than once while the bowl tries to settle.
     /// Keep them idempotent: a hook that writes tracked changes every time will
-    /// keep the bowl alive until the settle limit is reached.
+    /// keep the bowl alive until the commit limit is reached, unless the limit
+    /// is disabled.
     fn on_settled<C>(self, callback: C) -> OnSettled<Self, C>
     where
         C: SystemCallback,
@@ -584,6 +602,25 @@ where
         }
         .boxed_local()
     }
+
+    fn stream_runs<'a>(
+        &'a self,
+        snapshot: Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> Vec<PlannedSystemRun<'a>> {
+        if !self.has_work(&snapshot, memo) {
+            return Vec::new();
+        }
+
+        let owner = SystemInvocation {
+            system: self.id,
+            keys: Vec::new(),
+        };
+        let memo = memo.clone();
+        let run = async move { self.run(&snapshot, &memo).await }.boxed_local();
+
+        vec![PlannedSystemRun { owner, run }]
+    }
 }
 
 impl<C> Runnable for OnCompleteSystem<C>
@@ -619,6 +656,25 @@ where
         }
         .boxed_local()
     }
+
+    fn stream_runs<'a>(
+        &'a self,
+        snapshot: Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> Vec<PlannedSystemRun<'a>> {
+        if !self.has_work(&snapshot, memo) {
+            return Vec::new();
+        }
+
+        let owner = SystemInvocation {
+            system: self.id,
+            keys: Vec::new(),
+        };
+        let memo = memo.clone();
+        let run = async move { self.run(&snapshot, &memo).await }.boxed_local();
+
+        vec![PlannedSystemRun { owner, run }]
+    }
 }
 
 impl<C> Runnable for OnSettledSystem<C>
@@ -635,6 +691,14 @@ where
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
         self.system.run(snapshot, memo)
+    }
+
+    fn stream_runs<'a>(
+        &'a self,
+        snapshot: Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> Vec<PlannedSystemRun<'a>> {
+        self.system.stream_runs(snapshot, memo)
     }
 
     fn run_settled<'a>(
@@ -748,6 +812,14 @@ impl BoxedSystem {
         self.runnable.run(snapshot, memo)
     }
 
+    pub(crate) fn stream_runs<'a>(
+        &'a self,
+        snapshot: Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> Vec<PlannedSystemRun<'a>> {
+        self.runnable.stream_runs(snapshot, memo)
+    }
+
     pub(crate) fn run_settled<'a>(
         &'a self,
         snapshot: &'a Snapshot,
@@ -829,6 +901,38 @@ where
             run
         }
         .boxed_local()
+    }
+
+    fn stream_runs<'a>(
+        &'a self,
+        snapshot: Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> Vec<PlannedSystemRun<'a>> {
+        plan_invocations::<F::Param>(self.id, &snapshot, memo)
+            .invocations
+            .into_iter()
+            .map(|invocation| {
+                let owner = invocation.owner.clone();
+                let snapshot = snapshot.clone();
+                let run = async move {
+                    let commands = Commands::new();
+                    let params = F::Param::fetch(&snapshot, &invocation.state, &commands);
+                    self.function.run(params).await;
+
+                    let (output, memo_update) =
+                        finish_invocation(invocation.owner, invocation.deps, commands);
+
+                    SystemRun {
+                        completed: true,
+                        outputs: vec![output],
+                        memo_updates: vec![memo_update],
+                    }
+                }
+                .boxed_local();
+
+                PlannedSystemRun { owner, run }
+            })
+            .collect()
     }
 }
 

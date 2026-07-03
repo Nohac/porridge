@@ -15,6 +15,8 @@ pub(crate) async fn check_imports(
     system_imports: View<'_, (Entity, &SystemImportDb)>,
     mut commands: Commands,
 ) {
+    crate::short_sleep().await;
+
     println!("check_imports");
     let (import, import_decl) = query.item();
     let (system_entity, system) = system_imports.iter().next().unwrap();
@@ -35,6 +37,8 @@ pub(crate) async fn check_duplicate_defs(
     mut commands: Commands,
 ) {
     let (entity, def) = query.item();
+
+    crate::short_sleep().await;
 
     println!("check_duplicate_defs({})", entity.raw());
 

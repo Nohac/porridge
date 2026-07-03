@@ -8,7 +8,12 @@ use std::{
     sync::{Arc, Mutex as StdMutex},
 };
 
-use futures::{channel::oneshot, future::join_all, lock::Mutex};
+use futures::{
+    channel::oneshot,
+    future::join_all,
+    lock::Mutex,
+    stream::{FuturesUnordered, StreamExt},
+};
 use variadics_please::all_tuples;
 
 use crate::{
@@ -21,7 +26,30 @@ use crate::{
     world::{Snapshot, SystemId, SystemInvocation, World},
 };
 
-const DEFAULT_SETTLE_LIMIT: usize = 64;
+const DEFAULT_COMMIT_LIMIT: u64 = 10_000;
+
+/// Guardrail for one external evaluation attempt.
+///
+/// A bowl settles when no normal-phase system invocation can make progress.
+/// `CommitLimit` does not define settlement; it only bounds how many accepted
+/// non-cleanup commits one caller may drive while trying to reach that fixed
+/// point. Use [`CommitLimit::None`] for intentionally never-settling or
+/// externally-cancelled systems.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitLimit {
+    /// Drive evaluation until it settles or the caller cancels the async
+    /// operation.
+    None,
+    /// Panic after more than this many accepted non-cleanup commits happen in
+    /// one external evaluation attempt.
+    Max(u64),
+}
+
+impl Default for CommitLimit {
+    fn default() -> Self {
+        Self::Max(DEFAULT_COMMIT_LIMIT)
+    }
+}
 
 /// Async-first database and system runner.
 ///
@@ -55,6 +83,11 @@ struct Inner {
     /// Holding this guard means the caller is the only active runner. The guard
     /// may be held across system execution; `state` must not be.
     runner: Mutex<()>,
+    /// Configurable non-convergence guardrail.
+    ///
+    /// This is kept outside async state so changing it does not require an
+    /// executor turn. The value is tiny and copied when an operation starts.
+    commit_limit: StdMutex<CommitLimit>,
     /// Bound entity handles cannot `await` in `Drop`, so dropped handles enqueue
     /// their entity here. The next bowl operation drains this queue after
     /// evaluation has had a chance to materialize request outputs.
@@ -304,7 +337,10 @@ impl BoundEntity {
             .take()
             .expect("bound entity was already closed or consumed");
 
-        self.bowl.ensure_evaluated(self.generation).await;
+        let mut commit_budget = CommitBudget::new(self.bowl.commit_limit());
+        self.bowl
+            .ensure_evaluated(self.generation, &mut commit_budget)
+            .await;
         self.bowl.settle().await;
 
         let result = {
@@ -434,9 +470,32 @@ impl Bowl {
                     startup_ran: false,
                 }),
                 runner: Mutex::new(()),
+                commit_limit: StdMutex::new(CommitLimit::default()),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
             }),
         }
+    }
+
+    /// Updates the commit guardrail used by future evaluation attempts.
+    ///
+    /// The default is `CommitLimit::Max(10_000)`. Set [`CommitLimit::None`] for
+    /// intentionally open-ended systems and rely on normal async cancellation or
+    /// executor-specific timeout wrappers at the call site.
+    pub fn set_commit_limit(&self, limit: CommitLimit) {
+        *self
+            .inner
+            .commit_limit
+            .lock()
+            .expect("commit limit lock poisoned") = limit;
+    }
+
+    /// Returns the current commit guardrail.
+    pub fn commit_limit(&self) -> CommitLimit {
+        *self
+            .inner
+            .commit_limit
+            .lock()
+            .expect("commit limit lock poisoned")
     }
 
     /// Registers a system.
@@ -549,7 +608,9 @@ impl Bowl {
     /// Runs generations until the bowl has no pending work and the last
     /// generation produced no tracked changes.
     async fn settle(&self) {
-        for _ in 0..DEFAULT_SETTLE_LIMIT {
+        let mut commit_budget = CommitBudget::new(self.commit_limit());
+
+        loop {
             let target = {
                 let state = self.inner.state.lock().await;
                 if state.pending_generation.is_none()
@@ -565,7 +626,7 @@ impl Bowl {
                     .unwrap_or(state.completed_generation)
             };
 
-            self.ensure_evaluated(target).await;
+            self.ensure_evaluated(target, &mut commit_budget).await;
 
             let (revision, settled_revision, clean, normal_clean) = {
                 let state = self.inner.state.lock().await;
@@ -582,7 +643,7 @@ impl Bowl {
             }
 
             if clean && normal_clean {
-                if self.run_settled_hooks().await {
+                if self.run_settled_hooks(&mut commit_budget).await {
                     self.enqueue_next_generation().await;
                     continue;
                 }
@@ -593,11 +654,9 @@ impl Bowl {
 
             self.enqueue_next_generation().await;
         }
-
-        panic!("bowl did not settle within {DEFAULT_SETTLE_LIMIT} generations");
     }
 
-    async fn run_settled_hooks(&self) -> bool {
+    async fn run_settled_hooks(&self, commit_budget: &mut CommitBudget) -> bool {
         let (systems, mut memo) = {
             let mut state = self.inner.state.lock().await;
             (state.systems.clone(), std::mem::take(&mut state.memo))
@@ -617,6 +676,7 @@ impl Bowl {
         } else {
             commit_system_runs(&mut memo, &self.inner.state, runs).await
         };
+        commit_budget.record(progress.commits);
 
         let mut state = self.inner.state.lock().await;
         state.memo = memo;
@@ -634,16 +694,22 @@ impl Bowl {
         };
 
         let snapshot = self.snapshot().await;
-        let runs = join_all(
-            systems
-                .iter()
-                .filter(|system| system.phase == Phase::Cleanup)
-                .map(|system| system.run(&snapshot, &memo)),
-        )
-        .await;
+        let memo_snapshot = memo.clone();
+        let mut runs = systems
+            .iter()
+            .filter(|system| system.phase == Phase::Cleanup)
+            .flat_map(|system| system.stream_runs(snapshot.clone(), &memo_snapshot))
+            .map(|planned| {
+                let owner = planned.owner;
+                async move {
+                    let run = planned.run.await;
+                    (owner, run)
+                }
+            })
+            .collect::<FuturesUnordered<_>>();
 
-        if !runs.is_empty() {
-            commit_system_runs(&mut memo, &self.inner.state, runs).await;
+        while let Some((_owner, run)) = runs.next().await {
+            commit_system_run(&mut memo, &self.inner.state, run).await;
         }
 
         let mut state = self.inner.state.lock().await;
@@ -672,14 +738,14 @@ impl Bowl {
     /// The loop is intentionally written around `runner.try_lock()`. Acquiring
     /// that guard is the authority for becoming the evaluator; generation fields
     /// only describe what is running or pending.
-    async fn ensure_evaluated(&self, target: u64) {
+    async fn ensure_evaluated(&self, target: u64, commit_budget: &mut CommitBudget) {
         loop {
             if self.completed_generation().await >= target {
                 return;
             }
 
             if let Some(runner) = self.inner.runner.try_lock() {
-                self.run_evaluation(runner).await;
+                self.run_evaluation(runner, commit_budget).await;
             } else {
                 self.wait_for_generation(target).await;
             }
@@ -738,7 +804,11 @@ impl Bowl {
     /// If no pending generation exists, there is nothing to run. This can happen
     /// when a caller wins the runner race after another caller already completed
     /// the work it was waiting for.
-    async fn run_evaluation(&self, _runner: futures::lock::MutexGuard<'_, ()>) {
+    async fn run_evaluation(
+        &self,
+        _runner: futures::lock::MutexGuard<'_, ()>,
+        commit_budget: &mut CommitBudget,
+    ) {
         let Some((generation, systems, mut memo, startup)) = self.start_evaluation().await else {
             return;
         };
@@ -746,22 +816,9 @@ impl Bowl {
         let mut normal_phase_changed = false;
 
         for phase in Phase::ordered(startup) {
-            let snapshot = self.snapshot().await;
-            let runs = join_all(
-                systems
-                    .iter()
-                    .filter(|system| system.phase == *phase)
-                    .map(|system| system.run(&snapshot, &memo)),
-            )
-            .await;
-
-            if runs.is_empty() {
-                continue;
-            }
-
-            normal_phase_changed |= commit_system_runs(&mut memo, &self.inner.state, runs)
-                .await
-                .needs_followup;
+            normal_phase_changed |= self
+                .run_phase_streaming(&systems, *phase, &mut memo, commit_budget)
+                .await;
         }
 
         let waiters = {
@@ -775,6 +832,62 @@ impl Bowl {
 
         for waiter in waiters {
             let _ = waiter.send(());
+        }
+    }
+
+    /// Runs one normal phase to quiescence.
+    ///
+    /// Each planning wave reads from one immutable snapshot. As individual
+    /// systems finish, their outputs are committed immediately. If any commit
+    /// changes the live world, the same phase is planned again from the updated
+    /// world before the runner advances to the next phase.
+    async fn run_phase_streaming(
+        &self,
+        systems: &[BoxedSystem],
+        phase: Phase,
+        memo: &mut HashMap<SystemInvocation, MemoEntry>,
+        commit_budget: &mut CommitBudget,
+    ) -> bool {
+        let mut phase_changed = false;
+        let mut running = HashSet::new();
+        let mut runs = FuturesUnordered::new();
+        let mut needs_plan = true;
+
+        loop {
+            if needs_plan {
+                let snapshot = self.snapshot().await;
+                let memo_snapshot = memo.clone();
+                for planned in systems
+                    .iter()
+                    .filter(|system| system.phase == phase)
+                    .flat_map(|system| system.stream_runs(snapshot.clone(), &memo_snapshot))
+                {
+                    if !running.insert(planned.owner.clone()) {
+                        continue;
+                    }
+
+                    let owner = planned.owner;
+                    runs.push(async move {
+                        let run = planned.run.await;
+                        (owner, run)
+                    });
+                }
+
+                needs_plan = false;
+            }
+
+            let Some((owner, run)) = runs.next().await else {
+                return phase_changed;
+            };
+
+            running.remove(&owner);
+            let progress = commit_system_run(memo, &self.inner.state, run).await;
+            commit_budget.record(progress.commits);
+
+            if progress.needs_followup {
+                phase_changed = true;
+                needs_plan = true;
+            }
         }
     }
 
@@ -816,6 +929,39 @@ impl Bowl {
 #[derive(Default)]
 struct CommitProgress {
     needs_followup: bool,
+    commits: u64,
+}
+
+struct CommitBudget {
+    limit: CommitLimit,
+    commits: u64,
+}
+
+impl CommitBudget {
+    fn new(limit: CommitLimit) -> Self {
+        Self { limit, commits: 0 }
+    }
+
+    fn record(&mut self, commits: u64) {
+        if commits == 0 {
+            return;
+        }
+
+        self.commits = self
+            .commits
+            .checked_add(commits)
+            .expect("commit budget counter overflowed");
+
+        let CommitLimit::Max(limit) = self.limit else {
+            return;
+        };
+
+        assert!(
+            self.commits <= limit,
+            "bowl commit limit exceeded: accepted {} non-cleanup commits while trying to settle; current limit is {limit}",
+            self.commits
+        );
+    }
 }
 
 async fn commit_system_runs(
@@ -823,12 +969,33 @@ async fn commit_system_runs(
     state: &Mutex<State>,
     runs: Vec<SystemRun>,
 ) -> CommitProgress {
+    let mut progress = CommitProgress::default();
+    for run in runs {
+        let next = commit_system_run(memo, state, run).await;
+        progress.needs_followup |= next.needs_followup;
+        progress.commits += next.commits;
+    }
+
+    progress
+}
+
+async fn commit_system_run(
+    memo: &mut HashMap<SystemInvocation, MemoEntry>,
+    state: &Mutex<State>,
+    run: SystemRun,
+) -> CommitProgress {
     let mut outputs = Vec::new();
 
-    for run in runs {
-        outputs.extend(run.outputs);
-        for (owner, entry) in run.memo_updates {
-            memo.insert(owner, entry);
+    outputs.extend(run.outputs);
+    let memo_updates = run.memo_updates;
+
+    {
+        let state = state.lock().await;
+        if !memo_updates
+            .iter()
+            .all(|(_owner, entry)| entry.is_current(&state.world))
+        {
+            return CommitProgress::default();
         }
     }
 
@@ -842,8 +1009,13 @@ async fn commit_system_runs(
             command.apply(&mut state.world, &output.owner);
         }
     }
+    for (owner, entry) in memo_updates {
+        memo.insert(owner, entry);
+    }
+    let needs_followup = applied_command || state.world.revision_raw() != before_revision;
     CommitProgress {
-        needs_followup: applied_command || state.world.revision_raw() != before_revision,
+        needs_followup,
+        commits: u64::from(needs_followup),
     }
 }
 
@@ -981,8 +1153,9 @@ mod tests {
     use futures::executor::block_on;
 
     use crate::{
-        And, Bowl, Commands, Component, ComponentHookContext, DerivedFrom, Entity, Eq, Gte, Mut,
-        Named, Phase, Query, Singleton, SystemExt, View, Where, With, cleanup_stale_derived,
+        And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, DerivedFrom, Entity, Eq,
+        Gte, Mut, Named, Phase, Query, Singleton, SystemExt, View, Where, With,
+        cleanup_stale_derived,
     };
 
     struct A(u32);
@@ -1074,6 +1247,11 @@ mod tests {
         commands.entity(entity).insert(C(a.0 + 1));
     }
 
+    async fn make_c_from_b(query: Query<(Entity, &B)>, mut commands: Commands) {
+        let (entity, b) = query.item();
+        commands.entity(entity).insert(C(b.0 + 1));
+    }
+
     async fn count_bs(
         query: Query<(Entity, &A)>,
         bs: View<'_, (Entity, &B)>,
@@ -1083,9 +1261,23 @@ mod tests {
         commands.entity(entity).insert(Count(bs.len()));
     }
 
+    async fn count_cs(
+        query: Query<(Entity, &A)>,
+        cs: View<'_, (Entity, &C)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _a) = query.item();
+        commands.entity(entity).insert(Count(cs.len()));
+    }
+
     async fn spawn_b(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (_entity, a) = query.item();
         commands.insert((B(a.0 + 1),));
+    }
+
+    async fn spawn_a_from_a(query: Query<Entity, With<A>>, mut commands: Commands) {
+        let _entity = query.item();
+        commands.insert((A(0),));
     }
 
     async fn count_tagged_a(query: Query<(Entity, &A), With<Request>>, mut commands: Commands) {
@@ -1458,6 +1650,24 @@ mod tests {
     }
 
     #[test]
+    fn evaluate_phase_replans_before_complete_phase_runs() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_b_uncounted).await;
+            bowl.add_system(make_c_from_b).await;
+            bowl.add_system(count_cs.run_during(Phase::Complete)).await;
+
+            bowl.insert((A(1),)).await;
+
+            let result = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = result.collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 1);
+        });
+    }
+
+    #[test]
     fn singleton_insert_reuses_entity() {
         block_on(async {
             let bowl = Bowl::new();
@@ -1505,6 +1715,32 @@ mod tests {
             let bowl = Bowl::new();
             bowl.insert((Singleton::<A>::new(), Singleton::<B>::new(), A(1), B(2)))
                 .await;
+        });
+    }
+
+    #[test]
+    fn commit_limit_is_configurable() {
+        let bowl = Bowl::new();
+
+        assert_eq!(bowl.commit_limit(), CommitLimit::Max(10_000));
+
+        bowl.set_commit_limit(CommitLimit::None);
+        assert_eq!(bowl.commit_limit(), CommitLimit::None);
+
+        bowl.set_commit_limit(CommitLimit::Max(2));
+        assert_eq!(bowl.commit_limit(), CommitLimit::Max(2));
+    }
+
+    #[test]
+    #[should_panic(expected = "bowl commit limit exceeded")]
+    fn commit_limit_panics_on_non_converging_commits() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.set_commit_limit(CommitLimit::Max(2));
+            bowl.add_system(spawn_a_from_a).await;
+
+            bowl.insert((A(1),)).await;
+            bowl.scoop::<Query<Entity, With<A>>>().await;
         });
     }
 

@@ -113,10 +113,10 @@ This means a system can publish a readiness token only after the whole bowl has
 stopped producing work that could make that system dirty again.
 
 `on_settled` hooks must be idempotent. A hook that writes tracked changes every
-time it runs will keep evaluation alive until the settle limit is reached.
-Singleton markers are the intended pattern because reinserting the same
-singleton can be made stable, and cleanup removes the ephemeral marker only
-after downstream systems have observed it.
+time it runs will keep evaluation alive until the commit limit is reached,
+unless that limit is disabled. Singleton markers are the intended pattern
+because reinserting the same singleton can be made stable, and cleanup removes
+the ephemeral marker only after downstream systems have observed it.
 
 ## Ephemeral Singleton Phase Gates
 

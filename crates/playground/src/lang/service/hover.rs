@@ -10,6 +10,8 @@ pub(crate) async fn hover_info(
     defs: View<'_, (Entity, &AstDef)>,
     mut commands: Commands,
 ) {
+    crate::short_sleep().await;
+
     println!("hover_info");
     let (request, path, position) = query.item();
 

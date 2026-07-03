@@ -342,6 +342,13 @@ impl World {
             .map(|entry| entry.revision)
     }
 
+    /// Returns the tracked revision for a component type id on an entity.
+    pub(crate) fn revision_by_type(&self, type_id: TypeId, entity: Entity) -> Option<Revision> {
+        self.stores
+            .get(&type_id)
+            .and_then(|store| store.revision_for_entity(entity))
+    }
+
     /// Returns the current entity revision.
     ///
     /// Entity revisions are computed as the newest component revision currently

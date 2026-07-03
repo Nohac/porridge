@@ -298,6 +298,12 @@ pub struct Dep {
     revision: Revision,
 }
 
+impl Dep {
+    pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
+        snapshot.revision_by_type(self.type_id, self.entity) == Some(self.revision)
+    }
+}
+
 /// Describes how a query-shaped type is enumerated and fetched from a snapshot.
 ///
 /// This is the low-level trait behind both [`Query`] and [`View`].

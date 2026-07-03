@@ -66,6 +66,11 @@
 //! active at a time; concurrent readers subscribe to the same in-flight
 //! generation instead of starting duplicate work.
 //!
+//! Evaluation normally drives until the bowl settles. [`CommitLimit`] is a
+//! configurable guardrail for accidental non-convergence; set it to
+//! `CommitLimit::None` when a caller intentionally wants to drive an
+//! open-ended system and handle cancellation externally.
+//!
 //! Systems registered with [`Bowl::add_system`] are async functions. The first
 //! implementation uses local async concurrency: systems and invalid query rows
 //! are polled together, but they are not spawned onto worker threads.
@@ -82,7 +87,8 @@ mod system;
 mod world;
 
 pub use bowl::{
-    BoundEntity, Bowl, Bundle, ExternalScoop, InsertedEntity, ScoopBuilder, TakeBundle, TakeError,
+    BoundEntity, Bowl, Bundle, CommitLimit, ExternalScoop, InsertedEntity, ScoopBuilder,
+    TakeBundle, TakeError,
 };
 pub use commands::Commands;
 pub use component::{Component, ComponentHookContext, DerivedFrom, Singleton, hash_component};
