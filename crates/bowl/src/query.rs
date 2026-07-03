@@ -109,13 +109,13 @@ pub struct Not<F>(PhantomData<F>);
 #[derive(Debug, Clone, Copy)]
 pub struct Without<T>(PhantomData<T>);
 
-/// Mutable component projection for external mutation queries.
+/// Clone-on-write component projection for external update queries.
 ///
-/// `Mut<T>` does not represent a long-lived mutable borrow. It is only valid in
-/// `Bowl::scoop(...).for_each(...)`, where the mutable borrow is scoped to one
-/// synchronous closure call while the live world is locked.
+/// `Cow<T>` does not represent scheduler-level exclusive access. It is only
+/// valid in `Bowl::scoop(...).for_each(...)`, where the current implementation
+/// mutates live storage through `Arc::make_mut` while the live world is locked.
 #[derive(Debug, Clone, Copy)]
-pub struct Mut<T>(PhantomData<T>);
+pub struct Cow<T>(PhantomData<T>);
 
 /// Runtime values bound to external query filters.
 #[derive(Default)]
@@ -340,8 +340,8 @@ pub trait QueryParam {
     fn fetch<'a>(snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a>;
 }
 
-/// Query-shaped mutable projection over the live world.
-pub trait MutQueryParam {
+/// Query-shaped clone-on-write projection over the live world.
+pub trait CowQueryParam {
     type State: Clone + EntityQueryState;
     type Item<'a>;
 
@@ -353,7 +353,7 @@ pub trait MutQueryParam {
         F: for<'a> FnOnce(Self::Item<'a>);
 }
 
-impl<T> MutQueryParam for (Mut<T>,)
+impl<T> CowQueryParam for (Cow<T>,)
 where
     T: Component + Clone,
 {
@@ -377,7 +377,7 @@ where
     }
 }
 
-impl<T> MutQueryParam for (Entity, Mut<T>)
+impl<T> CowQueryParam for (Entity, Cow<T>)
 where
     T: Component + Clone,
 {
@@ -797,13 +797,13 @@ where
         .collect()
 }
 
-pub(crate) fn external_filtered_mut_rows<Q, F>(
+pub(crate) fn external_filtered_cow_rows<Q, F>(
     snapshot: &Snapshot,
     args: &QueryArgs,
     scope: Option<TypeId>,
 ) -> Vec<Q::State>
 where
-    Q: MutQueryParam,
+    Q: CowQueryParam,
     F: ExternalFilter<Q::State>,
 {
     Q::rows(snapshot)

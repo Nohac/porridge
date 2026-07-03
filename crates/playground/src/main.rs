@@ -3,7 +3,7 @@ mod lang;
 use std::time::Duration;
 
 use bowl::{
-    Bowl, Commands, Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt, Where, With,
+    Bowl, Commands, Cow, Entity, Eq, Gte, Named, Phase, Query, Singleton, SystemExt, Where, With,
     cleanup_stale_derived,
 };
 
@@ -28,11 +28,9 @@ async fn main() {
         commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
     }))
     .await;
-    db.add_system(check_imports.run_during(Phase::Complete))
-        .await;
-    db.add_system(check_duplicate_defs.run_during(Phase::Complete))
-        .await;
-    db.add_system(hover_info.run_during(Phase::Complete)).await;
+    db.add_system(check_imports).await;
+    db.add_system(check_duplicate_defs).await;
+    db.add_system(hover_info).await;
     db.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
         .await;
     db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup))
@@ -44,8 +42,8 @@ async fn main() {
     ))
     .await;
 
-    println!("\nregister std.net import with Mut<SystemImportDb>");
-    db.scoop::<Query<(Entity, Mut<SystemImportDb>)>>()
+    println!("\nregister std.net import with Cow<SystemImportDb>");
+    db.scoop::<Query<(Entity, Cow<SystemImportDb>)>>()
         .for_each(|(entity, imports)| {
             println!("mutating import database entity {}", entity.raw());
             imports.0.insert("std.net".to_string());

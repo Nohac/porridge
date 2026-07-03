@@ -20,7 +20,7 @@ use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
     query::{
-        ArgBundle, ExternalFilter, ExternalQueryFilter, MutQueryParam, Named, QueryArgs, QueryParam,
+        ArgBundle, CowQueryParam, ExternalFilter, ExternalQueryFilter, Named, QueryArgs, QueryParam,
     },
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
     world::{Snapshot, SystemId, SystemInvocation, World},
@@ -191,7 +191,7 @@ where
 
 impl<Q, F> ScoopBuilder<Query<Q, F>>
 where
-    Q: MutQueryParam,
+    Q: CowQueryParam,
     F: ExternalFilter<Q::State>,
 {
     /// Mutates every row matched by this query.
@@ -206,7 +206,7 @@ where
         self.bowl.drain_deferred_bound_cleanup().await;
 
         let mut state = self.bowl.inner.state.lock().await;
-        let rows = crate::query::external_filtered_mut_rows::<Q, F>(&state.world, &self.args, None);
+        let rows = crate::query::external_filtered_cow_rows::<Q, F>(&state.world, &self.args, None);
         let mut changed = false;
 
         for row in rows {
@@ -226,7 +226,7 @@ where
 impl<Tag, Q, F> ScoopBuilder<Named<Tag, Query<Q, F>>>
 where
     Tag: 'static,
-    Q: MutQueryParam,
+    Q: CowQueryParam,
     F: ExternalFilter<Q::State>,
 {
     /// Mutates every row matched by this named query.
@@ -241,7 +241,7 @@ where
         self.bowl.drain_deferred_bound_cleanup().await;
 
         let mut state = self.bowl.inner.state.lock().await;
-        let rows = crate::query::external_filtered_mut_rows::<Q, F>(
+        let rows = crate::query::external_filtered_cow_rows::<Q, F>(
             &state.world,
             &self.args,
             Some(TypeId::of::<Tag>()),
@@ -1153,8 +1153,8 @@ mod tests {
     use futures::executor::block_on;
 
     use crate::{
-        And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, DerivedFrom, Entity, Eq,
-        Gte, Mut, Named, Phase, Query, Singleton, SystemExt, View, Where, With,
+        And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
+        Entity, Eq, Gte, Named, Phase, Query, Singleton, SystemExt, View, Where, With,
         cleanup_stale_derived,
     };
 
@@ -1502,7 +1502,7 @@ mod tests {
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 1);
 
-            bowl.scoop::<Query<(Entity, Mut<MutableA>)>>()
+            bowl.scoop::<Query<(Entity, Cow<MutableA>)>>()
                 .for_each(|(entity, value)| {
                     if entity == inserted.entity() {
                         value.0 = 2;
@@ -1534,7 +1534,7 @@ mod tests {
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 1);
 
-            bowl.scoop::<Query<(Entity, Mut<Label>)>>()
+            bowl.scoop::<Query<(Entity, Cow<Label>)>>()
                 .for_each(|(entity, label_value)| {
                     if entity == label.entity() {
                         label_value.0 = "after";
@@ -1932,7 +1932,7 @@ mod tests {
                 3
             );
 
-            bowl.scoop::<Query<(Entity, Mut<Rank>), Where<Eq<Label>>>>()
+            bowl.scoop::<Query<(Entity, Cow<Rank>), Where<Eq<Label>>>>()
                 .args(Label("main"))
                 .for_each(|(_entity, rank)| {
                     rank.0 = 10;

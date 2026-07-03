@@ -27,6 +27,7 @@ See:
 - `spec/lifecycle-and-ephemeral.md`
 - `spec/derived-from.md`
 - `spec/daemon-client.md`
+- `spec/access-scheduling.md`
 - `spec/ideas/replication.md`
 
 ## 1. Public API Polish Before Larger Migration
@@ -35,7 +36,8 @@ See:
   - `Bowl`
   - `Query`
   - `View`
-  - `Mut`
+  - `Cow`
+  - future `Mut`
   - `Where`
   - `DerivedFrom`
   - `cleanup_stale_derived`
@@ -48,7 +50,8 @@ See:
 - Keep the README aligned with the final mental model:
   - components-only storage
   - immutable snapshots for reads
-  - mutable external queries as live-world transactions
+  - clone-on-write external updates
+  - future scheduler-level mutable access
   - systems as memoized per-row functions
   - `View` as ambient/non-invalidating context
   - `on_settled` for readiness gates
@@ -235,12 +238,12 @@ Current shortcut:
   plus `.args_for::<Tag>(...)` when separate queries in one scoop need different
   args of the same component type.
 
-## 8. Improve Mutable Queries And Safe Update APIs
+## 8. Improve Cow Queries And Mutable Access Scheduling
 
-- Support mutation through APIs like:
+- Keep clone-on-write updates explicit through APIs like:
 
 ```rust
-db.scoop::<Query<(Entity, Mut<RopeyFile>), Where<Eq<FilePath>>>>()
+db.scoop::<Query<(Entity, Cow<RopeyFile>), Where<Eq<FilePath>>>>()
     .args(FilePath(target))
     .for_each(|(_entity, file)| {
         file.apply_delta(delta);
@@ -250,17 +253,19 @@ db.scoop::<Query<(Entity, Mut<RopeyFile>), Where<Eq<FilePath>>>>()
 
 - Make mutation work through `&self` so `Bowl` can be shared behind `Arc`.
 - Ensure mutations bump component revisions correctly.
-- Define how mutable access interacts with in-flight evaluation.
+- Define how future scheduler-level `Mut<T>` interacts with in-flight
+  evaluation.
 - Avoid deadlocks when many callers mutate/query concurrently.
-- Decide whether clone-on-write `Mut<T: Clone>` is the right long-term storage
-  model for large mutable inputs such as ropes.
-- Consider a non-cloning mutation mode that fails if the live component is
-  shared with an active snapshot.
+- Add system-level `Mut<T>` as a planned read/write edge:
+  - `&T` declares shared read access
+  - `Mut<T>` declares exclusive row-level write access
+  - unrelated entity rows can still run concurrently
+- Consider async external exclusive access with wait-graph cycle detection.
 
 Current shortcut:
-- `Mut<T>` external queries exist and run through a synchronous closure while
+- `Cow<T>` external queries exist and run through a synchronous closure while
   the live world is locked.
-- `Mut<T>` currently requires `T: Clone` because live storage uses `Arc<T>` and
+- `Cow<T>` currently requires `T: Clone` because live storage uses `Arc<T>` and
   mutates through `Arc::make_mut`.
 - There is no mutable system query; systems still write through buffered
   `Commands`.
@@ -389,7 +394,7 @@ Current shortcut:
   - diagnostics by file
 - Add more realistic parser/AST tests around the Lelwel-generated CST.
 - Add daemon-like request flows:
-  - repeated file edits through `Mut<FileText>`
+  - repeated file edits through `Cow<FileText>` or future `Mut<FileText>`
   - hover/goto/completion requests while background analysis is running
   - external `SystemImportDb` updates invalidating import diagnostics through
     `DerivedFrom::many`

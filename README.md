@@ -444,13 +444,13 @@ Available filter building blocks include:
 
 Filters currently scan entities. Typed indexes are a planned optimization.
 
-### Mutable External Queries
+### Clone-On-Write External Queries
 
-Use `Mut<T>` in an external query when the caller needs to mutate live input
-state through `&Bowl`.
+Use `Cow<T>` in an external query when the caller needs to update live input
+state through `&Bowl` and accepts clone-on-write storage semantics.
 
 ```rust
-# use bowl::{Bowl, Component, Entity, Eq, Mut, Query, Where};
+# use bowl::{Bowl, Component, Entity, Eq, Cow, Query, Where};
 # #[derive(Component, Hash, PartialEq, Eq)]
 # #[component(hash)]
 # struct SourcePath(String);
@@ -461,7 +461,7 @@ state through `&Bowl`.
 #     fn replace(&mut self, next: impl Into<String>) { self.0 = next.into(); }
 # }
 # async fn example(bowl: Bowl) {
-bowl.scoop::<Query<(Entity, Mut<SourceText>), Where<Eq<SourcePath>>>>()
+bowl.scoop::<Query<(Entity, Cow<SourceText>), Where<Eq<SourcePath>>>>()
     .args(SourcePath("src/main.por".to_string()))
     .for_each(|(_entity, text)| {
         text.replace("module main");
@@ -473,10 +473,16 @@ bowl.scoop::<Query<(Entity, Mut<SourceText>), Where<Eq<SourcePath>>>>()
 The closure is synchronous and runs while the live world is locked. Do not call
 back into the same `Bowl` from inside the closure.
 
-`Mut<T>` currently requires `T: Clone` because live mutable writes preserve
-immutable snapshots with clone-on-write storage. Tracked mutations bump
-revisions only when the component fingerprint changes, if the component has a
-fingerprint.
+`Cow<T>` requires `T: Clone` because live updates preserve immutable snapshots
+with clone-on-write storage. If no snapshot shares the component payload, the
+storage can mutate in place; otherwise the payload is cloned before mutation.
+Tracked updates bump revisions only when the component fingerprint changes, if
+the component has a fingerprint.
+
+Future scheduler-level `Mut<T>` is reserved for exclusive access planning. The
+intent is that `Mut<T>` will declare a row-level write edge before user code
+runs, allowing the planner to order or block conflicting systems without
+accidental large clones.
 
 ### Bound Requests And Take
 
@@ -769,12 +775,12 @@ let items = bowl
 The request entity gives the response a unique target, and `take` removes the
 request plus remaining outputs scoped to it.
 
-### Mutable Inputs Through Queries
+### Cow Inputs Through Queries
 
 Long-running clients can update input facts without needing `&mut Bowl`.
 
 ```rust
-# use bowl::{Bowl, Component, Eq, Mut, Query, Where};
+# use bowl::{Bowl, Component, Eq, Cow, Query, Where};
 # #[derive(Component, Hash, PartialEq, Eq)]
 # #[component(hash)]
 # struct SourcePath(String);
@@ -782,7 +788,7 @@ Long-running clients can update input facts without needing `&mut Bowl`.
 # #[component(hash)]
 # struct EditableText(String);
 # async fn example(bowl: Bowl) {
-bowl.scoop::<Query<(Mut<EditableText>,), Where<Eq<SourcePath>>>>()
+bowl.scoop::<Query<(Cow<EditableText>,), Where<Eq<SourcePath>>>>()
     .args(SourcePath("src/main.por".to_string()))
     .for_each(|text| {
         text.0.push_str("\nmodule extra");
@@ -831,14 +837,14 @@ truth such as configuration, package indexes, import databases, caches, or
 client state.
 
 ```rust
-# use bowl::{Bowl, Component, Mut, Query, Singleton};
+# use bowl::{Bowl, Component, Cow, Query, Singleton};
 # #[derive(Component, Clone)]
 # struct PackageIndex(Vec<String>);
 # async fn example(bowl: Bowl) {
 bowl.insert((Singleton::<PackageIndex>::new(), PackageIndex(Vec::new())))
     .await;
 
-bowl.scoop::<Query<(Mut<PackageIndex>,)>>()
+bowl.scoop::<Query<(Cow<PackageIndex>,)>>()
     .for_each(|index| {
         index.0.push("std.io".to_string());
     })
@@ -852,7 +858,7 @@ bowl.scoop::<Query<(Mut<PackageIndex>,)>>()
 - External filters scan rows; equality indexes are not implemented yet.
 - Runtime filter args are keyed by component type, so using two `Eq<T>` args of
   the same type in one filter is ambiguous.
-- `Mut<T>` requires `T: Clone` because snapshots use clone-on-write storage.
+- `Cow<T>` requires `T: Clone` because snapshots use clone-on-write storage.
 - Systems are async, but the current runner polls local futures rather than
   spawning work across executor worker threads.
 - Output ownership is intentionally simple: rerunning a system invocation

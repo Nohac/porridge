@@ -32,17 +32,17 @@
 //! `.args(...)` supplies typed runtime arguments for `Where` expressions. The
 //! `()` filter selects all rows.
 //!
-//! Mutable external queries use [`Mut<T>`](Mut) and run through a synchronous
-//! closure while the live world is locked:
+//! Clone-on-write external queries use [`Cow<T>`](Cow) and run through a
+//! synchronous closure while the live world is locked:
 //!
 //! ```text
-//! bowl.scoop::<Query<(Entity, Mut<FileText>), Where<Eq<FilePath>>>>()
+//! bowl.scoop::<Query<(Entity, Cow<FileText>), Where<Eq<FilePath>>>>()
 //!   .args(FilePath(path))
 //!   .for_each(|(_entity, text)| text.apply_delta(delta))
 //!   .await
 //! ```
 //!
-//! `Mut<T>` currently requires `T: Clone` so live writes can preserve immutable
+//! `Cow<T>` requires `T: Clone` so live updates can preserve immutable
 //! snapshots with clone-on-write storage.
 //!
 //! Evaluation is generation based:
@@ -95,7 +95,7 @@ pub use component::{Component, ComponentHookContext, DerivedFrom, Singleton, has
 pub use entity::Entity;
 pub use macros::Component;
 pub use query::{
-    And, ArgBundle, Eq, ExternalFilter, ExternalQueryFilter, FilterExpr, Gte, Mut, MutQueryParam,
+    And, ArgBundle, Cow, CowQueryParam, Eq, ExternalFilter, ExternalQueryFilter, FilterExpr, Gte,
     Named, Not, Or, Query, QueryFilter, QueryParam, QueryResult, View, Where, With, Without,
 };
 pub use system::{
