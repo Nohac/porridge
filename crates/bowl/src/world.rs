@@ -451,7 +451,7 @@ impl World {
         let changed = {
             let store = self.store_mut_existing::<T>()?;
             let entry = store.entries.get_mut(&entity)?;
-            let before_fingerprint = entry.value.fingerprint();
+            let before_fingerprint = entry.fingerprint;
 
             f(Arc::make_mut(&mut entry.value));
 
