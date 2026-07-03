@@ -24,7 +24,7 @@
 //! External queries use the same row/filter split:
 //!
 //! ```text
-//! bowl.query::<(Entity, &Diagnostic), Where<Gte<Severity>>>()
+//! bowl.scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
 //!   .arg(Severity::Warning)
 //!   .await
 //! ```
@@ -36,7 +36,7 @@
 //! closure while the live world is locked:
 //!
 //! ```text
-//! bowl.query::<(Entity, Mut<FileText>), Where<Eq<FilePath>>>()
+//! bowl.scoop::<Query<(Entity, Mut<FileText>), Where<Eq<FilePath>>>>()
 //!   .arg(FilePath(path))
 //!   .for_each(|(_entity, text)| text.apply_delta(delta))
 //!   .await
@@ -81,7 +81,9 @@ mod query;
 mod system;
 mod world;
 
-pub use bowl::{BoundEntity, Bowl, Bundle, InsertedEntity, QueryBuilder, TakeBundle, TakeError};
+pub use bowl::{
+    BoundEntity, Bowl, Bundle, ExternalScoop, InsertedEntity, ScoopBuilder, TakeBundle, TakeError,
+};
 pub use commands::Commands;
 pub use component::{Component, ComponentHookContext, DerivedFrom, Singleton, hash_component};
 pub use entity::Entity;

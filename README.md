@@ -13,7 +13,7 @@ query the facts you want
 
 Facts are components on entities. Systems are async functions that read
 memoized `Query` rows from immutable snapshots and write buffered `Commands`.
-Calling `bowl.query::<...>().await` settles the bowl first, so callers ask for
+Calling `bowl.scoop::<Query<...>>().await` settles the bowl first, so callers ask for
 outputs instead of manually driving pipeline stages.
 
 This is still a prototype. The API is intentionally small and some internals are
@@ -115,7 +115,7 @@ async fn main() {
     ))
     .await;
 
-    let diagnostics = bowl.query::<(Entity, &Diagnostic), ()>().await;
+    let diagnostics = bowl.scoop::<Query<(Entity, &Diagnostic)>>().await;
     for (entity, diagnostic) in diagnostics.collect() {
         println!("{}: {}", entity.raw(), diagnostic.0);
     }
@@ -346,37 +346,63 @@ async fn find_duplicates(
 }
 ```
 
-### External Queries
+### External Scoops
 
-External queries settle the bowl before reading.
+External scoops settle the bowl before reading.
 
 ```rust
-# use bowl::{Bowl, Component, Entity};
+# use bowl::{Bowl, Component, Entity, Query};
 # #[derive(Component)]
 # struct Diagnostic(String);
 # async fn example(bowl: Bowl) {
-let result = bowl.query::<(Entity, &Diagnostic), ()>().await;
+let result = bowl.scoop::<Query<(Entity, &Diagnostic)>>().await;
 let rows = result.collect();
 # let _ = rows;
+# }
+```
+
+Tuple scoops return several independent result sets from the same settled
+snapshot. This is not a cartesian product.
+
+```rust
+# use bowl::{Bowl, Component, Entity, Query};
+# #[derive(Component)]
+# struct Diagnostic(String);
+# #[derive(Component)]
+# struct Definition { name: String }
+# async fn example(bowl: Bowl) {
+let (diagnostics, definitions) = bowl
+    .scoop::<(
+        Query<(Entity, &Diagnostic)>,
+        Query<(Entity, &Definition)>,
+    )>()
+    .await;
+
+let _diagnostic_rows = diagnostics.collect();
+let _definition_rows = definitions.collect();
 # }
 ```
 
 Use `Where<...>` with typed runtime arguments for filtered reads.
 
 ```rust
-# use bowl::{Bowl, Component, Entity, Gte, Where};
+# use bowl::{Bowl, Component, Entity, Gte, Query, Where};
 # #[derive(Component)]
 # struct Diagnostic(String);
 # #[derive(Component, PartialEq, PartialOrd)]
 # enum Severity { Warning, Error }
 # async fn example(bowl: Bowl) {
 let warnings = bowl
-    .query::<(Entity, &Diagnostic), Where<Gte<Severity>>>()
+    .scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
     .arg(Severity::Warning)
     .await;
 # let _ = warnings;
 # }
 ```
+
+Filter args are shared by every query in one scoop request. If two queries need
+different values of the same arg type, use different wrapper component types for
+now.
 
 Available filter building blocks include:
 
@@ -396,7 +422,7 @@ Use `Mut<T>` in an external query when the caller needs to mutate live input
 state through `&Bowl`.
 
 ```rust
-# use bowl::{Bowl, Component, Entity, Eq, Mut, Where};
+# use bowl::{Bowl, Component, Entity, Eq, Mut, Query, Where};
 # #[derive(Component, Hash, PartialEq, Eq)]
 # #[component(hash)]
 # struct SourcePath(String);
@@ -407,7 +433,7 @@ state through `&Bowl`.
 #     fn replace(&mut self, next: impl Into<String>) { self.0 = next.into(); }
 # }
 # async fn example(bowl: Bowl) {
-bowl.query::<(Entity, Mut<SourceText>), Where<Eq<SourcePath>>>()
+bowl.scoop::<Query<(Entity, Mut<SourceText>), Where<Eq<SourcePath>>>>()
     .arg(SourcePath("src/main.por".to_string()))
     .for_each(|(_entity, text)| {
         text.replace("module main");
@@ -702,7 +728,7 @@ request plus remaining outputs scoped to it.
 Long-running clients can update input facts without needing `&mut Bowl`.
 
 ```rust
-# use bowl::{Bowl, Component, Eq, Mut, Where};
+# use bowl::{Bowl, Component, Eq, Mut, Query, Where};
 # #[derive(Component, Hash, PartialEq, Eq)]
 # #[component(hash)]
 # struct SourcePath(String);
@@ -710,7 +736,7 @@ Long-running clients can update input facts without needing `&mut Bowl`.
 # #[component(hash)]
 # struct EditableText(String);
 # async fn example(bowl: Bowl) {
-bowl.query::<(Mut<EditableText>,), Where<Eq<SourcePath>>>()
+bowl.scoop::<Query<(Mut<EditableText>,), Where<Eq<SourcePath>>>>()
     .arg(SourcePath("src/main.por".to_string()))
     .for_each(|text| {
         text.0.push_str("\nmodule extra");
@@ -759,14 +785,14 @@ truth such as configuration, package indexes, import databases, caches, or
 client state.
 
 ```rust
-# use bowl::{Bowl, Component, Mut, Singleton};
+# use bowl::{Bowl, Component, Mut, Query, Singleton};
 # #[derive(Component, Clone)]
 # struct PackageIndex(Vec<String>);
 # async fn example(bowl: Bowl) {
 bowl.insert((Singleton::<PackageIndex>::new(), PackageIndex(Vec::new())))
     .await;
 
-bowl.query::<(Mut<PackageIndex>,), ()>()
+bowl.scoop::<Query<(Mut<PackageIndex>,)>>()
     .for_each(|index| {
         index.0.push("std.io".to_string());
     })

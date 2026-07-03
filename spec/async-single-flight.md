@@ -79,7 +79,7 @@ let db = Arc::new(AsyncBowl::new());
 let a = Arc::clone(&db);
 let b = Arc::clone(&db);
 
-let diagnostics = a.query::<(Entity, &Diagnostic)>();
+let diagnostics = a.scoop::<Query<(Entity, &Diagnostic)>>();
 let hover = b
     .insert((HoverRequest, Position { offset }))
     .await
@@ -122,8 +122,8 @@ A plain query does not start its own independent evaluation if one is already
 running.
 
 ```rust
-let diagnostics = db.query::<(Entity, &Diagnostic)>().await;
-let definitions = db.query::<(Entity, &AstDef)>().await;
+let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;
+let definitions = db.scoop::<Query<(Entity, &AstDef)>>().await;
 ```
 
 If both calls happen concurrently, they wait for the same in-flight evaluation.
@@ -412,8 +412,8 @@ pub struct Bowl {
 }
 
 impl Bowl {
-    pub fn query<Q>(&self) -> Q::Output {
-        pollster::block_on(self.inner.query::<Q>())
+    pub fn scoop<Q>(&self) -> Q::Output {
+        pollster::block_on(self.inner.scoop::<Q>())
     }
 }
 ```

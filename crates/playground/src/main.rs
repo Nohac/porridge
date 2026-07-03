@@ -43,7 +43,7 @@ async fn main() {
     .await;
 
     println!("\nregister std.net import with Mut<SystemImportDb>");
-    db.query::<(Entity, Mut<SystemImportDb>), ()>()
+    db.scoop::<Query<(Entity, Mut<SystemImportDb>)>>()
         .for_each(|(entity, imports)| {
             println!("mutating import database entity {}", entity.raw());
             imports.0.insert("std.net".to_string());
@@ -66,13 +66,13 @@ async fn main() {
     .await;
 
     println!("query diagnostics");
-    let diagnostics = db.query::<(Entity, &Diagnostic), ()>().await;
+    let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;
     for (entity, diagnostic) in diagnostics.collect() {
         println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
     println!("\ndefinitions");
-    let definitions = db.query::<(Entity, &AstDef), ()>().await;
+    let definitions = db.scoop::<Query<(Entity, &AstDef)>>().await;
     for (entity, def) in definitions.collect() {
         println!(
             "entity {}: {} `{}` at {:?}",
@@ -84,14 +84,14 @@ async fn main() {
     }
 
     println!("query diagnostics again");
-    let diagnostics = db.query::<(Entity, &Diagnostic), ()>().await;
+    let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;
     for (entity, diagnostic) in diagnostics.collect() {
         println!("entity {}: {}", entity.raw(), diagnostic.0);
     }
 
     println!("\ndiagnostics at warning or above");
     let diagnostics = db
-        .query::<(Entity, &Diagnostic), Where<Gte<Severity>>>()
+        .scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
         .arg(Severity::Warning)
         .await;
     for (entity, diagnostic) in diagnostics.collect() {
@@ -99,7 +99,7 @@ async fn main() {
     }
 
     println!("\nast available markers");
-    let ast_available = db.query::<(Entity, &AstAvailable), ()>().await;
+    let ast_available = db.scoop::<Query<(Entity, &AstAvailable)>>().await;
     for (entity, _) in ast_available.collect() {
         println!("entity {}", entity.raw());
     }
@@ -144,7 +144,7 @@ async fn main() {
         println!("{}", info.0);
     }
 
-    let hover_facts = db.query::<(Entity, &HoverInfo), ()>().await;
+    let hover_facts = db.scoop::<Query<(Entity, &HoverInfo)>>().await;
     println!("hover facts after request: {}", hover_facts.collect().len());
 }
 

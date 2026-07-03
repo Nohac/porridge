@@ -43,10 +43,9 @@ See:
   - `on_complete`
   - `on_settled`
   - `Phase`
-- Decide whether `db.query::<Q, ()>()` needs ergonomic sugar for the common
-  unfiltered case.
+  - `scoop`
 - Remove playground/debug prints such as `AstAvailable insert/remove`.
-- Write a README that explains the final mental model:
+- Keep the README aligned with the final mental model:
   - components-only storage
   - immutable snapshots for reads
   - mutable external queries as live-world transactions
@@ -202,14 +201,14 @@ Current shortcut:
 - Design typed filters in the query shape, for example:
 
 ```rust
-db.query::<(
-    Entity,
-    &Diagnostic,
-    And<Eq<FilePath>, Gte<Severity>>,
-)>()
+let diagnostics = db.scoop::<Query<
+    (Entity, &Diagnostic),
+    Where<And<Eq<FilePath>, Gte<Severity>>>,
+>>()
 .arg(FilePath(path))
 .arg(Severity::Warning)
-.collect();
+.await;
+let rows = diagnostics.collect();
 ```
 
 - Support at least:
@@ -241,7 +240,7 @@ Current shortcut:
 - Support mutation through APIs like:
 
 ```rust
-db.query::<(Entity, Mut<RopeyFile>), Where<Eq<FilePath>>>()
+db.scoop::<Query<(Entity, Mut<RopeyFile>), Where<Eq<FilePath>>>>()
     .arg(FilePath(target))
     .for_each(|(_entity, file)| {
         file.apply_delta(delta);
@@ -430,7 +429,7 @@ Current shortcut:
 - The sync wrapper should only block around async calls:
 
 ```rust
-sync_bowl.query::<Q>()
+sync_bowl.scoop::<Q>()
 sync_bowl.insert(bundle)
 sync_bowl.add_system(system)
 ```

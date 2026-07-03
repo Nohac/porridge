@@ -280,7 +280,7 @@ streaming replanning:
 
 ## Open Questions
 
-- Should `db.query()` run one tick, settle to a fixpoint, or use a configurable
+- Should `db.scoop()` run one tick, settle to a fixpoint, or use a configurable
   policy?
 - Should `db.settle()` have a required max-tick limit?
 - What information should a non-convergence error report?

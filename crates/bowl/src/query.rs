@@ -60,7 +60,7 @@ pub struct With<T>(PhantomData<T>);
 /// Query filter wrapper used by external bowl queries.
 ///
 /// Unlike system-side [`Query<T, F>`] filters, `Where<F>` can use runtime
-/// arguments supplied through `Bowl::query(...).arg(...)`.
+/// arguments supplied through `Bowl::scoop(...).arg(...)`.
 #[derive(Debug, Clone, Copy)]
 pub struct Where<F>(PhantomData<F>);
 
@@ -92,7 +92,7 @@ pub struct Without<T>(PhantomData<T>);
 /// Mutable component projection for external mutation queries.
 ///
 /// `Mut<T>` does not represent a long-lived mutable borrow. It is only valid in
-/// `Bowl::query(...).for_each(...)`, where the mutable borrow is scoped to one
+/// `Bowl::scoop(...).for_each(...)`, where the mutable borrow is scoped to one
 /// synchronous closure call while the live world is locked.
 #[derive(Debug, Clone, Copy)]
 pub struct Mut<T>(PhantomData<T>);

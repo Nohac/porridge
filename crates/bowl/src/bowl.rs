@@ -12,7 +12,7 @@ use futures::{channel::oneshot, future::join_all, lock::Mutex};
 use variadics_please::all_tuples;
 
 use crate::{
-    Component, Entity, IntoSystem, QueryResult,
+    Component, Entity, IntoSystem, Query, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
     query::{ExternalFilter, ExternalQueryFilter, MutQueryParam, QueryArgs, QueryParam},
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
@@ -111,17 +111,17 @@ pub struct BoundEntity {
     generation: u64,
 }
 
-/// Builder for an external bowl query.
+/// Builder for an external bowl scoop.
 ///
-/// `QueryBuilder` can be awaited directly to produce a [`QueryResult`], or it
-/// can first receive runtime filter arguments with [`QueryBuilder::arg`].
-pub struct QueryBuilder<Q, F> {
+/// `ScoopBuilder` can be awaited directly to produce the requested result, or
+/// it can first receive runtime filter arguments with [`ScoopBuilder::arg`].
+pub struct ScoopBuilder<S> {
     bowl: Bowl,
     args: QueryArgs,
-    _marker: PhantomData<(Q, F)>,
+    _marker: PhantomData<S>,
 }
 
-impl<Q, F> QueryBuilder<Q, F> {
+impl<S> ScoopBuilder<S> {
     /// Adds a typed runtime argument used by `Where` filter expressions.
     pub fn arg<T: Component>(mut self, value: T) -> Self {
         self.args.insert(value);
@@ -129,20 +129,19 @@ impl<Q, F> QueryBuilder<Q, F> {
     }
 }
 
-impl<Q, F> QueryBuilder<Q, F>
+impl<S> ScoopBuilder<S>
 where
-    Q: QueryParam,
-    F: ExternalQueryFilter<Q>,
+    S: ExternalScoop,
 {
-    async fn materialize(self) -> QueryResult<Q, F> {
+    async fn materialize(self) -> S::Output {
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
         let snapshot = self.bowl.snapshot().await;
-        QueryResult::new(snapshot, &self.args)
+        S::materialize(&snapshot, &self.args)
     }
 }
 
-impl<Q, F> QueryBuilder<Q, F>
+impl<Q, F> ScoopBuilder<Query<Q, F>>
 where
     Q: MutQueryParam,
     F: ExternalFilter<Q::State>,
@@ -176,16 +175,40 @@ where
     }
 }
 
-impl<Q, F> IntoFuture for QueryBuilder<Q, F>
+impl<S> IntoFuture for ScoopBuilder<S>
 where
-    Q: QueryParam + 'static,
-    F: ExternalQueryFilter<Q> + 'static,
+    S: ExternalScoop + 'static,
 {
-    type Output = QueryResult<Q, F>;
+    type Output = S::Output;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output>>>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(self.materialize())
+    }
+}
+
+/// Type-level description of one or more read-only result sets to scoop from a
+/// settled bowl.
+///
+/// `Query<T, F>` scoops one result set. Tuples of `ExternalScoop` specs scoop
+/// multiple independent result sets from the same snapshot.
+pub trait ExternalScoop {
+    /// Result produced by awaiting `Bowl::scoop::<Self>()`.
+    type Output;
+
+    #[doc(hidden)]
+    fn materialize(snapshot: &Snapshot, args: &QueryArgs) -> Self::Output;
+}
+
+impl<Q, F> ExternalScoop for Query<Q, F>
+where
+    Q: QueryParam,
+    F: ExternalQueryFilter<Q>,
+{
+    type Output = QueryResult<Q, F>;
+
+    fn materialize(snapshot: &Snapshot, args: &QueryArgs) -> Self::Output {
+        QueryResult::new(snapshot.clone(), args)
     }
 }
 
@@ -405,7 +428,7 @@ impl Bowl {
         }
     }
 
-    /// Evaluates as needed and returns a query result from the latest relevant
+    /// Evaluates as needed and returns one or more query results from the latest relevant
     /// generation.
     ///
     /// Fast paths:
@@ -423,8 +446,8 @@ impl Bowl {
     ///
     /// A read-only query never starts duplicate work if another caller is
     /// already evaluating the target generation.
-    pub fn query<Q, F>(&self) -> QueryBuilder<Q, F> {
-        QueryBuilder {
+    pub fn scoop<S>(&self) -> ScoopBuilder<S> {
+        ScoopBuilder {
             bowl: self.clone(),
             args: QueryArgs::default(),
             _marker: PhantomData,
@@ -803,6 +826,21 @@ macro_rules! impl_take_bundle_tuple {
 
 all_tuples!(impl_take_bundle_tuple, 2, 8, T);
 
+macro_rules! impl_external_scoop_tuple {
+    ($($S:ident),*) => {
+        impl<$($S: ExternalScoop),*> ExternalScoop for ($($S,)*)
+        {
+            type Output = ($($S::Output,)*);
+
+            fn materialize(snapshot: &Snapshot, args: &QueryArgs) -> Self::Output {
+                ($($S::materialize(snapshot, args),)*)
+            }
+        }
+    };
+}
+
+all_tuples!(impl_external_scoop_tuple, 2, 8, S);
+
 /// A group of components inserted onto one newly-created entity.
 ///
 /// This trait is implemented for tuples of components. It is public because it
@@ -1158,7 +1196,7 @@ mod tests {
             bowl.add_system(make_b).await;
 
             let inserted = bowl.insert((A(41),)).await;
-            let result = bowl.query::<(Entity, &B), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &B)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1176,13 +1214,13 @@ mod tests {
             bowl.add_system(make_c).await;
 
             bowl.insert((A(1),)).await;
-            let result = bowl.query::<(Entity, &C), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &C)>>().await;
             let rows = result.collect();
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 2);
             assert_eq!(CLEAN_RUNS.load(Ordering::SeqCst), 1);
 
-            assert_eq!(bowl.query::<(Entity, &C), ()>().await.len(), 1);
+            assert_eq!(bowl.scoop::<Query<(Entity, &C)>>().await.len(), 1);
             assert_eq!(CLEAN_RUNS.load(Ordering::SeqCst), 1);
         });
     }
@@ -1197,12 +1235,12 @@ mod tests {
 
             let inserted = bowl.insert((MutableA(1),)).await;
             bowl.insert((Request,)).await;
-            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Answer)>>().await;
             let rows = result.collect();
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 1);
 
-            bowl.query::<(Entity, Mut<MutableA>), ()>()
+            bowl.scoop::<Query<(Entity, Mut<MutableA>)>>()
                 .for_each(|(entity, value)| {
                     if entity == inserted.entity() {
                         value.0 = 2;
@@ -1210,7 +1248,7 @@ mod tests {
                 })
                 .await;
 
-            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Answer)>>().await;
             let rows = result.collect();
             assert_eq!(rows.len(), 0);
         });
@@ -1229,12 +1267,12 @@ mod tests {
             let label = bowl.insert((Label("before"),)).await;
             bowl.insert((Request,)).await;
 
-            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Answer)>>().await;
             let rows = result.collect();
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 1);
 
-            bowl.query::<(Entity, Mut<Label>), ()>()
+            bowl.scoop::<Query<(Entity, Mut<Label>)>>()
                 .for_each(|(entity, label_value)| {
                     if entity == label.entity() {
                         label_value.0 = "after";
@@ -1242,7 +1280,7 @@ mod tests {
                 })
                 .await;
 
-            let result = bowl.query::<(Entity, &Answer), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Answer)>>().await;
             let rows = result.collect();
             assert_eq!(rows.len(), 0);
         });
@@ -1258,7 +1296,7 @@ mod tests {
             bowl.insert((B(10),)).await;
             bowl.insert((B(20),)).await;
 
-            let result = bowl.query::<(Entity, &Count), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Count)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1273,7 +1311,7 @@ mod tests {
             bowl.insert((A(41),)).await;
             bowl.add_system(make_b_uncounted).await;
 
-            let result = bowl.query::<(Entity, &B), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &B)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1288,7 +1326,7 @@ mod tests {
             bowl.add_system(spawn_b).await;
 
             bowl.insert((A(41),)).await;
-            let result = bowl.query::<(Entity, &B), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &B)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1305,7 +1343,7 @@ mod tests {
             bowl.insert((A(1),)).await;
             bowl.insert((Request, A(2))).await;
 
-            let result = bowl.query::<(Entity, &Count), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Count)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1322,7 +1360,7 @@ mod tests {
             bowl.insert((A(2),)).await;
             bowl.insert((B(3),)).await;
 
-            let result = bowl.query::<(Entity, &Sum), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Sum)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 2);
@@ -1338,10 +1376,10 @@ mod tests {
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
-            assert_eq!(bowl.query::<(Entity, &Count), ()>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Count)>>().await.len(), 0);
 
             bowl.insert((C(0),)).await;
-            let result = bowl.query::<(Entity, &Count), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Count)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1363,7 +1401,7 @@ mod tests {
                 .await
                 .entity();
 
-            let result = bowl.query::<(Entity, &A), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &A)>>().await;
             let rows = result.collect();
 
             assert_eq!(first, second);
@@ -1382,7 +1420,7 @@ mod tests {
             bowl.insert((A(1),)).await;
             bowl.insert((A(2),)).await;
 
-            let result = bowl.query::<(Entity, &Count), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Count)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1413,13 +1451,13 @@ mod tests {
                 .await;
 
             bowl.insert((A(1),)).await;
-            bowl.query::<(Entity, &B), ()>().await;
+            bowl.scoop::<Query<(Entity, &B)>>().await;
 
             let log = PHASE_LOG.lock().expect("phase log lock poisoned").clone();
             assert_eq!(log, ["startup", "evaluate-after-startup", "cleanup"]);
 
             bowl.insert((A(2),)).await;
-            bowl.query::<(Entity, &B), ()>().await;
+            bowl.scoop::<Query<(Entity, &B)>>().await;
 
             let log = PHASE_LOG.lock().expect("phase log lock poisoned").clone();
             assert_eq!(
@@ -1455,7 +1493,7 @@ mod tests {
                 let _hooked = bowl.insert((Hooked,)).await.bind();
             }
 
-            bowl.query::<Entity, ()>().await;
+            bowl.scoop::<Query<Entity>>().await;
 
             assert_eq!(HOOK_INSERTS.load(Ordering::SeqCst), 2);
             assert_eq!(HOOK_REMOVES.load(Ordering::SeqCst), 2);
@@ -1475,7 +1513,7 @@ mod tests {
             bowl.add_system(remove_hooked_entity).await;
             bowl.insert((Hooked,)).await;
 
-            assert_eq!(bowl.query::<(Entity, &Hooked), ()>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Hooked)>>().await.len(), 0);
             assert_eq!(HOOK_INSERTS.load(Ordering::SeqCst), 1);
             assert_eq!(HOOK_REMOVES.load(Ordering::SeqCst), 1);
             assert_eq!(HOOK_ENTITY_REMOVES.load(Ordering::SeqCst), 1);
@@ -1491,12 +1529,12 @@ mod tests {
             bowl.add_system(make_b).await;
             bowl.insert((A(1),)).await;
 
-            assert_eq!(bowl.query::<(Entity, &B), ()>().await.len(), 1);
+            assert_eq!(bowl.scoop::<Query<(Entity, &B)>>().await.len(), 1);
             assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
 
             bowl.insert((UntrackedMarker,)).await;
 
-            assert_eq!(bowl.query::<(Entity, &B), ()>().await.len(), 1);
+            assert_eq!(bowl.scoop::<Query<(Entity, &B)>>().await.len(), 1);
             assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
         });
     }
@@ -1510,7 +1548,7 @@ mod tests {
             bowl.insert((A(3), Label("lib"), Rank(4))).await;
 
             let result = bowl
-                .query::<(Entity, &A), Where<And<Eq<Label>, Gte<Rank>>>>()
+                .scoop::<Query<(Entity, &A), Where<And<Eq<Label>, Gte<Rank>>>>>()
                 .arg(Label("main"))
                 .arg(Rank(2))
                 .await;
@@ -1522,6 +1560,24 @@ mod tests {
     }
 
     #[test]
+    fn scoop_can_return_multiple_independent_query_results() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((A(1), Label("main"))).await;
+            bowl.insert((A(2), Label("lib"))).await;
+
+            let (all, main) = bowl
+                .scoop::<(Query<(Entity, &A)>, Query<(Entity, &A), Where<Eq<Label>>>)>()
+                .arg(Label("main"))
+                .await;
+
+            assert_eq!(all.len(), 2);
+            assert_eq!(main.len(), 1);
+            assert_eq!(main.collect()[0].1.0, 1);
+        });
+    }
+
+    #[test]
     fn external_queries_can_mutate_bound_rows() {
         block_on(async {
             let bowl = Bowl::new();
@@ -1529,7 +1585,7 @@ mod tests {
             bowl.insert((Label("main"), Rank(1))).await;
             bowl.insert((Label("lib"), Rank(2))).await;
 
-            let counts = bowl.query::<(Entity, &Count), ()>().await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
             assert_eq!(
                 counts
                     .collect()
@@ -1539,7 +1595,7 @@ mod tests {
                 3
             );
 
-            bowl.query::<(Entity, Mut<Rank>), Where<Eq<Label>>>()
+            bowl.scoop::<Query<(Entity, Mut<Rank>), Where<Eq<Label>>>>()
                 .arg(Label("main"))
                 .for_each(|(_entity, rank)| {
                     rank.0 = 10;
@@ -1547,14 +1603,14 @@ mod tests {
                 .await;
 
             let ranks = bowl
-                .query::<(Entity, &Rank), Where<Eq<Label>>>()
+                .scoop::<Query<(Entity, &Rank), Where<Eq<Label>>>>()
                 .arg(Label("main"))
                 .await;
             let rows = ranks.collect();
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].1.0, 10);
 
-            let counts = bowl.query::<(Entity, &Count), ()>().await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
             assert_eq!(
                 counts
                     .collect()
@@ -1581,10 +1637,10 @@ mod tests {
 
             bowl.insert((A(1),)).await;
 
-            let counts = bowl.query::<(Entity, &Count), ()>().await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
 
             assert_eq!(counts.len(), 1);
-            assert_eq!(bowl.query::<(Entity, &Note), ()>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Note)>>().await.len(), 0);
         });
     }
 
@@ -1603,11 +1659,11 @@ mod tests {
                 .await;
 
             bowl.insert((B(0),)).await;
-            assert_eq!(bowl.query::<(Entity, &Count), ()>().await.len(), 1);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Count)>>().await.len(), 1);
 
             bowl.insert((A(1),)).await;
 
-            let result = bowl.query::<(Entity, &Count), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Count)>>().await;
             let counts = result.collect();
 
             assert_eq!(counts.len(), 2);
@@ -1630,7 +1686,7 @@ mod tests {
                 .await;
 
             bowl.insert((B(0),)).await;
-            bowl.query::<(Entity, &D), ()>().await;
+            bowl.scoop::<Query<(Entity, &D)>>().await;
 
             let answer = bowl.insert((A(1), Request)).await.bind();
 
@@ -1653,13 +1709,15 @@ mod tests {
                 .await;
 
             bowl.insert((B(0),)).await;
-            bowl.query::<(Entity, &D), ()>().await;
+            bowl.scoop::<Query<(Entity, &D)>>().await;
 
             let answer = bowl.insert((A(1), Request)).await.bind();
 
             assert_eq!(answer.take::<Answer>().await.unwrap().0, 2);
             assert_eq!(
-                bowl.query::<(Entity, &UntrackedMarker), ()>().await.len(),
+                bowl.scoop::<Query<(Entity, &UntrackedMarker)>>()
+                    .await
+                    .len(),
                 0
             );
         });
@@ -1692,7 +1750,7 @@ mod tests {
             .await;
 
             bowl.insert((A(1),)).await;
-            bowl.query::<(Entity, &B), ()>().await;
+            bowl.scoop::<Query<(Entity, &B)>>().await;
 
             assert_eq!(
                 *SYSTEM_HOOK_LOG
@@ -1701,7 +1759,7 @@ mod tests {
                 vec!["start", "row", "complete"]
             );
 
-            bowl.query::<(Entity, &B), ()>().await;
+            bowl.scoop::<Query<(Entity, &B)>>().await;
 
             assert_eq!(
                 *SYSTEM_HOOK_LOG
@@ -1724,7 +1782,7 @@ mod tests {
             bowl.insert((C(2),)).await;
             bowl.insert((D(3),)).await;
 
-            let result = bowl.query::<(Entity, &Sum), ()>().await;
+            let result = bowl.scoop::<Query<(Entity, &Sum)>>().await;
             let rows = result.collect();
 
             assert_eq!(rows.len(), 1);
@@ -1748,7 +1806,7 @@ mod tests {
             let answer = request.take::<Answer>().await.unwrap();
 
             assert_eq!(answer.0, 42);
-            assert_eq!(bowl.query::<(Entity, &Answer), ()>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Answer)>>().await.len(), 0);
         });
     }
 
@@ -1762,7 +1820,10 @@ mod tests {
             let answer = request.take::<NonCloneAnswer>().await.unwrap();
 
             assert_eq!(answer.0, 42);
-            assert_eq!(bowl.query::<(Entity, &NonCloneAnswer), ()>().await.len(), 0);
+            assert_eq!(
+                bowl.scoop::<Query<(Entity, &NonCloneAnswer)>>().await.len(),
+                0
+            );
         });
     }
 
@@ -1777,7 +1838,7 @@ mod tests {
 
             assert_eq!(answer.0, 42);
             assert!(note.is_none());
-            assert_eq!(bowl.query::<(Entity, &Answer), ()>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Answer)>>().await.len(), 0);
         });
     }
 
@@ -1791,7 +1852,7 @@ mod tests {
             let answer = request.take::<Answer>().await.unwrap();
 
             assert_eq!(answer.0, 42);
-            assert_eq!(bowl.query::<(Entity, &Note), ()>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Note)>>().await.len(), 0);
         });
     }
 
@@ -1805,8 +1866,8 @@ mod tests {
                 let _request = bowl.insert((Request,)).await.bind();
             }
 
-            assert_eq!(bowl.query::<(Entity, &Answer), ()>().await.len(), 0);
-            assert_eq!(bowl.query::<(Entity, &Request), ()>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Answer)>>().await.len(), 0);
+            assert_eq!(bowl.scoop::<Query<(Entity, &Request)>>().await.len(), 0);
         });
     }
 }

@@ -160,7 +160,7 @@ IndexEntry derived from [AstDef]
 Mutable external queries:
 
 ```rust
-bowl.query::<(Entity, Mut<FileText>), Where<Eq<FilePath>>>()
+bowl.scoop::<Query<(Entity, Mut<FileText>), Where<Eq<FilePath>>>>()
     .arg(path)
     .for_each(|(_entity, text)| text.apply_delta(delta))
     .await;

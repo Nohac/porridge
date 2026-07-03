@@ -25,7 +25,7 @@ inserted entity.
 Destructive reads should not be available from arbitrary shared queries:
 
 ```rust
-db.query::<Take<HoverInfo>>().await
+db.scoop::<Query<Take<HoverInfo>>>().await
 ```
 
 That shape is too broad:
@@ -114,7 +114,7 @@ for the next bowl operation.
     let _request = db.insert((HoverRequest, ...)).await.bind();
 }
 
-db.query::<(Entity, &Diagnostic)>().await; // drains deferred cleanup first
+db.scoop::<Query<(Entity, &Diagnostic)>>().await; // drains deferred cleanup first
 ```
 
 This gives deterministic cleanup for `take`, and best-effort deferred cleanup
