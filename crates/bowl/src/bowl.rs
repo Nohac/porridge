@@ -457,9 +457,8 @@ impl std::error::Error for TakeError {}
 
 /// Components that can be taken from a bound entity.
 ///
-/// Taking returns `Arc<T>` handles because snapshots may still share component
-/// payloads from previous generations. This preserves true destructive removal
-/// from the live bowl without requiring `T: Clone`.
+/// Taking returns `Arc<T>` handles to preserve true destructive removal from
+/// the live bowl without requiring `T: Clone`.
 pub trait TakeBundle {
     /// Value returned by a successful take.
     type Output;
@@ -580,7 +579,7 @@ impl Bowl {
     /// Registers a system.
     ///
     /// Systems are stored in registration order. During evaluation, systems
-    /// read from the same immutable snapshot and are polled concurrently from
+    /// plan from the same structural snapshot and are polled concurrently from
     /// the active runner. Their buffered outputs are still committed in
     /// registration order.
     ///
@@ -838,8 +837,8 @@ impl Bowl {
 
     /// Clones the current world snapshot.
     ///
-    /// Component values are stored behind `Arc`, so this is intended to be a
-    /// cheap structural clone suitable for immutable system reads.
+    /// Component values are stored in shared guarded cells, so this is intended
+    /// to be a cheap structural clone suitable for system planning and reads.
     async fn snapshot(&self) -> Snapshot {
         self.inner.state.lock().await.world.clone()
     }
@@ -917,7 +916,7 @@ impl Bowl {
 
     /// Runs one normal phase to quiescence.
     ///
-    /// Each planning wave reads from one immutable snapshot. As individual
+    /// Each planning wave reads from one structural snapshot. As individual
     /// systems finish, their outputs are committed immediately. If any commit
     /// changes the live world, the same phase is planned again from the updated
     /// world before the runner advances to the next phase.
@@ -1019,7 +1018,7 @@ where
     T: Component,
     F: FnOnce(&mut T) -> R,
 {
-    let (changed, result) = state.world.update_component_unique::<T, F, R>(entity, f)?;
+    let (changed, result) = state.world.update_component_live::<T, F, R>(entity, f)?;
 
     if changed {
         state.normal_clean = false;
@@ -2353,7 +2352,7 @@ mod tests {
     }
 
     #[test]
-    fn external_mut_returns_none_instead_of_cloning_shared_snapshot() {
+    fn external_mut_succeeds_while_structural_snapshot_is_alive() {
         block_on(async {
             let bowl = Bowl::new();
             bowl.insert((Rank(1),)).await;
@@ -2366,12 +2365,9 @@ mod tests {
                 .pop()
                 .unwrap();
 
-            assert_eq!(handle.with_latest(|rank| rank.0 = 2).await, None);
-            assert_eq!(snapshot.collect()[0].1.0, 1);
-
-            drop(snapshot);
-
             assert_eq!(handle.with_latest(|rank| rank.0 = 2).await, Some(()));
+            assert_eq!(snapshot.collect()[0].1.0, 2);
+
             let latest = bowl.scoop::<Query<(Entity, &Rank)>>().await;
             assert_eq!(latest.collect()[0].1.0, 2);
         });

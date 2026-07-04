@@ -12,7 +12,7 @@ query the facts you want
 ```
 
 Facts are components on entities. Systems are async functions that read
-memoized `Query` rows from immutable snapshots and write buffered `Commands`.
+memoized `Query` rows from structural snapshots and write buffered `Commands`.
 Calling `bowl.scoop::<Query<...>>().await` settles the bowl first, so callers ask for
 outputs instead of manually driving pipeline stages.
 
@@ -269,7 +269,7 @@ commands.remove(entity);
 # }
 ```
 
-Command writes are buffered. Systems read an immutable snapshot, then the runner
+Command writes are buffered. Systems read a structural snapshot, then the runner
 applies their command buffers after the snapshot tick.
 
 ### Query
@@ -473,11 +473,10 @@ bowl.scoop::<Query<(Entity, Cow<SourceText>), Where<Eq<SourcePath>>>>()
 The closure is synchronous and runs while the live world is locked. Do not call
 back into the same `Bowl` from inside the closure.
 
-`Cow<T>` requires `T: Clone` because live updates preserve immutable snapshots
-with clone-on-write storage. If no snapshot shares the component payload, the
-storage can mutate in place; otherwise the payload is cloned before mutation.
-Tracked updates bump revisions only when the component fingerprint changes, if
-the component has a fingerprint.
+`Cow<T>` currently requires `T: Clone`, but live storage now uses guarded
+component cells rather than clone-on-write payload snapshots. Tracked updates
+bump revisions only when the component fingerprint changes, if the component
+has a fingerprint.
 
 ### Scoped External Mut Queries
 
@@ -513,23 +512,26 @@ for (_entity, text) in rows {
 # }
 ```
 
-`Mut<T>` does not require `T: Clone`. It mutates only when the live world
-uniquely owns the component payload; if an old snapshot still shares the value,
-the mutation returns `None` instead of cloning. The method names are
-deliberately explicit:
+`Mut<T>` does not require `T: Clone`. It mutates the live guarded component
+cell without cloning the payload. The method names are deliberately explicit:
 
 - `with_original`: mutate only if the component is still at the revision
   observed by the scoop that produced the handle.
 - `with_latest`: mutate the component currently attached to the entity.
 
 Both methods are synchronous critical sections: the closure cannot `.await`
-while live mutable access is held. Future system-level `Mut<T>` is still
-reserved for scheduler-visible row-level write edges.
+while live mutable access is held. System-level `Mut<T>` is also a
+scheduler-visible row-level write edge.
 
 For fingerprinted components, scoped mutation compares the fingerprint before
 and after the closure and bumps the revision only when the fingerprint changes.
 Non-fingerprinted components are conservative and bump after a successful
 mutation.
+
+Read query results hold read guards for the rows they materialize. A `Mut<T>`
+write waits for active read guards or other writers on the same component cell
+to release, so keep borrowed query rows short-lived before issuing writes to the
+same component.
 
 ### Bound Requests And Take
 
@@ -905,10 +907,10 @@ bowl.scoop::<Query<(Cow<PackageIndex>,)>>()
 - External filters scan rows; equality indexes are not implemented yet.
 - Runtime filter args are keyed by component type, so using two `Eq<T>` args of
   the same type in one filter is ambiguous.
-- `Cow<T>` requires `T: Clone` because snapshots use clone-on-write storage.
-- External `Mut<T>` does not clone; it returns `None` if a live snapshot still
-  shares the component payload. The intended guarded storage model should wait
-  for readers instead. Scheduler-level system `Mut<T>` is not implemented yet.
+- `Cow<T>` still requires `T: Clone`, although guarded live storage means it no
+  longer needs clone-on-write payload replacement.
+- External and system `Mut<T>` use guarded component cells and do not require
+  `T: Clone`.
 - Systems are async, but the current runner polls local futures rather than
   spawning work across executor worker threads.
 - Output ownership is intentionally simple: rerunning a system invocation

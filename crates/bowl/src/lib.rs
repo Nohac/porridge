@@ -106,3 +106,5 @@ pub use query::{
 pub use system::{
     IntoSystem, Phase, SystemCallback, SystemExt, WorldMetaView, cleanup_stale_derived, insert_on,
 };
+#[doc(hidden)]
+pub use world::ComponentRef;

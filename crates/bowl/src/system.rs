@@ -162,7 +162,9 @@ where
         state: &Self::State,
         _commands: &Commands,
     ) -> Self::Item<'a> {
-        Query::new(Q::fetch(bowl, snapshot, state))
+        let mut guards = Vec::new();
+        let item = Q::fetch(bowl, snapshot, state, &mut guards);
+        Query::new_guarded(item, guards)
     }
 }
 
@@ -424,7 +426,7 @@ where
 
 /// Type-erased executable system.
 ///
-/// `Runnable` receives an immutable snapshot plus an immutable view of the memo
+/// `Runnable` receives a structural snapshot plus an immutable view of the memo
 /// table. It returns command buffers and memo updates that need to be committed
 /// for this generation.
 ///

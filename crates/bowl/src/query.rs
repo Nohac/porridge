@@ -1,5 +1,6 @@
 use std::{
     any::{Any, TypeId, type_name},
+    cell::RefCell,
     collections::HashMap,
     marker::PhantomData,
 };
@@ -8,8 +9,10 @@ use variadics_please::all_tuples;
 
 use crate::{
     Bowl, Component, Entity,
-    world::{Revision, Snapshot, World},
+    world::{ComponentRef, Revision, Snapshot, World},
 };
+
+type GuardStore = Vec<Box<dyn Any>>;
 
 /// A tracked system input.
 ///
@@ -22,16 +25,19 @@ use crate::{
 /// item -> values passed to the system
 /// ```
 ///
-/// Query items borrow from an immutable snapshot through normal Rust lifetimes.
+/// Query items borrow from guard-backed component cells through normal Rust
+/// lifetimes.
 pub struct Query<T, F = ()> {
     item: T,
+    _guards: GuardStore,
     _filter: PhantomData<F>,
 }
 
 impl<T, F> Query<T, F> {
-    pub(crate) fn new(item: T) -> Self {
+    pub(crate) fn new_guarded(item: T, guards: GuardStore) -> Self {
         Self {
             item,
+            _guards: guards,
             _filter: PhantomData,
         }
     }
@@ -45,6 +51,34 @@ impl<T, F> Query<T, F> {
     pub fn as_item(&self) -> &T {
         &self.item
     }
+}
+
+// Query values are system parameter wrappers. Guard storage is only used inside
+// one running system invocation to keep read locks alive for references in
+// `item`; the runner never shares one query value between threads.
+unsafe impl<T: Send, F: Send> Send for Query<T, F> {}
+unsafe impl<T: Sync, F: Sync> Sync for Query<T, F> {}
+
+fn store_read_guard<'a, T: Component>(
+    guard: ComponentRef<'a, T>,
+    guards: &mut GuardStore,
+) -> &'a T {
+    let value = &*guard as *const T;
+
+    // SAFETY: the returned reference points into the component protected by
+    // `guard`. We erase the guard lifetime before storing it in the owning
+    // query/result guard store so the lock remains held at least as long as the
+    // returned query item can be used. The guard store is dropped with the
+    // query/result, releasing the read lock. The pointer does not point into
+    // the guard object itself, so moving the boxed guard does not invalidate the
+    // reference.
+    let guard =
+        unsafe { std::mem::transmute::<ComponentRef<'a, T>, ComponentRef<'static, T>>(guard) };
+    guards.push(Box::new(guard));
+
+    // SAFETY: the read guard stored above keeps this component immutably locked
+    // for the lifetime of the query item.
+    unsafe { &*value }
 }
 
 /// Assigns a type-level name to an external scoop query.
@@ -113,7 +147,7 @@ pub struct Without<T>(PhantomData<T>);
 ///
 /// `Cow<T>` does not represent scheduler-level exclusive access. It is only
 /// valid in `Bowl::scoop(...).for_each(...)`, where the current implementation
-/// mutates live storage through `Arc::make_mut` while the live world is locked.
+/// mutates the guarded live component cell while the live world is locked.
 #[derive(Debug, Clone, Copy)]
 pub struct Cow<T>(PhantomData<T>);
 
@@ -164,9 +198,8 @@ where
     /// Mutates the component only if it is still at the revision observed when
     /// this handle was created.
     ///
-    /// Returns `None` if the component was removed, if another write changed
-    /// its revision first, or if an immutable snapshot is still sharing the
-    /// component payload. Use this when the mutation depends on facts observed
+    /// Returns `None` if the component was removed or if another write changed
+    /// its revision first. Use this when the mutation depends on facts observed
     /// by the scoop that produced the handle.
     pub async fn with_original<F, R>(&self, f: F) -> Option<R>
     where
@@ -179,10 +212,9 @@ where
 
     /// Mutates the component currently attached to the entity.
     ///
-    /// Returns `None` if the component was removed or if an immutable snapshot
-    /// is still sharing the component payload. Use this for operations that are
-    /// valid against the latest value, such as setting an absolute value or
-    /// appending to a current accumulator.
+    /// Returns `None` if the component was removed. Use this for operations
+    /// that are valid against the latest value, such as setting an absolute
+    /// value or appending to a current accumulator.
     pub async fn with_latest<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,
@@ -299,7 +331,7 @@ all_tuples!(impl_arg_bundle_tuple, 1, 8, T);
 
 /// Ambient read-only snapshot access.
 ///
-/// A `View<T>` is built from the same immutable snapshot as the driving
+/// A `View<T>` is built from the same structural snapshot as the driving
 /// [`Query`], but it is intentionally not part of the invocation memo key.
 ///
 /// ```text
@@ -321,7 +353,24 @@ where
     bowl: Bowl,
     snapshot: &'a Snapshot,
     rows: Vec<<T as QueryParam>::State>,
+    guards: RefCell<GuardStore>,
     _marker: PhantomData<(T, F)>,
+}
+
+// View values are also invocation-local parameter wrappers. The guard store is
+// only used by the running system that owns the view.
+unsafe impl<T, F> Send for View<'_, T, F>
+where
+    T: QueryParam + Send,
+    F: QueryFilter<T> + Send,
+{
+}
+
+unsafe impl<T, F> Sync for View<'_, T, F>
+where
+    T: QueryParam + Sync,
+    F: QueryFilter<T> + Sync,
+{
 }
 
 impl<'a, T, F> View<'a, T, F>
@@ -339,15 +388,17 @@ where
             bowl,
             snapshot,
             rows: filtered_rows::<T, F>(snapshot),
+            guards: RefCell::new(Vec::new()),
             _marker: PhantomData,
         }
     }
 
     /// Iterates rows visible in this snapshot.
     pub fn iter(&'a self) -> impl Iterator<Item = T::Item<'a>> + 'a {
-        self.rows
-            .iter()
-            .map(|row| T::fetch(&self.bowl, self.snapshot, row))
+        self.rows.iter().map(|row| {
+            let mut guards = self.guards.borrow_mut();
+            T::fetch(&self.bowl, self.snapshot, row, &mut guards)
+        })
     }
 
     /// Number of rows in the view.
@@ -372,6 +423,7 @@ where
     bowl: Bowl,
     snapshot: Snapshot,
     rows: Vec<Q::State>,
+    guards: RefCell<GuardStore>,
     _marker: PhantomData<(Q, F)>,
 }
 
@@ -392,6 +444,7 @@ where
             bowl,
             snapshot,
             rows,
+            guards: RefCell::new(Vec::new()),
             _marker: PhantomData,
         }
     }
@@ -403,7 +456,10 @@ where
     pub fn collect(&self) -> Vec<Q::Item<'_>> {
         self.rows
             .iter()
-            .map(|row| Q::fetch(&self.bowl, &self.snapshot, row))
+            .map(|row| {
+                let mut guards = self.guards.borrow_mut();
+                Q::fetch(&self.bowl, &self.snapshot, row, &mut guards)
+            })
             .collect()
     }
 
@@ -534,8 +590,8 @@ impl Dep {
 ///   tracked component revisions used for memoization
 /// ```
 ///
-/// `fetch` is safe because it reads from an immutable snapshot and row states
-/// are produced from that same snapshot.
+/// `fetch` is safe because row states are produced from the same structural
+/// snapshot and read guards are kept alive by the owning query/result.
 pub trait QueryParam {
     type State: Clone;
     type Item<'a>;
@@ -549,7 +605,12 @@ pub trait QueryParam {
     /// Returns component rows this query item reads or writes while running.
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
     /// Fetches the user-facing item for a previously enumerated row.
-    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a>;
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        state: &Self::State,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a>;
 }
 
 /// Query params that can use the generic external snapshot result.
@@ -639,7 +700,12 @@ impl QueryParam for Entity {
         Vec::new()
     }
 
-    fn fetch<'a>(_bowl: &Bowl, _snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+    fn fetch<'a>(
+        _bowl: &Bowl,
+        _snapshot: &'a Snapshot,
+        state: &Self::State,
+        _guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
         *state
     }
 }
@@ -671,10 +737,18 @@ impl<T: Component> QueryParam for &T {
         vec![Access::read::<T>(*state)]
     }
 
-    fn fetch<'a>(_bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
-        snapshot
-            .get::<T>(*state)
-            .expect("query row referenced a missing component")
+    fn fetch<'a>(
+        _bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        state: &Self::State,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
+        store_read_guard(
+            snapshot
+                .get::<T>(*state)
+                .expect("query row referenced a missing component"),
+            guards,
+        )
     }
 }
 
@@ -705,7 +779,12 @@ impl<T: Component> QueryParam for (Mut<T>,) {
         vec![Access::write::<T>(*state)]
     }
 
-    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        state: &Self::State,
+        _guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
         Mut::new(bowl.clone(), *state, snapshot.revision::<T>(*state))
     }
 }
@@ -718,7 +797,12 @@ pub trait QueryPart {
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
-    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a>;
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        entity: Entity,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a>;
 }
 
 /// Query tuple parts that can use the generic external snapshot result.
@@ -742,10 +826,18 @@ impl<T: Component> QueryPart for &T {
         vec![Access::read::<T>(entity)]
     }
 
-    fn fetch<'a>(_bowl: &Bowl, snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a> {
-        snapshot
-            .get::<T>(entity)
-            .expect("query row referenced a missing component")
+    fn fetch<'a>(
+        _bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        entity: Entity,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
+        store_read_guard(
+            snapshot
+                .get::<T>(entity)
+                .expect("query row referenced a missing component"),
+            guards,
+        )
     }
 }
 
@@ -768,7 +860,12 @@ impl<T: Component> QueryPart for Mut<T> {
         vec![Access::write::<T>(entity)]
     }
 
-    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a> {
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        entity: Entity,
+        _guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
         Mut::new(bowl.clone(), entity, snapshot.revision::<T>(entity))
     }
 }
@@ -803,10 +900,15 @@ macro_rules! impl_entity_query_param {
                 access
             }
 
-            fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+            fn fetch<'a>(
+                bowl: &Bowl,
+                snapshot: &'a Snapshot,
+                state: &Self::State,
+                guards: &mut GuardStore,
+            ) -> Self::Item<'a> {
                 (
                     *state,
-                    $($P::fetch(bowl, snapshot, *state),)*
+                    $($P::fetch(bowl, snapshot, *state, guards),)*
                 )
             }
         }
@@ -1002,7 +1104,7 @@ where
     ) -> bool {
         snapshot
             .get::<T>(entity)
-            .is_some_and(|value| value == args.get::<T>(scope))
+            .is_some_and(|value| *value == *args.get::<T>(scope))
     }
 }
 
@@ -1018,7 +1120,7 @@ where
     ) -> bool {
         snapshot
             .get::<T>(entity)
-            .is_some_and(|value| value >= args.get::<T>(scope))
+            .is_some_and(|value| *value >= *args.get::<T>(scope))
     }
 }
 

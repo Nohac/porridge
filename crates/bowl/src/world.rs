@@ -1,7 +1,8 @@
 use std::{
     any::{Any, TypeId},
     collections::{BTreeMap, HashMap, HashSet},
-    sync::Arc,
+    ops::Deref,
+    sync::{Arc, RwLock, RwLockReadGuard},
 };
 
 use crate::{
@@ -42,10 +43,11 @@ pub(crate) enum Origin {
 
 /// Stored component value plus tracking metadata.
 ///
-/// Values live behind `Arc` so snapshots can clone stores cheaply without
-/// cloning user component data.
+/// Values live in a shared lock cell so snapshots can clone stores cheaply
+/// without cloning user component data, while live mutation can wait for active
+/// read guards instead of requiring unique `Arc<T>` ownership.
 struct ComponentEntry<T> {
-    value: Arc<T>,
+    value: Arc<RwLock<T>>,
     revision: Revision,
     fingerprint: Option<u64>,
     origin: Origin,
@@ -61,6 +63,24 @@ impl<T> Clone for ComponentEntry<T> {
             origin: self.origin,
             owner: self.owner.clone(),
         }
+    }
+}
+
+/// Read guard returned by query fetches.
+///
+/// This is the guarded replacement for borrowing directly from a shared
+/// immutable payload. It dereferences to `T`, so most query code can keep using
+/// field access like `component.field`.
+#[doc(hidden)]
+pub struct ComponentRef<'a, T> {
+    guard: RwLockReadGuard<'a, T>,
+}
+
+impl<T> Deref for ComponentRef<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
     }
 }
 
@@ -198,7 +218,7 @@ impl Clone for Box<dyn StoreDyn> {
 
 #[derive(Clone)]
 #[doc(hidden)]
-/// Component storage for the live world and immutable snapshots.
+/// Component storage for the live world and structural snapshots.
 ///
 /// `World` is currently public only because [`crate::QueryParam`] exposes it in
 /// low-level trait methods. It should be treated as an implementation detail.
@@ -209,10 +229,10 @@ pub struct World {
     singleton_entities: HashMap<TypeId, Entity>,
 }
 
-/// Immutable read source for one generation.
+/// Structural read source for one generation.
 ///
-/// A snapshot is a structural clone of `World`; component payloads are shared by
-/// `Arc`, and the snapshot is not mutated while systems read from it.
+/// A snapshot is a structural clone of `World`; component cells are shared and
+/// reads are protected by component read guards.
 pub(crate) type Snapshot = World;
 
 impl World {
@@ -315,7 +335,7 @@ impl World {
         self.store_mut::<T>().entries.insert(
             entity,
             ComponentEntry {
-                value: Arc::new(value),
+                value: Arc::new(RwLock::new(value)),
                 revision,
                 fingerprint,
                 origin,
@@ -327,11 +347,16 @@ impl World {
     }
 
     /// Borrows a component from the world/snapshot.
-    pub(crate) fn get<T: Component>(&self, entity: Entity) -> Option<&T> {
-        self.store::<T>()?
+    pub(crate) fn get<T: Component>(&self, entity: Entity) -> Option<ComponentRef<'_, T>> {
+        let guard = self
+            .store::<T>()?
             .entries
-            .get(&entity)
-            .map(|entry| entry.value.as_ref())
+            .get(&entity)?
+            .value
+            .read()
+            .expect("component read lock poisoned");
+
+        Some(ComponentRef { guard })
     }
 
     /// Returns the tracked revision for a component on an entity.
@@ -413,12 +438,12 @@ impl World {
         owners
     }
 
-    /// Removes one typed component and returns the stored shared value.
+    /// Removes one typed component and returns the stored value behind `Arc`.
     ///
-    /// Component payloads are stored behind `Arc` so immutable snapshots can
-    /// keep reading old generations. Removing from the live world therefore
-    /// transfers the live world's `Arc<T>` handle rather than cloning or moving
-    /// `T` itself.
+    /// Taking still avoids `T: Clone`, but it now requires that no structural
+    /// snapshot keeps the removed component cell alive. Normal bound request
+    /// lifetimes satisfy that; a caller holding an old query result for the same
+    /// component can make this return `None`.
     pub(crate) fn remove_component<T>(&mut self, entity: Entity) -> Option<Arc<T>>
     where
         T: Component,
@@ -441,7 +466,9 @@ impl World {
             }
         }
 
-        Some(removed.value)
+        let value = Arc::try_unwrap(removed.value).ok()?.into_inner().ok()?;
+
+        Some(Arc::new(value))
     }
 
     /// Mutates one component in the live world and updates revision metadata.
@@ -460,9 +487,10 @@ impl World {
             let entry = store.entries.get_mut(&entity)?;
             let before_fingerprint = entry.fingerprint;
 
-            let result = f(Arc::make_mut(&mut entry.value));
+            let mut value = entry.value.write().expect("component write lock poisoned");
+            let result = f(&mut value);
 
-            let after_fingerprint = entry.value.fingerprint();
+            let after_fingerprint = value.fingerprint();
             entry.fingerprint = after_fingerprint;
 
             let changed = T::tracked()
@@ -482,12 +510,8 @@ impl World {
         Some((changed, result))
     }
 
-    /// Mutates one component only when the live world uniquely owns its payload.
-    ///
-    /// This is the non-cloning update path used by `Mut<T>`. If an immutable
-    /// snapshot is still sharing the component payload, this returns `None`
-    /// instead of cloning `T`.
-    pub(crate) fn update_component_unique<T, F, R>(
+    /// Mutates one component in the live world without cloning the payload.
+    pub(crate) fn update_component_live<T, F, R>(
         &mut self,
         entity: Entity,
         f: F,
@@ -502,10 +526,10 @@ impl World {
             let entry = store.entries.get_mut(&entity)?;
             let before_fingerprint = entry.fingerprint;
 
-            let value = Arc::get_mut(&mut entry.value)?;
-            let result = f(value);
+            let mut value = entry.value.write().expect("component write lock poisoned");
+            let result = f(&mut value);
 
-            let after_fingerprint = entry.value.fingerprint();
+            let after_fingerprint = value.fingerprint();
             entry.fingerprint = after_fingerprint;
 
             let changed = T::tracked()

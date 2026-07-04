@@ -253,8 +253,8 @@ db.scoop::<Query<(Entity, Cow<RopeyFile>), Where<Eq<FilePath>>>>()
 
 - Make mutation work through `&self` so `Bowl` can be shared behind `Arc`.
 - Ensure mutations bump component revisions correctly.
-- Finish storage-backed scheduler-level `Mut<T>` mutation after the guarded
-  component-cell refactor.
+- Continue hardening storage-backed scheduler-level `Mut<T>` mutation now that
+  live components use guarded cells.
 - Avoid deadlocks when many callers mutate/query concurrently.
 - Make external guarded reads participate in the same conflict protocol as
   internal reads:
@@ -273,15 +273,12 @@ db.scoop::<Query<(Entity, Cow<RopeyFile>), Where<Eq<FilePath>>>>()
 Current shortcut:
 - `Cow<T>` external queries exist and run through a synchronous closure while
   the live world is locked.
-- `Cow<T>` currently requires `T: Clone` because live storage uses `Arc<T>` and
-  mutates through `Arc::make_mut`.
+- `Cow<T>` currently still requires `T: Clone`, although guarded live storage no
+  longer mutates through `Arc::make_mut`.
 - `Mut<T>` external queries return inert handles with synchronous
-  `with_original` / `with_latest`; they do not clone payloads, so the current
-  prototype can fail when immutable snapshots still share the live `Arc<T>`.
+  `with_original` / `with_latest`; they do not clone payloads.
 - System queries can use `Mut<T>` as a scheduler-visible write edge, and the
-  runner serializes conflicting rows. Actual system-side live mutation still
-  depends on the old `Arc<T>` storage and should be treated as incomplete until
-  component cells replace live payload snapshots.
+  runner serializes conflicting rows.
 
 ## 9. Add Better Non-Settling And Cycle Diagnostics
 

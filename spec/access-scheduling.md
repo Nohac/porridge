@@ -18,9 +18,9 @@ Mut<T>
 ```
 
 The current implementation has external `Cow<T>` and external `Mut<T>`.
-System-level `Mut<T>` exists as a scheduler-visible write edge. Storage-backed
-system mutation is still incomplete until live component payloads move from
-`Arc<T>` snapshots to guarded component cells.
+System-level `Mut<T>` exists as a scheduler-visible write edge. Live component
+payloads are stored in guarded cells, so `Mut<T>` no longer depends on unique
+`Arc<T>` ownership.
 
 ## Target Access Protocol
 
@@ -51,8 +51,8 @@ system that mutates `FileText(file_a)` must wait until all external and
 internal readers release it. Likewise, external writes block internal reads and
 writes for the same row.
 
-The long-term storage model should therefore be closer to DashMap than to a
-pure immutable snapshot store:
+The storage model is therefore closer to DashMap than to a pure immutable
+snapshot store:
 
 ```text
 entity component cell
@@ -61,8 +61,8 @@ entity component cell
   optional fingerprint metadata
 ```
 
-Normal immutable snapshots can still exist as an ergonomic read mode, but
-guarded reads are the mode that participates in live scheduling.
+Structural snapshots still exist for row enumeration and memo planning, but
+component reads are guard-backed.
 
 ## Current Cow Semantics
 
@@ -78,17 +78,9 @@ bowl.scoop::<Query<(Entity, Cow<FileText>), Where<Eq<FilePath>>>>()
 ```
 
 The current closure is synchronous. It runs while the live world is locked and
-updates storage through `Arc::make_mut`.
-
-```text
-if payload is uniquely held:
-  mutate in place
-else:
-  clone T, then mutate the clone
-```
-
-This keeps immutable snapshots valid, but it is not ideal for very large
-components.
+updates the guarded component cell in place. `Cow<T>` still has a `T: Clone`
+bound from the earlier API shape, but guarded storage no longer needs
+clone-on-write payload replacement.
 
 ## Current External Mut Semantics
 
@@ -127,13 +119,13 @@ with_original / with_latest
   release live access
 ```
 
-External `Mut<T>` does not clone component payloads. If the live world does not
-uniquely own the payload because an immutable snapshot still shares it, the
-mutation returns `None`.
+External `Mut<T>` does not clone component payloads. It writes the guarded live
+component cell; active read guards and other writers are coordinated by that
+cell.
 
-This is a prototype shortcut. The target behavior is to wait for existing live
-readers to release instead of failing because an immutable snapshot holds an
-`Arc<T>`.
+External read query results also hold read guards for materialized rows. This
+is DashMap-like: keeping read results alive can delay writes to the same
+component cell.
 
 The methods encode the conflict policy:
 
@@ -210,11 +202,9 @@ format(file_a) writes RopeyFile(file_a)
 format(file_b) writes RopeyFile(file_b)
 ```
 
-Current caveat: system-side `Mut<T>` uses the same live mutation handle as
-external `Mut<T>`, but systems still read from cloned `Arc<T>` snapshots. That
-means real mutation from inside systems is not the intended final behavior yet;
-the next storage refactor should make `Mut<T>` wait on guarded component cells
-instead of failing when snapshots share the old payload.
+Current caveat: command writes are still dynamically typed and are not fully
+declared to the scheduler ahead of time. `Mut<T>` rows are planned, but
+`Commands` remain validated at commit.
 
 ## Async External Access
 
