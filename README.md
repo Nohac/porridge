@@ -479,10 +479,57 @@ storage can mutate in place; otherwise the payload is cloned before mutation.
 Tracked updates bump revisions only when the component fingerprint changes, if
 the component has a fingerprint.
 
-Future scheduler-level `Mut<T>` is reserved for exclusive access planning. The
-intent is that `Mut<T>` will declare a row-level write edge before user code
-runs, allowing the planner to order or block conflicting systems without
-accidental large clones.
+### Scoped External Mut Queries
+
+Use `Mut<T>` when the caller wants a live access handle instead of a
+clone-on-write closure. Awaiting the scoop returns inert handles; live mutable
+access only exists while `with_original` or `with_latest` runs its synchronous
+closure.
+
+```rust
+# use bowl::{Bowl, Component, Entity, Eq, Mut, Query, Where};
+# #[derive(Component, Hash, PartialEq, Eq)]
+# #[component(hash)]
+# struct SourcePath(String);
+# #[derive(Component, Clone, Hash)]
+# #[component(hash)]
+# struct SourceText(String);
+# impl SourceText {
+#     fn replace(&mut self, next: impl Into<String>) { self.0 = next.into(); }
+# }
+# async fn example(bowl: Bowl) {
+let rows = bowl
+    .scoop::<Query<(Entity, Mut<SourceText>), Where<Eq<SourcePath>>>>()
+    .args(SourcePath("src/main.por".to_string()))
+    .await
+    .collect();
+
+for (_entity, text) in rows {
+    text.with_original(|text| {
+        text.replace("module main");
+    })
+    .await;
+}
+# }
+```
+
+`Mut<T>` does not require `T: Clone`. It mutates only when the live world
+uniquely owns the component payload; if an old snapshot still shares the value,
+the mutation returns `None` instead of cloning. The method names are
+deliberately explicit:
+
+- `with_original`: mutate only if the component is still at the revision
+  observed by the scoop that produced the handle.
+- `with_latest`: mutate the component currently attached to the entity.
+
+Both methods are synchronous critical sections: the closure cannot `.await`
+while live mutable access is held. Future system-level `Mut<T>` is still
+reserved for scheduler-visible row-level write edges.
+
+For fingerprinted components, scoped mutation compares the fingerprint before
+and after the closure and bumps the revision only when the fingerprint changes.
+Non-fingerprinted components are conservative and bump after a successful
+mutation.
 
 ### Bound Requests And Take
 
@@ -859,6 +906,9 @@ bowl.scoop::<Query<(Cow<PackageIndex>,)>>()
 - Runtime filter args are keyed by component type, so using two `Eq<T>` args of
   the same type in one filter is ambiguous.
 - `Cow<T>` requires `T: Clone` because snapshots use clone-on-write storage.
+- External `Mut<T>` does not clone; it returns `None` if a live snapshot still
+  shares the component payload. The intended guarded storage model should wait
+  for readers instead. Scheduler-level system `Mut<T>` is not implemented yet.
 - Systems are async, but the current runner polls local futures rather than
   spawning work across executor worker threads.
 - Output ownership is intentionally simple: rerunning a system invocation

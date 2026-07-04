@@ -256,10 +256,18 @@ db.scoop::<Query<(Entity, Cow<RopeyFile>), Where<Eq<FilePath>>>>()
 - Define how future scheduler-level `Mut<T>` interacts with in-flight
   evaluation.
 - Avoid deadlocks when many callers mutate/query concurrently.
+- Make external guarded reads participate in the same conflict protocol as
+  internal reads:
+  - external read + internal read can overlap
+  - external read blocks internal write for the same row
+  - external write blocks internal read/write for the same row
 - Add system-level `Mut<T>` as a planned read/write edge:
   - `&T` declares shared read access
   - `Mut<T>` declares exclusive row-level write access
   - unrelated entity rows can still run concurrently
+- Use fingerprints after scoped mutation:
+  - hashed components bump revisions only when the fingerprint changes
+  - non-hashed components bump revisions after successful mutation
 - Consider async external exclusive access with wait-graph cycle detection.
 
 Current shortcut:
@@ -267,6 +275,9 @@ Current shortcut:
   the live world is locked.
 - `Cow<T>` currently requires `T: Clone` because live storage uses `Arc<T>` and
   mutates through `Arc::make_mut`.
+- `Mut<T>` external queries return inert handles with synchronous
+  `with_original` / `with_latest`; they do not clone payloads, so the current
+  prototype can fail when immutable snapshots still share the live `Arc<T>`.
 - There is no mutable system query; systems still write through buffered
   `Commands`.
 
