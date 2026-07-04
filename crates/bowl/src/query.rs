@@ -193,6 +193,47 @@ where
     }
 }
 
+/// Scheduler-visible access to one component row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[doc(hidden)]
+pub struct Access {
+    pub(crate) kind: AccessKind,
+    pub(crate) component: TypeId,
+    pub(crate) entity: Entity,
+}
+
+impl Access {
+    pub(crate) fn read<T: Component>(entity: Entity) -> Self {
+        Self {
+            kind: AccessKind::Read,
+            component: TypeId::of::<T>(),
+            entity,
+        }
+    }
+
+    pub(crate) fn write<T: Component>(entity: Entity) -> Self {
+        Self {
+            kind: AccessKind::Write,
+            component: TypeId::of::<T>(),
+            entity,
+        }
+    }
+
+    pub(crate) fn conflicts(self, other: Self) -> bool {
+        self.component == other.component
+            && self.entity == other.entity
+            && (self.kind == AccessKind::Write || other.kind == AccessKind::Write)
+    }
+}
+
+/// Shared or exclusive access kind for one component row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[doc(hidden)]
+pub enum AccessKind {
+    Read,
+    Write,
+}
+
 /// Runtime values bound to external query filters.
 #[derive(Default)]
 pub struct QueryArgs {
@@ -277,6 +318,7 @@ where
     T: QueryParam,
     F: QueryFilter<T>,
 {
+    bowl: Bowl,
     snapshot: &'a Snapshot,
     rows: Vec<<T as QueryParam>::State>,
     _marker: PhantomData<(T, F)>,
@@ -292,8 +334,9 @@ where
     /// This records row states eagerly, then fetches borrowed items lazily while
     /// iterating. The snapshot is immutable for the whole system invocation, so
     /// rows cannot disappear between enumeration and fetch.
-    pub(crate) fn new(snapshot: &'a Snapshot) -> Self {
+    pub(crate) fn new(bowl: Bowl, snapshot: &'a Snapshot) -> Self {
         Self {
+            bowl,
             snapshot,
             rows: filtered_rows::<T, F>(snapshot),
             _marker: PhantomData,
@@ -302,7 +345,9 @@ where
 
     /// Iterates rows visible in this snapshot.
     pub fn iter(&'a self) -> impl Iterator<Item = T::Item<'a>> + 'a {
-        self.rows.iter().map(|row| T::fetch(self.snapshot, row))
+        self.rows
+            .iter()
+            .map(|row| T::fetch(&self.bowl, self.snapshot, row))
     }
 
     /// Number of rows in the view.
@@ -324,6 +369,7 @@ pub struct QueryResult<Q, F = ()>
 where
     Q: QueryParam,
 {
+    bowl: Bowl,
     snapshot: Snapshot,
     rows: Vec<Q::State>,
     _marker: PhantomData<(Q, F)>,
@@ -335,9 +381,15 @@ where
     F: ExternalQueryFilter<Q>,
 {
     /// Creates a result over every row of `Q` in `snapshot`.
-    pub(crate) fn new(snapshot: Snapshot, args: &QueryArgs, scope: Option<TypeId>) -> Self {
+    pub(crate) fn new(
+        bowl: Bowl,
+        snapshot: Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Self {
         let rows = external_filtered_rows::<Q, F>(&snapshot, args, scope);
         Self {
+            bowl,
             snapshot,
             rows,
             _marker: PhantomData,
@@ -351,7 +403,7 @@ where
     pub fn collect(&self) -> Vec<Q::Item<'_>> {
         self.rows
             .iter()
-            .map(|row| Q::fetch(&self.snapshot, row))
+            .map(|row| Q::fetch(&self.bowl, &self.snapshot, row))
             .collect()
     }
 
@@ -494,9 +546,15 @@ pub trait QueryParam {
     fn keys(state: &Self::State) -> Vec<Entity>;
     /// Returns tracked component revisions that should invalidate this row.
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
+    /// Returns component rows this query item reads or writes while running.
+    fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
     /// Fetches the user-facing item for a previously enumerated row.
-    fn fetch<'a>(snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a>;
+    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a>;
 }
+
+/// Query params that can use the generic external snapshot result.
+#[doc(hidden)]
+pub trait ExternalReadQueryParam: QueryParam {}
 
 /// Query-shaped clone-on-write projection over the live world.
 pub trait CowQueryParam {
@@ -577,10 +635,16 @@ impl QueryParam for Entity {
         Vec::new()
     }
 
-    fn fetch<'a>(_snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+    fn access(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
+        Vec::new()
+    }
+
+    fn fetch<'a>(_bowl: &Bowl, _snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
         *state
     }
 }
+
+impl ExternalReadQueryParam for Entity {}
 
 impl<T: Component> QueryParam for &T {
     type State = Entity;
@@ -603,10 +667,46 @@ impl<T: Component> QueryParam for &T {
             .collect()
     }
 
-    fn fetch<'a>(snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+    fn access(_snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
+        vec![Access::read::<T>(*state)]
+    }
+
+    fn fetch<'a>(_bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
         snapshot
             .get::<T>(*state)
             .expect("query row referenced a missing component")
+    }
+}
+
+impl<T: Component> ExternalReadQueryParam for &T {}
+
+impl<T: Component> QueryParam for (Mut<T>,) {
+    type State = Entity;
+    type Item<'a> = Mut<T>;
+
+    fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
+        (0..snapshot.next_entity_raw())
+            .map(Entity)
+            .filter(|entity| snapshot.has::<T>(*entity))
+            .collect()
+    }
+
+    fn keys(state: &Self::State) -> Vec<Entity> {
+        vec![*state]
+    }
+
+    fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
+        component_dep_if_tracked::<T>(snapshot, *state)
+            .into_iter()
+            .collect()
+    }
+
+    fn access(_snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
+        vec![Access::write::<T>(*state)]
+    }
+
+    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+        Mut::new(bowl.clone(), *state, snapshot.revision::<T>(*state))
     }
 }
 
@@ -617,8 +717,13 @@ pub trait QueryPart {
 
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
-    fn fetch<'a>(snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a>;
+    fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
+    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a>;
 }
+
+/// Query tuple parts that can use the generic external snapshot result.
+#[doc(hidden)]
+pub trait ExternalReadQueryPart: QueryPart {}
 
 impl<T: Component> QueryPart for &T {
     type Item<'a> = &'a T;
@@ -633,10 +738,38 @@ impl<T: Component> QueryPart for &T {
             .collect()
     }
 
-    fn fetch<'a>(snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a> {
+    fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
+        vec![Access::read::<T>(entity)]
+    }
+
+    fn fetch<'a>(_bowl: &Bowl, snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a> {
         snapshot
             .get::<T>(entity)
             .expect("query row referenced a missing component")
+    }
+}
+
+impl<T: Component> ExternalReadQueryPart for &T {}
+
+impl<T: Component> QueryPart for Mut<T> {
+    type Item<'a> = Mut<T>;
+
+    fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
+        snapshot.has::<T>(entity)
+    }
+
+    fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+        component_dep_if_tracked::<T>(snapshot, entity)
+            .into_iter()
+            .collect()
+    }
+
+    fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
+        vec![Access::write::<T>(entity)]
+    }
+
+    fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, entity: Entity) -> Self::Item<'a> {
+        Mut::new(bowl.clone(), entity, snapshot.revision::<T>(entity))
     }
 }
 
@@ -664,13 +797,21 @@ macro_rules! impl_entity_query_param {
                 deps
             }
 
-            fn fetch<'a>(snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
+            fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
+                let mut access = Vec::new();
+                $(access.extend($P::access(snapshot, *state));)*
+                access
+            }
+
+            fn fetch<'a>(bowl: &Bowl, snapshot: &'a Snapshot, state: &Self::State) -> Self::Item<'a> {
                 (
                     *state,
-                    $($P::fetch(snapshot, *state),)*
+                    $($P::fetch(bowl, snapshot, *state),)*
                 )
             }
         }
+
+        impl<$($P: ExternalReadQueryPart),*> ExternalReadQueryParam for (Entity, $($P,)*) {}
     };
 }
 
@@ -695,6 +836,7 @@ impl EntityQueryState for Entity {
 pub trait QueryFilter<Q: QueryParam> {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool;
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>;
+    fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access>;
 }
 
 impl<Q: QueryParam> QueryFilter<Q> for () {
@@ -703,6 +845,10 @@ impl<Q: QueryParam> QueryFilter<Q> for () {
     }
 
     fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
+        Vec::new()
+    }
+
+    fn access(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Access> {
         Vec::new()
     }
 }
@@ -722,6 +868,10 @@ where
             .into_iter()
             .collect()
     }
+
+    fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
+        vec![Access::read::<T>(state.entity())]
+    }
 }
 
 impl<Q, T> QueryFilter<Q> for Without<T>
@@ -736,6 +886,10 @@ where
 
     fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
         Vec::new()
+    }
+
+    fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
+        vec![Access::read::<T>(state.entity())]
     }
 }
 
@@ -997,6 +1151,16 @@ where
     let mut deps = Q::deps(snapshot, state);
     deps.extend(F::deps(snapshot, state));
     deps
+}
+
+pub(crate) fn filtered_access<Q, F>(snapshot: &Snapshot, state: &Q::State) -> Vec<Access>
+where
+    Q: QueryParam,
+    F: QueryFilter<Q>,
+{
+    let mut access = Q::access(snapshot, state);
+    access.extend(F::access(snapshot, state));
+    access
 }
 
 /// Produces a dependency for `T` on `entity` when `T` participates in revision

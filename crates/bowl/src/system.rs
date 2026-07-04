@@ -3,9 +3,9 @@ use std::{collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
 use futures::future::{FutureExt, LocalBoxFuture, join_all};
 
 use crate::{
-    Commands, DerivedFrom, Entity, Query, View,
+    Bowl, Commands, DerivedFrom, Entity, Query, View,
     commands::CommandOp,
-    query::{Dep, QueryFilter, QueryParam, filtered_deps, filtered_rows},
+    query::{Access, Dep, QueryFilter, QueryParam, filtered_access, filtered_deps, filtered_rows},
     world::{Snapshot, SystemId, SystemInvocation},
 };
 use variadics_please::all_tuples;
@@ -82,6 +82,7 @@ impl MemoEntry {
 
 pub(crate) struct PlannedSystemRun<'a> {
     pub(crate) owner: SystemInvocation,
+    pub(crate) access: Vec<Access>,
     pub(crate) run: LocalBoxFuture<'a, SystemRun>,
 }
 
@@ -94,6 +95,7 @@ struct PlannedInvocation<State> {
     state: State,
     owner: SystemInvocation,
     deps: Vec<Dep>,
+    access: Vec<Access>,
 }
 
 /// A value that can be used as a system function parameter.
@@ -118,7 +120,9 @@ pub(crate) trait SystemParam {
     fn states(snapshot: &Snapshot) -> Vec<Self::State>;
     fn keys(state: &Self::State) -> Vec<Entity>;
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
+    fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
     fn fetch<'a>(
+        bowl: &Bowl,
         snapshot: &'a Snapshot,
         state: &Self::State,
         commands: &Commands,
@@ -148,12 +152,17 @@ where
         filtered_deps::<Q, Filter>(snapshot, state)
     }
 
+    fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
+        filtered_access::<Q, Filter>(snapshot, state)
+    }
+
     fn fetch<'a>(
+        bowl: &Bowl,
         snapshot: &'a Snapshot,
         state: &Self::State,
         _commands: &Commands,
     ) -> Self::Item<'a> {
-        Query::new(Q::fetch(snapshot, state))
+        Query::new(Q::fetch(bowl, snapshot, state))
     }
 }
 
@@ -177,12 +186,20 @@ where
         Vec::new()
     }
 
+    fn access(snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
+        filtered_rows::<Q, Filter>(snapshot)
+            .into_iter()
+            .flat_map(|state| filtered_access::<Q, Filter>(snapshot, &state))
+            .collect()
+    }
+
     fn fetch<'a>(
+        bowl: &Bowl,
         snapshot: &'a Snapshot,
         _state: &Self::State,
         _commands: &Commands,
     ) -> Self::Item<'a> {
-        View::new(snapshot)
+        View::new(bowl.clone(), snapshot)
     }
 }
 
@@ -202,7 +219,12 @@ impl SystemParam for Commands {
         Vec::new()
     }
 
+    fn access(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
+        Vec::new()
+    }
+
     fn fetch<'a>(
+        _bowl: &Bowl,
         _snapshot: &'a Snapshot,
         _state: &Self::State,
         commands: &Commands,
@@ -244,7 +266,12 @@ impl SystemParam for WorldMetaView<'_> {
         Vec::new()
     }
 
+    fn access(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
+        Vec::new()
+    }
+
     fn fetch<'a>(
+        _bowl: &Bowl,
         snapshot: &'a Snapshot,
         _state: &Self::State,
         _commands: &Commands,
@@ -291,14 +318,23 @@ macro_rules! impl_system_param_tuple {
                 deps
             }
 
+            fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
+                #[allow(non_snake_case)]
+                let ($($P,)*) = state;
+                let mut access = Vec::new();
+                $(access.extend($P::access(snapshot, $P));)*
+                access
+            }
+
             fn fetch<'a>(
+                bowl: &Bowl,
                 snapshot: &'a Snapshot,
                 state: &Self::State,
                 commands: &Commands,
             ) -> Self::Item<'a> {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = state;
-                ($($P::fetch(snapshot, $P, commands),)*)
+                ($($P::fetch(bowl, snapshot, $P, commands),)*)
             }
 
             fn always_run() -> bool {
@@ -339,9 +375,15 @@ where
                 keys: Params::keys(&state),
             };
             let deps = Params::deps(snapshot, &state);
+            let access = Params::access(snapshot, &state);
 
             (Params::always_run() || memo.get(&owner).is_none_or(|entry| entry.deps != deps))
-                .then_some(PlannedInvocation { state, owner, deps })
+                .then_some(PlannedInvocation {
+                    state,
+                    owner,
+                    deps,
+                    access,
+                })
         })
         .collect();
 
@@ -397,18 +439,21 @@ pub(crate) trait Runnable: Send + Sync {
 
     fn run<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun>;
 
     fn stream_runs<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: Snapshot,
         memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>>;
 
     fn run_settled<'a>(
         &'a self,
+        _bowl: Bowl,
         _snapshot: &'a Snapshot,
         _memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
@@ -576,6 +621,7 @@ where
 
     fn run<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
@@ -592,7 +638,7 @@ where
                     commands: commands.take(),
                 }
             });
-            let mut run = self.system.run(snapshot, memo).await;
+            let mut run = self.system.run(bowl, snapshot, memo).await;
 
             if let Some(output) = start_commands {
                 run.outputs.insert(0, output);
@@ -605,6 +651,7 @@ where
 
     fn stream_runs<'a>(
         &'a self,
+        _bowl: Bowl,
         snapshot: Snapshot,
         memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
@@ -617,9 +664,13 @@ where
             keys: Vec::new(),
         };
         let memo = memo.clone();
-        let run = async move { self.run(&snapshot, &memo).await }.boxed_local();
+        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed_local();
 
-        vec![PlannedSystemRun { owner, run }]
+        vec![PlannedSystemRun {
+            owner,
+            access: Vec::new(),
+            run,
+        }]
     }
 }
 
@@ -633,11 +684,12 @@ where
 
     fn run<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let mut run = self.system.run(snapshot, memo).await;
+            let mut run = self.system.run(bowl, snapshot, memo).await;
             let owner = SystemInvocation {
                 system: self.id,
                 keys: Vec::new(),
@@ -659,6 +711,7 @@ where
 
     fn stream_runs<'a>(
         &'a self,
+        _bowl: Bowl,
         snapshot: Snapshot,
         memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
@@ -671,9 +724,13 @@ where
             keys: Vec::new(),
         };
         let memo = memo.clone();
-        let run = async move { self.run(&snapshot, &memo).await }.boxed_local();
+        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed_local();
 
-        vec![PlannedSystemRun { owner, run }]
+        vec![PlannedSystemRun {
+            owner,
+            access: Vec::new(),
+            run,
+        }]
     }
 }
 
@@ -687,27 +744,30 @@ where
 
     fn run<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
-        self.system.run(snapshot, memo)
+        self.system.run(bowl, snapshot, memo)
     }
 
     fn stream_runs<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: Snapshot,
         memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        self.system.stream_runs(snapshot, memo)
+        self.system.stream_runs(bowl, snapshot, memo)
     }
 
     fn run_settled<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
         async move {
-            let run = self.system.run(snapshot, memo).await;
+            let run = self.system.run(bowl, snapshot, memo).await;
             let owner = SystemInvocation {
                 system: self.id,
                 keys: Vec::new(),
@@ -806,26 +866,29 @@ pub struct RunDuringMarker;
 impl BoxedSystem {
     pub(crate) fn run<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
-        self.runnable.run(snapshot, memo)
+        self.runnable.run(bowl, snapshot, memo)
     }
 
     pub(crate) fn stream_runs<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: Snapshot,
         memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        self.runnable.stream_runs(snapshot, memo)
+        self.runnable.stream_runs(bowl, snapshot, memo)
     }
 
     pub(crate) fn run_settled<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
-        self.runnable.run_settled(snapshot, memo)
+        self.runnable.run_settled(bowl, snapshot, memo)
     }
 }
 
@@ -879,6 +942,7 @@ where
 
     fn run<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> LocalBoxFuture<'a, SystemRun> {
@@ -887,12 +951,15 @@ where
             let row_futures = planned
                 .invocations
                 .into_iter()
-                .map(|invocation| async move {
-                    let commands = Commands::new();
-                    let params = F::Param::fetch(snapshot, &invocation.state, &commands);
-                    self.function.run(params).await;
+                .map(|invocation| {
+                    let bowl = bowl.clone();
+                    async move {
+                        let commands = Commands::new();
+                        let params = F::Param::fetch(&bowl, snapshot, &invocation.state, &commands);
+                        self.function.run(params).await;
 
-                    finish_invocation(invocation.owner, invocation.deps, commands)
+                        finish_invocation(invocation.owner, invocation.deps, commands)
+                    }
                 })
                 .collect::<Vec<_>>();
 
@@ -905,6 +972,7 @@ where
 
     fn stream_runs<'a>(
         &'a self,
+        bowl: Bowl,
         snapshot: Snapshot,
         memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
@@ -913,10 +981,12 @@ where
             .into_iter()
             .map(|invocation| {
                 let owner = invocation.owner.clone();
+                let access = invocation.access.clone();
+                let bowl = bowl.clone();
                 let snapshot = snapshot.clone();
                 let run = async move {
                     let commands = Commands::new();
-                    let params = F::Param::fetch(&snapshot, &invocation.state, &commands);
+                    let params = F::Param::fetch(&bowl, &snapshot, &invocation.state, &commands);
                     self.function.run(params).await;
 
                     let (output, memo_update) =
@@ -930,7 +1000,7 @@ where
                 }
                 .boxed_local();
 
-                PlannedSystemRun { owner, run }
+                PlannedSystemRun { owner, access, run }
             })
             .collect()
     }

@@ -14,11 +14,13 @@ Cow<T>
 Mut<T>
   scoped live access
   external Mut<T> exposes synchronous with_original / with_latest
-  future system Mut<T> declares a write edge before user code runs
+  system Mut<T> declares a write edge before user code runs
 ```
 
 The current implementation has external `Cow<T>` and external `Mut<T>`.
-System-level scheduler-aware `Mut<T>` is still future work.
+System-level `Mut<T>` exists as a scheduler-visible write edge. Storage-backed
+system mutation is still incomplete until live component payloads move from
+`Arc<T>` snapshots to guarded component cells.
 
 ## Target Access Protocol
 
@@ -167,14 +169,16 @@ access while awaiting another bowl operation. A user can still do explicit
 sync-over-async inside the closure, but that is a visible blocking critical
 section rather than an accidental `.await` footgun.
 
-## Future System Mut Semantics
+## Current System Mut Scheduling
 
-System-level `Mut<T>` should be an access declaration, not a hidden COW value:
+System-level `Mut<T>` is an access declaration, not a hidden COW value:
 
 ```rust
 async fn update_file(query: Query<(Entity, Mut<RopeyFile>)>) {
-    let (_entity, mut file) = query.item();
-    file.apply_delta(delta);
+    let (_entity, file) = query.item();
+    file.with_latest(|file| {
+        file.apply_delta(delta);
+    }).await;
 }
 ```
 
@@ -205,6 +209,12 @@ can run concurrently:
 format(file_a) writes RopeyFile(file_a)
 format(file_b) writes RopeyFile(file_b)
 ```
+
+Current caveat: system-side `Mut<T>` uses the same live mutation handle as
+external `Mut<T>`, but systems still read from cloned `Arc<T>` snapshots. That
+means real mutation from inside systems is not the intended final behavior yet;
+the next storage refactor should make `Mut<T>` wait on guarded component cells
+instead of failing when snapshots share the old payload.
 
 ## Async External Access
 

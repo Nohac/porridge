@@ -20,8 +20,8 @@ use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
     query::{
-        ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter, ExternalQueryFilter, Mut,
-        MutResult, Named, QueryArgs, QueryParam,
+        Access, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter, ExternalQueryFilter,
+        ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
     },
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
     world::{Snapshot, SystemId, SystemInvocation, World},
@@ -295,18 +295,18 @@ pub trait ExternalScoop {
 
 impl<Q, F> ExternalScoop for Query<Q, F>
 where
-    Q: QueryParam,
+    Q: ExternalReadQueryParam,
     F: ExternalQueryFilter<Q>,
 {
     type Output = QueryResult<Q, F>;
 
     fn materialize(
-        _bowl: &Bowl,
+        bowl: &Bowl,
         snapshot: &Snapshot,
         args: &QueryArgs,
         scope: Option<TypeId>,
     ) -> Self::Output {
-        QueryResult::new(snapshot.clone(), args, scope)
+        QueryResult::new(bowl.clone(), snapshot.clone(), args, scope)
     }
 }
 
@@ -742,11 +742,12 @@ impl Bowl {
         };
 
         let snapshot = self.snapshot().await;
+        let bowl = self.clone();
         let runs = join_all(
             systems
                 .iter()
                 .filter(|system| system.phase != Phase::Cleanup)
-                .map(|system| system.run_settled(&snapshot, &memo)),
+                .map(|system| system.run_settled(bowl.clone(), &snapshot, &memo)),
         )
         .await;
 
@@ -777,7 +778,7 @@ impl Bowl {
         let mut runs = systems
             .iter()
             .filter(|system| system.phase == Phase::Cleanup)
-            .flat_map(|system| system.stream_runs(snapshot.clone(), &memo_snapshot))
+            .flat_map(|system| system.stream_runs(self.clone(), snapshot.clone(), &memo_snapshot))
             .map(|planned| {
                 let owner = planned.owner;
                 async move {
@@ -929,6 +930,7 @@ impl Bowl {
     ) -> bool {
         let mut phase_changed = false;
         let mut running = HashSet::new();
+        let mut running_access: HashMap<SystemInvocation, Vec<Access>> = HashMap::new();
         let mut runs = FuturesUnordered::new();
         let mut needs_plan = true;
 
@@ -939,20 +941,26 @@ impl Bowl {
                 for planned in systems
                     .iter()
                     .filter(|system| system.phase == phase)
-                    .flat_map(|system| system.stream_runs(snapshot.clone(), &memo_snapshot))
+                    .flat_map(|system| {
+                        system.stream_runs(self.clone(), snapshot.clone(), &memo_snapshot)
+                    })
                 {
                     if !running.insert(planned.owner.clone()) {
                         continue;
                     }
 
+                    if conflicts_with_running(&planned.access, &running_access) {
+                        running.remove(&planned.owner);
+                        continue;
+                    }
+
                     let owner = planned.owner;
+                    running_access.insert(owner.clone(), planned.access);
                     runs.push(async move {
                         let run = planned.run.await;
                         (owner, run)
                     });
                 }
-
-                needs_plan = false;
             }
 
             let Some((owner, run)) = runs.next().await else {
@@ -960,12 +968,13 @@ impl Bowl {
             };
 
             running.remove(&owner);
+            running_access.remove(&owner);
             let progress = commit_system_run(memo, &self.inner.state, run).await;
             commit_budget.record(progress.commits);
 
+            needs_plan = true;
             if progress.needs_followup {
                 phase_changed = true;
-                needs_plan = true;
             }
         }
     }
@@ -1021,6 +1030,17 @@ where
     }
 
     Some(result)
+}
+
+fn conflicts_with_running(
+    access: &[Access],
+    running_access: &HashMap<SystemInvocation, Vec<Access>>,
+) -> bool {
+    running_access.values().any(|running| {
+        access
+            .iter()
+            .any(|candidate| running.iter().any(|active| candidate.conflicts(*active)))
+    })
 }
 
 #[derive(Default)]
@@ -1327,8 +1347,44 @@ mod tests {
     static HOOK_ENTITY_REMOVES: AtomicUsize = AtomicUsize::new(0);
     static HOOK_TEST_LOCK: StdMutex<()> = StdMutex::new(());
     static REQUEST_TEST_LOCK: StdMutex<()> = StdMutex::new(());
+    static ACCESS_TEST_LOCK: StdMutex<()> = StdMutex::new(());
+    static ACTIVE_READERS: AtomicUsize = AtomicUsize::new(0);
+    static ACTIVE_WRITERS: AtomicUsize = AtomicUsize::new(0);
+    static MAX_ACTIVE_READERS: AtomicUsize = AtomicUsize::new(0);
+    static MAX_ACTIVE_WRITERS: AtomicUsize = AtomicUsize::new(0);
     static PHASE_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
     static SYSTEM_HOOK_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
+
+    async fn yield_once() {
+        let mut yielded = false;
+        futures::future::poll_fn(move |context| {
+            if yielded {
+                std::task::Poll::Ready(())
+            } else {
+                yielded = true;
+                context.waker().wake_by_ref();
+                std::task::Poll::Pending
+            }
+        })
+        .await;
+    }
+
+    fn reset_access_counters() {
+        ACTIVE_READERS.store(0, Ordering::SeqCst);
+        ACTIVE_WRITERS.store(0, Ordering::SeqCst);
+        MAX_ACTIVE_READERS.store(0, Ordering::SeqCst);
+        MAX_ACTIVE_WRITERS.store(0, Ordering::SeqCst);
+    }
+
+    fn record_max(atomic: &AtomicUsize, value: usize) {
+        let mut current = atomic.load(Ordering::SeqCst);
+        while value > current {
+            match atomic.compare_exchange(current, value, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => break,
+                Err(next) => current = next,
+            }
+        }
+    }
 
     async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (entity, a) = query.item();
@@ -1439,6 +1495,31 @@ mod tests {
         let (entity, rank) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(Count(rank.0 as usize));
+    }
+
+    async fn read_rank_for_access_test(query: Query<(Entity, &Rank)>) {
+        let (_entity, _rank) = query.item();
+        let readers = ACTIVE_READERS.fetch_add(1, Ordering::SeqCst) + 1;
+        record_max(&MAX_ACTIVE_READERS, readers);
+        assert_eq!(ACTIVE_WRITERS.load(Ordering::SeqCst), 0);
+        yield_once().await;
+        assert_eq!(ACTIVE_WRITERS.load(Ordering::SeqCst), 0);
+        ACTIVE_READERS.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    async fn read_rank_for_access_test_again(query: Query<(Entity, &Rank)>) {
+        read_rank_for_access_test(query).await;
+    }
+
+    async fn write_rank_for_access_test(query: Query<(Entity, Mut<Rank>)>) {
+        let (_entity, rank) = query.item();
+        let writers = ACTIVE_WRITERS.fetch_add(1, Ordering::SeqCst) + 1;
+        record_max(&MAX_ACTIVE_WRITERS, writers);
+        assert_eq!(ACTIVE_READERS.load(Ordering::SeqCst), 0);
+        assert!(rank.entity().raw() < u64::MAX);
+        yield_once().await;
+        assert_eq!(ACTIVE_READERS.load(Ordering::SeqCst), 0);
+        ACTIVE_WRITERS.fetch_sub(1, Ordering::SeqCst);
     }
 
     async fn startup_phase(query: Query<(Entity, &A)>, mut commands: Commands) {
@@ -2293,6 +2374,64 @@ mod tests {
             assert_eq!(handle.with_latest(|rank| rank.0 = 2).await, Some(()));
             let latest = bowl.scoop::<Query<(Entity, &Rank)>>().await;
             assert_eq!(latest.collect()[0].1.0, 2);
+        });
+    }
+
+    #[test]
+    fn scheduler_allows_multiple_readers_of_same_row() {
+        block_on(async {
+            let _guard = ACCESS_TEST_LOCK.lock().expect("access test lock poisoned");
+            reset_access_counters();
+
+            let bowl = Bowl::new();
+            bowl.add_system(read_rank_for_access_test).await;
+            bowl.add_system(read_rank_for_access_test_again).await;
+            bowl.insert((Rank(1),)).await;
+
+            bowl.scoop::<Query<Entity>>().await;
+
+            assert_eq!(ACTIVE_READERS.load(Ordering::SeqCst), 0);
+            assert_eq!(ACTIVE_WRITERS.load(Ordering::SeqCst), 0);
+            assert_eq!(MAX_ACTIVE_READERS.load(Ordering::SeqCst), 2);
+        });
+    }
+
+    #[test]
+    fn scheduler_serializes_read_write_access_to_same_row() {
+        block_on(async {
+            let _guard = ACCESS_TEST_LOCK.lock().expect("access test lock poisoned");
+            reset_access_counters();
+
+            let bowl = Bowl::new();
+            bowl.add_system(read_rank_for_access_test).await;
+            bowl.add_system(write_rank_for_access_test).await;
+            bowl.insert((Rank(1),)).await;
+
+            bowl.scoop::<Query<Entity>>().await;
+
+            assert_eq!(ACTIVE_READERS.load(Ordering::SeqCst), 0);
+            assert_eq!(ACTIVE_WRITERS.load(Ordering::SeqCst), 0);
+            assert_eq!(MAX_ACTIVE_READERS.load(Ordering::SeqCst), 1);
+            assert_eq!(MAX_ACTIVE_WRITERS.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn scheduler_allows_writes_to_different_rows() {
+        block_on(async {
+            let _guard = ACCESS_TEST_LOCK.lock().expect("access test lock poisoned");
+            reset_access_counters();
+
+            let bowl = Bowl::new();
+            bowl.add_system(write_rank_for_access_test).await;
+            bowl.insert((Rank(1),)).await;
+            bowl.insert((Rank(2),)).await;
+
+            bowl.scoop::<Query<Entity>>().await;
+
+            assert_eq!(ACTIVE_READERS.load(Ordering::SeqCst), 0);
+            assert_eq!(ACTIVE_WRITERS.load(Ordering::SeqCst), 0);
+            assert_eq!(MAX_ACTIVE_WRITERS.load(Ordering::SeqCst), 2);
         });
     }
 
