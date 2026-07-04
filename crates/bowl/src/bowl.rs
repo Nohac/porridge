@@ -20,7 +20,8 @@ use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     commands::{BaseCommandOp, InsertBaseCommand},
     query::{
-        ArgBundle, CowQueryParam, ExternalFilter, ExternalQueryFilter, Named, QueryArgs, QueryParam,
+        ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter, ExternalQueryFilter, Mut,
+        MutResult, Named, QueryArgs, QueryParam,
     },
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
     world::{Snapshot, SystemId, SystemInvocation, World},
@@ -185,7 +186,7 @@ where
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
         let snapshot = self.bowl.snapshot().await;
-        S::materialize(&snapshot, &self.args, None)
+        S::materialize(&self.bowl, &snapshot, &self.args, None)
     }
 }
 
@@ -274,8 +275,8 @@ where
     }
 }
 
-/// Type-level description of one or more read-only result sets to scoop from a
-/// settled bowl.
+/// Type-level description of one or more result sets to scoop from a settled
+/// bowl.
 ///
 /// `Query<T, F>` scoops one result set. Tuples of `ExternalScoop` specs scoop
 /// multiple independent result sets from the same snapshot.
@@ -284,7 +285,12 @@ pub trait ExternalScoop {
     type Output;
 
     #[doc(hidden)]
-    fn materialize(snapshot: &Snapshot, args: &QueryArgs, scope: Option<TypeId>) -> Self::Output;
+    fn materialize(
+        bowl: &Bowl,
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Self::Output;
 }
 
 impl<Q, F> ExternalScoop for Query<Q, F>
@@ -294,8 +300,53 @@ where
 {
     type Output = QueryResult<Q, F>;
 
-    fn materialize(snapshot: &Snapshot, args: &QueryArgs, scope: Option<TypeId>) -> Self::Output {
+    fn materialize(
+        _bowl: &Bowl,
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Self::Output {
         QueryResult::new(snapshot.clone(), args, scope)
+    }
+}
+
+impl<T, F> ExternalScoop for Query<(Mut<T>,), F>
+where
+    T: Component,
+    F: ExternalFilter<Entity>,
+{
+    type Output = MutResult<T, F>;
+
+    fn materialize(
+        bowl: &Bowl,
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Self::Output {
+        MutResult::new(
+            bowl.clone(),
+            crate::query::external_mut_rows::<T, F>(snapshot, args, scope),
+        )
+    }
+}
+
+impl<T, F> ExternalScoop for Query<(Entity, Mut<T>), F>
+where
+    T: Component,
+    F: ExternalFilter<Entity>,
+{
+    type Output = EntityMutResult<T, F>;
+
+    fn materialize(
+        bowl: &Bowl,
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Self::Output {
+        EntityMutResult::new(
+            bowl.clone(),
+            crate::query::external_mut_rows::<T, F>(snapshot, args, scope),
+        )
     }
 }
 
@@ -307,11 +358,12 @@ where
     type Output = S::Output;
 
     fn materialize(
-        _snapshot: &Snapshot,
-        _args: &QueryArgs,
+        bowl: &Bowl,
+        snapshot: &Snapshot,
+        args: &QueryArgs,
         _scope: Option<TypeId>,
     ) -> Self::Output {
-        S::materialize(_snapshot, _args, Some(TypeId::of::<Tag>()))
+        S::materialize(bowl, snapshot, args, Some(TypeId::of::<Tag>()))
     }
 }
 
@@ -496,6 +548,33 @@ impl Bowl {
             .commit_limit
             .lock()
             .expect("commit limit lock poisoned")
+    }
+
+    pub(crate) async fn with_component_original<T, F, R>(
+        &self,
+        entity: Entity,
+        original_revision: Option<crate::world::Revision>,
+        f: F,
+    ) -> Option<R>
+    where
+        T: Component,
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut state = self.inner.state.lock().await;
+        if state.world.revision::<T>(entity) != original_revision {
+            return None;
+        }
+
+        apply_component_mutation::<T, F, R>(&mut state, entity, f)
+    }
+
+    pub(crate) async fn with_component_mut<T, F, R>(&self, entity: Entity, f: F) -> Option<R>
+    where
+        T: Component,
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut state = self.inner.state.lock().await;
+        apply_component_mutation::<T, F, R>(&mut state, entity, f)
     }
 
     /// Registers a system.
@@ -926,6 +1005,24 @@ impl Bowl {
     }
 }
 
+fn apply_component_mutation<T, F, R>(state: &mut State, entity: Entity, f: F) -> Option<R>
+where
+    T: Component,
+    F: FnOnce(&mut T) -> R,
+{
+    let (changed, result) = state.world.update_component_unique::<T, F, R>(entity, f)?;
+
+    if changed {
+        state.normal_clean = false;
+        if state.pending_generation.is_none() {
+            let next_generation = state.next_generation;
+            state.pending_generation = Some(next_generation);
+        }
+    }
+
+    Some(result)
+}
+
 #[derive(Default)]
 struct CommitProgress {
     needs_followup: bool,
@@ -1074,8 +1171,13 @@ macro_rules! impl_external_scoop_tuple {
         {
             type Output = ($($S::Output,)*);
 
-            fn materialize(snapshot: &Snapshot, args: &QueryArgs, scope: Option<TypeId>) -> Self::Output {
-                ($($S::materialize(snapshot, args, scope),)*)
+            fn materialize(
+                bowl: &Bowl,
+                snapshot: &Snapshot,
+                args: &QueryArgs,
+                scope: Option<TypeId>,
+            ) -> Self::Output {
+                ($($S::materialize(bowl, snapshot, args, scope),)*)
             }
         }
     };
@@ -1154,7 +1256,7 @@ mod tests {
 
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
-        Entity, Eq, Gte, Named, Phase, Query, Singleton, SystemExt, View, Where, With,
+        Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt, View, Where, With,
         cleanup_stale_derived,
     };
 
@@ -1176,6 +1278,7 @@ mod tests {
     struct Label(&'static str);
     #[derive(Clone, PartialEq, PartialOrd)]
     struct Rank(u32);
+    struct FingerprintedRank(u32);
 
     impl Component for A {}
     impl Component for B {}
@@ -1190,6 +1293,11 @@ mod tests {
     impl Component for MutableA {}
     impl Component for Label {}
     impl Component for Rank {}
+    impl Component for FingerprintedRank {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(self.0 as u64)
+        }
+    }
     impl Component for UntrackedMarker {
         fn tracked() -> bool {
             false
@@ -1218,6 +1326,7 @@ mod tests {
     static HOOK_REMOVES: AtomicUsize = AtomicUsize::new(0);
     static HOOK_ENTITY_REMOVES: AtomicUsize = AtomicUsize::new(0);
     static HOOK_TEST_LOCK: StdMutex<()> = StdMutex::new(());
+    static REQUEST_TEST_LOCK: StdMutex<()> = StdMutex::new(());
     static PHASE_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
     static SYSTEM_HOOK_LOG: StdMutex<Vec<&'static str>> = StdMutex::new(Vec::new());
 
@@ -1314,6 +1423,21 @@ mod tests {
 
     async fn copy_rank_to_count(query: Query<(Entity, &Rank)>, mut commands: Commands) {
         let (entity, rank) = query.item();
+        commands.entity(entity).insert(Count(rank.0 as usize));
+    }
+
+    async fn copy_rank_to_count_counted(query: Query<(Entity, &Rank)>, mut commands: Commands) {
+        let (entity, rank) = query.item();
+        REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(Count(rank.0 as usize));
+    }
+
+    async fn copy_fingerprinted_rank_to_count(
+        query: Query<(Entity, &FingerprintedRank)>,
+        mut commands: Commands,
+    ) {
+        let (entity, rank) = query.item();
+        REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(Count(rank.0 as usize));
     }
 
@@ -1453,6 +1577,9 @@ mod tests {
     #[test]
     fn query_runs_pending_generation() {
         block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
             let bowl = Bowl::new();
             bowl.add_system(make_b).await;
@@ -1829,6 +1956,9 @@ mod tests {
     #[test]
     fn untracked_components_do_not_invalidate_clean_systems() {
         block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
             let bowl = Bowl::new();
@@ -1956,6 +2086,213 @@ mod tests {
                     .sum::<usize>(),
                 12
             );
+        });
+    }
+
+    #[test]
+    fn external_mut_handles_update_inside_scoped_closure() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(copy_rank_to_count).await;
+            bowl.insert((Label("main"), Rank(1))).await;
+            bowl.insert((Label("lib"), Rank(2))).await;
+
+            let ranks = bowl
+                .scoop::<Query<(Entity, Mut<Rank>), Where<Eq<Label>>>>()
+                .args(Label("main"))
+                .await;
+            assert_eq!(ranks.len(), 1);
+
+            let rows = ranks.collect();
+            let updated = rows[0].1.with_latest(|rank| {
+                rank.0 = 7;
+                rank.0
+            });
+            assert_eq!(updated.await, Some(7));
+
+            let ranks = bowl
+                .scoop::<Query<(Entity, &Rank), Where<Eq<Label>>>>()
+                .args(Label("main"))
+                .await;
+            let rows = ranks.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 7);
+
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(
+                counts
+                    .collect()
+                    .iter()
+                    .map(|(_, count)| count.0)
+                    .sum::<usize>(),
+                9
+            );
+        });
+    }
+
+    #[test]
+    fn external_mut_handles_without_entity_update_live_components() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((MutableA(1),)).await;
+
+            let values = bowl.scoop::<Query<(Mut<MutableA>,)>>().await;
+            assert_eq!(values.len(), 1);
+
+            let mut values = values.collect();
+            let value = values.pop().unwrap();
+            assert_eq!(value.with_latest(|value| value.0 += 4).await, Some(()));
+
+            let values = bowl.scoop::<Query<(Entity, &MutableA)>>().await;
+            let rows = values.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 5);
+        });
+    }
+
+    #[test]
+    fn external_mut_skips_invalidation_when_fingerprint_is_unchanged() {
+        block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
+            REQUEST_RUNS.store(0, Ordering::SeqCst);
+
+            let bowl = Bowl::new();
+            bowl.add_system(copy_fingerprinted_rank_to_count).await;
+            bowl.insert((FingerprintedRank(1),)).await;
+
+            {
+                let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+                assert_eq!(counts.collect()[0].1.0, 1);
+            }
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+
+            let handle = bowl
+                .scoop::<Query<(Mut<FingerprintedRank>,)>>()
+                .await
+                .collect()
+                .pop()
+                .unwrap();
+            assert_eq!(handle.with_latest(|rank| rank.0 = 1).await, Some(()));
+
+            {
+                let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+                assert_eq!(counts.collect()[0].1.0, 1);
+            }
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+
+            assert_eq!(handle.with_latest(|rank| rank.0 = 2).await, Some(()));
+
+            {
+                let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+                assert_eq!(counts.collect()[0].1.0, 2);
+            }
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 2);
+        });
+    }
+
+    #[test]
+    fn external_mut_conservatively_invalidates_without_fingerprint() {
+        block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
+            REQUEST_RUNS.store(0, Ordering::SeqCst);
+
+            let bowl = Bowl::new();
+            bowl.add_system(copy_rank_to_count_counted).await;
+            bowl.insert((Rank(1),)).await;
+
+            {
+                let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+                assert_eq!(counts.collect()[0].1.0, 1);
+            }
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+
+            let handle = bowl
+                .scoop::<Query<(Mut<Rank>,)>>()
+                .await
+                .collect()
+                .pop()
+                .unwrap();
+            assert_eq!(handle.with_latest(|rank| rank.0 = 1).await, Some(()));
+
+            {
+                let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+                assert_eq!(counts.collect()[0].1.0, 1);
+            }
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 2);
+        });
+    }
+
+    #[test]
+    fn external_mut_original_rejects_stale_handles() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((Rank(1),)).await;
+
+            let handle = bowl
+                .scoop::<Query<(Mut<Rank>,)>>()
+                .await
+                .collect()
+                .pop()
+                .unwrap();
+
+            assert_eq!(handle.with_latest(|rank| rank.0 = 2).await, Some(()));
+            assert_eq!(handle.with_original(|rank| rank.0 = 3).await, None);
+
+            let latest = bowl.scoop::<Query<(Entity, &Rank)>>().await;
+            let rows = latest.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 2);
+        });
+    }
+
+    #[test]
+    fn external_mut_does_not_require_clone() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((NonCloneAnswer(1),)).await;
+
+            let handle = bowl
+                .scoop::<Query<(Mut<NonCloneAnswer>,)>>()
+                .await
+                .collect()
+                .pop()
+                .unwrap();
+
+            assert_eq!(handle.with_latest(|answer| answer.0 = 9).await, Some(()));
+
+            let answers = bowl.scoop::<Query<(Entity, &NonCloneAnswer)>>().await;
+            let rows = answers.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].1.0, 9);
+        });
+    }
+
+    #[test]
+    fn external_mut_returns_none_instead_of_cloning_shared_snapshot() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((Rank(1),)).await;
+
+            let snapshot = bowl.scoop::<Query<(Entity, &Rank)>>().await;
+            let handle = bowl
+                .scoop::<Query<(Mut<Rank>,)>>()
+                .await
+                .collect()
+                .pop()
+                .unwrap();
+
+            assert_eq!(handle.with_latest(|rank| rank.0 = 2).await, None);
+            assert_eq!(snapshot.collect()[0].1.0, 1);
+
+            drop(snapshot);
+
+            assert_eq!(handle.with_latest(|rank| rank.0 = 2).await, Some(()));
+            let latest = bowl.scoop::<Query<(Entity, &Rank)>>().await;
+            assert_eq!(latest.collect()[0].1.0, 2);
         });
     }
 

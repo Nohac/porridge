@@ -7,7 +7,7 @@ use std::{
 use variadics_please::all_tuples;
 
 use crate::{
-    Component, Entity,
+    Bowl, Component, Entity,
     world::{Revision, Snapshot, World},
 };
 
@@ -116,6 +116,82 @@ pub struct Without<T>(PhantomData<T>);
 /// mutates live storage through `Arc::make_mut` while the live world is locked.
 #[derive(Debug, Clone, Copy)]
 pub struct Cow<T>(PhantomData<T>);
+
+/// Scoped live mutable access to one component on one entity.
+///
+/// This type is intentionally not a conventional mutable reference. A
+/// `Mut<T>` handle is inert until one of its mutation methods is called:
+///
+/// ```text
+/// with_original
+///   mutate only if the component still has the same revision observed when
+///   this handle was scooped
+///
+/// with_latest
+///   mutate whatever component value is currently attached to the entity
+/// ```
+///
+/// Both methods expose live mutable access only inside a synchronous closure.
+/// The closure cannot `.await`, which prevents the common accidental deadlock of
+/// holding live mutable access while re-entering the bowl.
+pub struct Mut<T> {
+    bowl: Bowl,
+    entity: Entity,
+    revision: Option<Revision>,
+    _marker: PhantomData<T>,
+}
+
+impl<T> Mut<T> {
+    pub(crate) fn new(bowl: Bowl, entity: Entity, revision: Option<Revision>) -> Self {
+        Self {
+            bowl,
+            entity,
+            revision,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Entity this access handle targets.
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+}
+
+impl<T> Mut<T>
+where
+    T: Component,
+{
+    /// Mutates the component only if it is still at the revision observed when
+    /// this handle was created.
+    ///
+    /// Returns `None` if the component was removed, if another write changed
+    /// its revision first, or if an immutable snapshot is still sharing the
+    /// component payload. Use this when the mutation depends on facts observed
+    /// by the scoop that produced the handle.
+    pub async fn with_original<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.bowl
+            .with_component_original::<T, F, R>(self.entity, self.revision, f)
+            .await
+    }
+
+    /// Mutates the component currently attached to the entity.
+    ///
+    /// Returns `None` if the component was removed or if an immutable snapshot
+    /// is still sharing the component payload. Use this for operations that are
+    /// valid against the latest value, such as setting an absolute value or
+    /// appending to a current accumulator.
+    pub async fn with_latest<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.bowl
+            .with_component_mut::<T, F, R>(self.entity, f)
+            .await
+    }
+}
 
 /// Runtime values bound to external query filters.
 #[derive(Default)]
@@ -290,6 +366,88 @@ where
     }
 }
 
+/// Materialized result for `Query<(Mut<T>,), F>`.
+pub struct MutResult<T, F = ()>
+where
+    T: Component,
+{
+    bowl: Bowl,
+    rows: Vec<(Entity, Option<Revision>)>,
+    _marker: PhantomData<(T, F)>,
+}
+
+impl<T, F> MutResult<T, F>
+where
+    T: Component,
+{
+    pub(crate) fn new(bowl: Bowl, rows: Vec<(Entity, Option<Revision>)>) -> Self {
+        Self {
+            bowl,
+            rows,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Fetches all mutable access handles.
+    pub fn collect(&self) -> Vec<Mut<T>> {
+        self.rows
+            .iter()
+            .map(|(entity, revision)| Mut::new(self.bowl.clone(), *entity, *revision))
+            .collect()
+    }
+
+    /// Number of rows in the result.
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Returns `true` when the result has no rows.
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+}
+
+/// Materialized result for `Query<(Entity, Mut<T>), F>`.
+pub struct EntityMutResult<T, F = ()>
+where
+    T: Component,
+{
+    bowl: Bowl,
+    rows: Vec<(Entity, Option<Revision>)>,
+    _marker: PhantomData<(T, F)>,
+}
+
+impl<T, F> EntityMutResult<T, F>
+where
+    T: Component,
+{
+    pub(crate) fn new(bowl: Bowl, rows: Vec<(Entity, Option<Revision>)>) -> Self {
+        Self {
+            bowl,
+            rows,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Fetches all entity ids and mutable access handles.
+    pub fn collect(&self) -> Vec<(Entity, Mut<T>)> {
+        self.rows
+            .iter()
+            .map(|(entity, revision)| (*entity, Mut::new(self.bowl.clone(), *entity, *revision)))
+            .collect()
+    }
+
+    /// Number of rows in the result.
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Returns `true` when the result has no rows.
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[doc(hidden)]
 pub struct Dep {
@@ -373,6 +531,7 @@ where
     {
         world
             .update_component::<T, _, _>(*state, |component| f(component))
+            .map(|(changed, _)| changed)
             .unwrap_or(false)
     }
 }
@@ -397,6 +556,7 @@ where
     {
         world
             .update_component::<T, _, _>(*state, |component| f((*state, component)))
+            .map(|(changed, _)| changed)
             .unwrap_or(false)
     }
 }
@@ -809,6 +969,23 @@ where
     Q::rows(snapshot)
         .into_iter()
         .filter(|state| F::matches(snapshot, args, scope, state))
+        .collect()
+}
+
+pub(crate) fn external_mut_rows<T, F>(
+    snapshot: &Snapshot,
+    args: &QueryArgs,
+    scope: Option<TypeId>,
+) -> Vec<(Entity, Option<Revision>)>
+where
+    T: Component,
+    F: ExternalFilter<Entity>,
+{
+    (0..snapshot.next_entity_raw())
+        .map(Entity)
+        .filter(|entity| snapshot.has::<T>(*entity))
+        .filter(|entity| F::matches(snapshot, args, scope, entity))
+        .map(|entity| (entity, snapshot.revision::<T>(entity)))
         .collect()
 }
 

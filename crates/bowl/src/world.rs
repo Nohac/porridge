@@ -449,18 +449,18 @@ impl World {
     /// If `T` provides a fingerprint and the fingerprint is unchanged after the
     /// closure runs, the component keeps its existing revision. Components
     /// without fingerprints conservatively bump on every mutable access.
-    pub(crate) fn update_component<T, F, R>(&mut self, entity: Entity, f: F) -> Option<bool>
+    pub(crate) fn update_component<T, F, R>(&mut self, entity: Entity, f: F) -> Option<(bool, R)>
     where
         T: Component + Clone,
         F: FnOnce(&mut T) -> R,
     {
         let next_revision = Revision(self.revision.0 + 1);
-        let changed = {
+        let (changed, result) = {
             let store = self.store_mut_existing::<T>()?;
             let entry = store.entries.get_mut(&entity)?;
             let before_fingerprint = entry.fingerprint;
 
-            f(Arc::make_mut(&mut entry.value));
+            let result = f(Arc::make_mut(&mut entry.value));
 
             let after_fingerprint = entry.value.fingerprint();
             entry.fingerprint = after_fingerprint;
@@ -472,14 +472,57 @@ impl World {
                 entry.revision = next_revision;
             }
 
-            changed
+            (changed, result)
         };
 
         if changed {
             self.revision = next_revision;
         }
 
-        Some(changed)
+        Some((changed, result))
+    }
+
+    /// Mutates one component only when the live world uniquely owns its payload.
+    ///
+    /// This is the non-cloning update path used by `Mut<T>`. If an immutable
+    /// snapshot is still sharing the component payload, this returns `None`
+    /// instead of cloning `T`.
+    pub(crate) fn update_component_unique<T, F, R>(
+        &mut self,
+        entity: Entity,
+        f: F,
+    ) -> Option<(bool, R)>
+    where
+        T: Component,
+        F: FnOnce(&mut T) -> R,
+    {
+        let next_revision = Revision(self.revision.0 + 1);
+        let (changed, result) = {
+            let store = self.store_mut_existing::<T>()?;
+            let entry = store.entries.get_mut(&entity)?;
+            let before_fingerprint = entry.fingerprint;
+
+            let value = Arc::get_mut(&mut entry.value)?;
+            let result = f(value);
+
+            let after_fingerprint = entry.value.fingerprint();
+            entry.fingerprint = after_fingerprint;
+
+            let changed = T::tracked()
+                && (before_fingerprint.is_none() || before_fingerprint != after_fingerprint);
+
+            if changed {
+                entry.revision = next_revision;
+            }
+
+            (changed, result)
+        };
+
+        if changed {
+            self.revision = next_revision;
+        }
+
+        Some((changed, result))
     }
 
     /// Upper bound used for simple entity scans.

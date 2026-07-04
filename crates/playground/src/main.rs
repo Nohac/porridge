@@ -3,7 +3,7 @@ mod lang;
 use std::time::Duration;
 
 use bowl::{
-    Bowl, Commands, Cow, Entity, Eq, Gte, Named, Phase, Query, Singleton, SystemExt, Where, With,
+    Bowl, Commands, Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt, Where, With,
     cleanup_stale_derived,
 };
 
@@ -42,13 +42,19 @@ async fn main() {
     ))
     .await;
 
-    println!("\nregister std.net import with Cow<SystemImportDb>");
-    db.scoop::<Query<(Entity, Cow<SystemImportDb>)>>()
-        .for_each(|(entity, imports)| {
-            println!("mutating import database entity {}", entity.raw());
-            imports.0.insert("std.net".to_string());
-        })
-        .await;
+    println!("\nregister std.net import with Mut<SystemImportDb>");
+    for (entity, imports) in db
+        .scoop::<Query<(Entity, Mut<SystemImportDb>)>>()
+        .await
+        .collect()
+    {
+        imports
+            .with_latest(|imports| {
+                println!("mutating import database entity {}", entity.raw());
+                imports.0.insert("std.net".to_string());
+            })
+            .await;
+    }
 
     db.insert((
         FilePath("main.porridge".to_string()),

@@ -45,6 +45,10 @@
 //! `Cow<T>` requires `T: Clone` so live updates can preserve immutable
 //! snapshots with clone-on-write storage.
 //!
+//! Scoped live mutation uses [`Mut<T>`](Mut). A `Mut<T>` handle is inert until
+//! `.with_original(...)` or `.with_latest(...)` runs a synchronous closure, so
+//! ordinary async code cannot hold live mutable access across `.await`.
+//!
 //! Evaluation is generation based:
 //!
 //! ```text
@@ -95,8 +99,9 @@ pub use component::{Component, ComponentHookContext, DerivedFrom, Singleton, has
 pub use entity::Entity;
 pub use macros::Component;
 pub use query::{
-    And, ArgBundle, Cow, CowQueryParam, Eq, ExternalFilter, ExternalQueryFilter, FilterExpr, Gte,
-    Named, Not, Or, Query, QueryFilter, QueryParam, QueryResult, View, Where, With, Without,
+    And, ArgBundle, Cow, CowQueryParam, EntityMutResult, Eq, ExternalFilter, ExternalQueryFilter,
+    FilterExpr, Gte, Mut, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam, QueryResult,
+    View, Where, With, Without,
 };
 pub use system::{
     IntoSystem, Phase, SystemCallback, SystemExt, WorldMetaView, cleanup_stale_derived, insert_on,
