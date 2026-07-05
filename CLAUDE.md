@@ -10,6 +10,8 @@ Porridge is an ECS-inspired **incremental evaluation** prototype for compilers, 
 
 Short lowercase imperative subject (e.g. `add guarded component cells`), no body, no attribution/Co-Authored-By trailers. Exception: performance commits may carry a body listing old vs new benchmark numbers.
 
+Do not commit automatically. Only chain commits without per-commit approval when the user has explicitly granted it for a specific set of planned tasks; once that task set is done, the permission expires.
+
 ## Commands
 
 ```sh
