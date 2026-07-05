@@ -1,7 +1,9 @@
 # Performance Optimization Plan
 
-Status: benchmarks implemented (`crates/benches`, `cargo bench -p benches`);
-engine changes not started.
+Status: steps 1–5 implemented and measured; see
+[bench-reports.md](bench-reports.md) for per-step results and the final
+comparison (cold settle at 128 files: 834 ms → 882 µs). Remaining work is
+listed at the end of that report. The baseline below is kept for reference.
 
 ## Baseline (2026-07-05, criterion medians, release)
 

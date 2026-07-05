@@ -161,3 +161,60 @@ the change caused it, and pinning `codegen-units = 1` for the bench profile
 sensitive to codegen-unit partitioning. The workspace now pins
 `[profile.bench] codegen-units = 1` so future runs measure the code, not the
 layout lottery.
+
+## Final comparison — baseline vs. all five steps
+
+Full-suite runs of the baseline commit (`add engine benchmarks`, pre-engine
+work) and HEAD, back-to-back in one session, both with `codegen-units = 1`.
+
+| bench | baseline | HEAD | speedup |
+|---|---|---|---|
+| cold_settle/8 | 393 µs | 47.1 µs | **8.4×** |
+| cold_settle/32 | 16.0 ms | 216 µs | **74×** |
+| cold_settle/128 | 834 ms | 882 µs | **945×** |
+| incremental_settle/8 | 58.8 µs | 29.0 µs | 2.0× |
+| incremental_settle/32 | 238 µs | 109 µs | 2.2× |
+| incremental_settle/128 | 1.28 ms | 435 µs | 2.9× |
+| identical_rerun/8 | 53.9 µs | 13.2 µs | 4.1× |
+| identical_rerun/32 | 1.71 ms | 57.1 µs | **30×** |
+| identical_rerun/128 | 78.8 ms | 249 µs | **316×** |
+| read_scan/100 | 6.2 µs | 5.1 µs | 1.2× |
+| read_scan/1000 | 49.4 µs | 39.6 µs | 1.2× |
+| read_scan/10000 | bimodal* | bimodal* | — |
+| where_eq/100 | 18.6 µs | 7.8 µs | 2.4× |
+| where_eq/1000 | 199 µs | 78.7 µs | 2.5× |
+| view_scaling/8 | 70.4 µs | 20.4 µs | 3.5× |
+| view_scaling/32 | 2.77 ms | 434 µs | 6.4× |
+| view_scaling/64 | 21.3 ms | 3.78 ms | 5.6× |
+
+Settle scaling went from ~O(N^2.7) to roughly linear: 16× more files costs
+2122× at baseline, 18.7× at HEAD.
+
+\* `read_scan/10000` measures ~500 µs in some process runs and ~930 µs in
+others — *for both baseline and HEAD*, confirmed by interleaved A/B runs. The
+bench is dominated by the two per-scoop 10 000-entry snapshot clones and is
+hypersensitive to memory layout across process starts. Comparing versions on
+it is meaningless; the 100/1000 sizes (stable) show −18…−20 %.
+
+### Impact attribution
+
+| step | main effect |
+|---|---|
+| 1. store-driven rows | read scans −20 %; prerequisite for index hints |
+| 2. shared planning snapshots | **the** dominant win: settle −84…−95 % |
+| 3. output diffing + owner index | enabler for 4; fixes stale-commit race; identical-rerun cutoff |
+| 4. skip no-op replan waves | second dominant win: settle −73…−98 % on top of 2 |
+| 5. fingerprint eq index | `Where<Eq>` scoops −60 % (now snapshot-clone bound) |
+
+### Remaining known work (not yet done)
+
+- Cached settled snapshot for external scoops — the read path is now entirely
+  clone-bound (`where_eq` ≈ clone cost; `read_scan/10000` bimodality).
+- Cheaper access-conflict checking — `view_scaling` still ~O(N²·V) from
+  per-row `Access` vectors and the nested `conflicts_with_running` loop.
+- Stable derived-entity identity (reuse spawned ids across reruns) to stop
+  entity-id growth from request churn.
+- Dirty-set filtered replans (replan only systems whose component footprint
+  intersects committed changes) — less urgent now that no-op waves are gone.
+- Memo hygiene for entities removed via `commands.remove`.
+- Optional dense storage (`spec/performance-plan.md` §6).
