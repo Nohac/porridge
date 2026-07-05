@@ -1199,6 +1199,14 @@ async fn commit_system_run(
         memo.insert(owner, entry);
     }
 
+    // Memo entries keyed by removed entities can never match a planned row
+    // again; drop them so long-running bowls do not accumulate dead entries.
+    let removed = state.world.take_removed_entities();
+    if !removed.is_empty() {
+        let keys = removed.into_iter().collect::<HashSet<_>>();
+        remove_memo_touched_by(memo, &keys);
+    }
+
     let needs_followup = state.world.revision_raw() != before_revision
         || state.world.mutations_raw() != before_mutations;
     CommitProgress {
@@ -1725,6 +1733,34 @@ mod tests {
             DerivedFrom::many([value_entity, label_entity]),
             Answer(value.0),
         ));
+    }
+
+    struct Doomed;
+    impl Component for Doomed {}
+
+    async fn remove_doomed(query: Query<Entity, With<Doomed>>, mut commands: Commands) {
+        commands.remove(query.item());
+    }
+
+    #[test]
+    fn removing_an_entity_purges_its_memo_entries() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(make_b_uncounted).await;
+            bowl.add_system(remove_doomed).await;
+            let entity = bowl.insert((A(1), Doomed)).await.entity();
+
+            assert_eq!(bowl.scoop::<Query<(Entity, &A)>>().await.len(), 0);
+
+            let state = bowl.inner.state.lock().await;
+            assert!(
+                state
+                    .memo
+                    .keys()
+                    .all(|owner| !owner.keys.contains(&entity)),
+                "memo still holds entries keyed by the removed entity"
+            );
+        });
     }
 
     async fn spawn_b_note_from_a(query: Query<(Entity, &MutableA)>, mut commands: Commands) {

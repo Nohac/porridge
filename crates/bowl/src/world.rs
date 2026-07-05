@@ -375,6 +375,11 @@ pub struct World {
     derived_spawns: HashMap<SystemInvocation, Vec<Entity>>,
     /// Per-owner spawn cursor for the commit currently being applied.
     spawn_cursors: HashMap<SystemInvocation, usize>,
+    /// Entities removed since the runner last drained this list.
+    ///
+    /// The commit path uses it to purge memo entries keyed by entities that
+    /// no longer exist.
+    removed_entities: Vec<Entity>,
 }
 
 impl Clone for World {
@@ -395,6 +400,7 @@ impl Clone for World {
             derived_owners: HashMap::new(),
             derived_spawns: HashMap::new(),
             spawn_cursors: HashMap::new(),
+            removed_entities: Vec::new(),
         }
     }
 }
@@ -417,7 +423,13 @@ impl World {
             derived_owners: HashMap::new(),
             derived_spawns: HashMap::new(),
             spawn_cursors: HashMap::new(),
+            removed_entities: Vec::new(),
         }
+    }
+
+    /// Drains the entities removed since the last drain.
+    pub(crate) fn take_removed_entities(&mut self) -> Vec<Entity> {
+        std::mem::take(&mut self.removed_entities)
     }
 
     /// Returns the entity for an invocation's next spawn slot.
@@ -779,6 +791,7 @@ impl World {
 
         self.singleton_entities
             .retain(|_, singleton_entity| *singleton_entity != entity);
+        self.removed_entities.push(entity);
 
         owners
     }
