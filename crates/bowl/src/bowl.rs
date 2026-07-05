@@ -9,6 +9,7 @@ use std::{
 };
 
 use futures::{
+    FutureExt,
     channel::oneshot,
     future::join_all,
     lock::Mutex,
@@ -943,9 +944,11 @@ impl Bowl {
         let mut running_access: HashMap<SystemInvocation, Vec<Access>> = HashMap::new();
         let mut runs = FuturesUnordered::new();
         let mut needs_plan = true;
+        let mut deferred_conflicts = false;
 
         loop {
             if needs_plan {
+                deferred_conflicts = false;
                 let snapshot = Arc::new(self.snapshot().await);
                 let memo_snapshot = Arc::new(memo.clone());
                 for planned in systems
@@ -961,6 +964,7 @@ impl Bowl {
 
                     if conflicts_with_running(&planned.access, &running_access) {
                         running.remove(&planned.owner);
+                        deferred_conflicts = true;
                         continue;
                     }
 
@@ -973,19 +977,36 @@ impl Bowl {
                 }
             }
 
-            let Some((owner, run)) = runs.next().await else {
+            let Some(first) = runs.next().await else {
                 return phase_changed;
             };
 
-            running.remove(&owner);
-            running_access.remove(&owner);
-            let progress = commit_system_run(memo, &self.inner.state, run).await;
-            commit_budget.record(progress.commits);
+            // Commit everything that has already finished before deciding
+            // whether the phase needs another planning wave.
+            let mut batch = vec![first];
+            while let Some(Some(next)) = runs.next().now_or_never() {
+                batch.push(next);
+            }
 
-            needs_plan = true;
-            if progress.needs_followup {
+            let mut followup = false;
+            let mut stale = false;
+            for (owner, run) in batch {
+                running.remove(&owner);
+                running_access.remove(&owner);
+                let progress = commit_system_run(memo, &self.inner.state, run).await;
+                commit_budget.record(progress.commits);
+                followup |= progress.needs_followup;
+                stale |= progress.stale;
+            }
+
+            if followup {
                 phase_changed = true;
             }
+
+            // Replan only when a commit changed the world, a stale run left
+            // its row memo-invalid, or a conflict-deferred row is waiting for
+            // the access rows this batch released.
+            needs_plan = followup || stale || deferred_conflicts;
         }
     }
 
@@ -1056,6 +1077,9 @@ fn conflicts_with_running(
 #[derive(Default)]
 struct CommitProgress {
     needs_followup: bool,
+    /// The run was discarded because its captured deps went stale before the
+    /// commit. The owning row is still memo-invalid and must be replanned.
+    stale: bool,
     commits: u64,
 }
 
@@ -1119,7 +1143,10 @@ async fn commit_system_run(
         .iter()
         .all(|(_owner, entry)| entry.is_current(&state.world))
     {
-        return CommitProgress::default();
+        return CommitProgress {
+            stale: true,
+            ..CommitProgress::default()
+        };
     }
 
     let before_revision = state.world.revision_raw();
@@ -1143,6 +1170,7 @@ async fn commit_system_run(
         || state.world.mutations_raw() != before_mutations;
     CommitProgress {
         needs_followup,
+        stale: false,
         commits: u64::from(needs_followup),
     }
 }

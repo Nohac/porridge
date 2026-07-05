@@ -104,3 +104,30 @@ Small standalone numbers by design: the runner still replans the phase after
 that value-identical reruns now produce `needs_followup = false` commits (no
 revision bumps, no downstream invalidation) — the signal the next step uses to
 skip replan waves.
+
+## Step 4 — fewer replan waves (`skip replan waves for no-op commits`)
+
+The streaming loop now (1) drains every already-finished invocation and
+commits the batch before considering a replan, and (2) replans only when a
+commit changed the world, a stale run left its row memo-invalid, or a
+conflict-deferred row is waiting on freed access rows. Previously every single
+commit — including no-ops — triggered a fresh snapshot clone, memo clone, and
+full planning pass over all systems.
+
+| bench | 8 / 100 | 32 / 1000 | 128 / 10000 | vs step 3 |
+|---|---|---|---|---|
+| cold_settle | 44.1 µs | 201 µs | **871 µs** | **−73 % / −92 % / −98 %** |
+| incremental_settle | 29.0 µs | 112 µs | 455 µs | **−26 % / −29 % / −31 %** |
+| identical_rerun | 12.3 µs | 56.1 µs | **242 µs** | **−59 % / −85 % / −96 %** |
+| read_scan | 5.3 µs | 40.1 µs | 973 µs* | flat* |
+| where_eq | 18.5 µs | 192 µs | — | flat |
+| view_scaling (8/32/64) | 21.1 µs | 418 µs | 3.91 ms | **−61 % / −77 % / −72 %** |
+
+Settle scaling is now roughly linear: cold_settle 8→128 (16× files) costs
+20× — down from 2200× at baseline.
+
+\* `read_scan/10000` appeared to jump 410 µs → 973 µs, but re-benchmarking the
+two *previous* commits mid-session reproduced ~925–950 µs on those too: the
+machine's memory-bound performance drifted between runs (thermal/load), not
+the code. Cross-run absolute numbers carry that caveat; the final report
+re-runs baseline vs. HEAD back-to-back in one session.
