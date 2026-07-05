@@ -1,6 +1,36 @@
 # Performance Optimization Plan
 
-Status: plan only, nothing implemented yet.
+Status: benchmarks implemented (`crates/benches`, `cargo bench -p benches`);
+engine changes not started.
+
+## Baseline (2026-07-05, criterion medians, release)
+
+| bench | 8 | 32 | 128 | scaling |
+|---|---|---|---|---|
+| `cold_settle` (N files, 3-system pipeline) | 395 µs | 16.4 ms | **867 ms** | ~O(N^2.7) |
+| `incremental_settle` (touch 1 of N files) | 59.7 µs | 246 µs | 1.09 ms | ~O(N) |
+| `identical_rerun` (N inputs change, outputs identical) | 55.3 µs | 1.72 ms | **80.8 ms** | ~O(N^2.6) |
+| `view_scaling` (N rows, View param, zero outputs) | 74.3 µs (8) | 2.68 ms (32) | 19.5 ms (64) | ~O(N^2.9) |
+
+| bench | 100 | 1 000 | 10 000 |
+|---|---|---|---|
+| `read_scan` (scoop 16 rows past N irrelevant entities) | 6.5 µs | 50.2 µs | 516 µs (linear in dead ids) |
+| `where_eq` (path-equality scoop over N files) | 19.5 µs | 218 µs | — (linear scan) |
+
+What the baseline confirms:
+
+- **Settle cost is super-quadratic in world size** (`cold_settle`,
+  `view_scaling`) — replan-per-commit × dense scans × O(all entries) commit
+  cleanup compound. `view_scaling` produces *zero outputs* and still pays
+  ~20 ms at 64 rows: pure planning/replanning overhead.
+- **The fingerprint cutoff does not work for derived outputs**
+  (`identical_rerun`): value-identical reruns should settle in ~O(N) after
+  reexecution, but cost ~O(N^2.6) because every commit bumps revisions and
+  forces a full replan (finding A below).
+- **Reads pay for historical churn, not live data** (`read_scan`): a 16-row
+  scoop costs ~51 ns per *irrelevant* entity id.
+- **A one-file edit pays O(world)** (`incremental_settle`): linear replan +
+  scan cost for a constant-size change.
 
 This is based on the short performance report (release playground run ~0.15s)
 plus a code review of `crates/bowl`. The report's six issues are all real; the

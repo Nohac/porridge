@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/benches",
     "crates/bowl",
     "crates/macros",
     "crates/playground",

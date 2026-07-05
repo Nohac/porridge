@@ -1,0 +1,16 @@
+[package]
+name = "benches"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bowl = { path = "../bowl" }
+futures = "0.3"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "engine"
+harness = false
