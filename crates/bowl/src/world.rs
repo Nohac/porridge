@@ -677,6 +677,18 @@ impl World {
         self.next_entity
     }
 
+    /// Entities that currently have a component of type `T`, ascending.
+    pub(crate) fn entities_with<T: Component>(&self) -> Vec<Entity> {
+        self.store::<T>()
+            .map(|store| store.entries.keys().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Number of entities that currently have a component of type `T`.
+    pub(crate) fn store_len<T: Component>(&self) -> usize {
+        self.store::<T>().map_or(0, |store| store.entries.len())
+    }
+
     /// Current global revision.
     pub(crate) fn revision_raw(&self) -> u64 {
         self.revision.0

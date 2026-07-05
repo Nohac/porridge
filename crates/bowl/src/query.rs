@@ -598,6 +598,15 @@ pub trait QueryParam {
 
     /// Enumerates all row states in `snapshot`.
     fn rows(snapshot: &Snapshot) -> Vec<Self::State>;
+    /// Enumerates row states, optionally restricted to candidate entities
+    /// supplied by a filter.
+    ///
+    /// Params that already iterate a component store ignore the hint; the
+    /// unconstrained `Entity` param uses it to avoid a dense id scan.
+    fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
+        let _ = hint;
+        Self::rows(snapshot)
+    }
     /// Returns entity keys that identify the invocation for this row.
     fn keys(state: &Self::State) -> Vec<Entity>;
     /// Returns tracked component revisions that should invalidate this row.
@@ -638,10 +647,7 @@ where
     type Item<'a> = &'a mut T;
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
-        (0..snapshot.next_entity_raw())
-            .map(Entity)
-            .filter(|entity| snapshot.has::<T>(*entity))
-            .collect()
+        snapshot.entities_with::<T>()
     }
 
     fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
@@ -663,10 +669,7 @@ where
     type Item<'a> = (Entity, &'a mut T);
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
-        (0..snapshot.next_entity_raw())
-            .map(Entity)
-            .filter(|entity| snapshot.has::<T>(*entity))
-            .collect()
+        snapshot.entities_with::<T>()
     }
 
     fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
@@ -686,6 +689,10 @@ impl QueryParam for Entity {
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
         (0..snapshot.next_entity_raw()).map(Entity).collect()
+    }
+
+    fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
+        hint.unwrap_or_else(|| Self::rows(snapshot))
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
@@ -717,10 +724,7 @@ impl<T: Component> QueryParam for &T {
     type Item<'a> = &'a T;
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
-        (0..snapshot.next_entity_raw())
-            .map(Entity)
-            .filter(|entity| snapshot.has::<T>(*entity))
-            .collect()
+        snapshot.entities_with::<T>()
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
@@ -759,10 +763,7 @@ impl<T: Component> QueryParam for (Mut<T>,) {
     type Item<'a> = Mut<T>;
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
-        (0..snapshot.next_entity_raw())
-            .map(Entity)
-            .filter(|entity| snapshot.has::<T>(*entity))
-            .collect()
+        snapshot.entities_with::<T>()
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
@@ -794,6 +795,13 @@ impl<T: Component> QueryParam for (Mut<T>,) {
 pub trait QueryPart {
     type Item<'a>: Send;
 
+    /// Number of entities this part's component store currently holds.
+    ///
+    /// Row enumeration iterates the smallest participating store and probes
+    /// the other parts, so this should be cheap.
+    fn store_len(snapshot: &Snapshot) -> usize;
+    /// Entities this part could match, ascending.
+    fn candidates(snapshot: &Snapshot) -> Vec<Entity>;
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
@@ -811,6 +819,14 @@ pub trait ExternalReadQueryPart: QueryPart {}
 
 impl<T: Component> QueryPart for &T {
     type Item<'a> = &'a T;
+
+    fn store_len(snapshot: &Snapshot) -> usize {
+        snapshot.store_len::<T>()
+    }
+
+    fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
+        snapshot.entities_with::<T>()
+    }
 
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
         snapshot.has::<T>(entity)
@@ -846,6 +862,14 @@ impl<T: Component> ExternalReadQueryPart for &T {}
 impl<T: Component> QueryPart for Mut<T> {
     type Item<'a> = Mut<T>;
 
+    fn store_len(snapshot: &Snapshot) -> usize {
+        snapshot.store_len::<T>()
+    }
+
+    fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
+        snapshot.entities_with::<T>()
+    }
+
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
         snapshot.has::<T>(entity)
     }
@@ -878,10 +902,38 @@ macro_rules! impl_entity_query_param {
             type Item<'a> = (Entity, $(<$P as QueryPart>::Item<'a>,)*);
 
             fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
-                (0..snapshot.next_entity_raw())
-                    .map(Entity)
-                    .filter(|entity| true $(&& $P::matches(snapshot, *entity))*)
-                    .collect()
+                const PARTS: usize = [$(stringify!($P)),*].len();
+
+                let mut best_len = usize::MAX;
+                let mut best_index = 0usize;
+                let mut index = 0usize;
+                $(
+                    let len = $P::store_len(snapshot);
+                    if len < best_len {
+                        best_len = len;
+                        best_index = index;
+                    }
+                    index += 1;
+                )*
+                let _ = (index, best_len);
+
+                let mut candidates = Vec::new();
+                let mut index = 0usize;
+                $(
+                    if index == best_index {
+                        candidates = $P::candidates(snapshot);
+                    }
+                    index += 1;
+                )*
+                let _ = index;
+
+                // A single part's candidates are exactly its matches; only
+                // multi-part queries need to probe the non-primary stores.
+                if PARTS > 1 {
+                    candidates.retain(|entity| true $(&& $P::matches(snapshot, *entity))*);
+                }
+
+                candidates
             }
 
             fn keys(state: &Self::State) -> Vec<Entity> {
@@ -939,6 +991,11 @@ pub trait QueryFilter<Q: QueryParam> {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool;
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access>;
+    /// Entities this filter could match, used to drive row enumeration for
+    /// params without a component store of their own (`Query<Entity, ...>`).
+    fn entity_candidates(_snapshot: &Snapshot) -> Option<Vec<Entity>> {
+        None
+    }
 }
 
 impl<Q: QueryParam> QueryFilter<Q> for () {
@@ -973,6 +1030,10 @@ where
 
     fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
         vec![Access::read::<T>(state.entity())]
+    }
+
+    fn entity_candidates(snapshot: &Snapshot) -> Option<Vec<Entity>> {
+        Some(snapshot.entities_with::<T>())
     }
 }
 
@@ -1192,7 +1253,7 @@ where
     Q: QueryParam,
     F: QueryFilter<Q>,
 {
-    Q::rows(snapshot)
+    Q::rows_hinted(snapshot, F::entity_candidates(snapshot))
         .into_iter()
         .filter(|state| F::matches(snapshot, state))
         .collect()
@@ -1237,9 +1298,9 @@ where
     T: Component,
     F: ExternalFilter<Entity>,
 {
-    (0..snapshot.next_entity_raw())
-        .map(Entity)
-        .filter(|entity| snapshot.has::<T>(*entity))
+    snapshot
+        .entities_with::<T>()
+        .into_iter()
         .filter(|entity| F::matches(snapshot, args, scope, entity))
         .map(|entity| (entity, snapshot.revision::<T>(entity)))
         .collect()
