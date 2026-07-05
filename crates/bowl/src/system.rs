@@ -8,7 +8,10 @@ use futures::future::{BoxFuture, FutureExt, join_all};
 use crate::{
     Bowl, Commands, DerivedFrom, Entity, Query, View,
     commands::CommandOp,
-    query::{Access, Dep, QueryFilter, QueryParam, filtered_access, filtered_deps, filtered_rows},
+    query::{
+        Access, Dep, GuardStore, QueryFilter, QueryParam, filtered_access, filtered_deps,
+        filtered_rows,
+    },
     world::{Snapshot, SystemId, SystemInvocation},
 };
 use variadics_please::all_tuples;
@@ -124,11 +127,17 @@ pub(crate) trait SystemParam {
     fn keys(state: &Self::State) -> Vec<Entity>;
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
+    /// Builds the user-facing parameter value.
+    ///
+    /// `guards` is owned by the running invocation and dropped only after the
+    /// system function returns, so component read locks taken here outlive
+    /// every borrow handed to user code.
     fn fetch<'a>(
         bowl: &Bowl,
         snapshot: &'a Snapshot,
         state: &Self::State,
         commands: &Commands,
+        guards: &mut GuardStore,
     ) -> Self::Item<'a>;
     fn always_run() -> bool {
         false
@@ -164,10 +173,9 @@ where
         snapshot: &'a Snapshot,
         state: &Self::State,
         _commands: &Commands,
+        guards: &mut GuardStore,
     ) -> Self::Item<'a> {
-        let mut guards = Vec::new();
-        let item = Q::fetch(bowl, snapshot, state, &mut guards);
-        Query::new_guarded(item, guards)
+        Query::new(Q::fetch(bowl, snapshot, state, guards))
     }
 }
 
@@ -204,6 +212,7 @@ where
         snapshot: &'a Snapshot,
         _state: &Self::State,
         _commands: &Commands,
+        _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         View::new(bowl.clone(), snapshot)
     }
@@ -234,6 +243,7 @@ impl SystemParam for Commands {
         _snapshot: &'a Snapshot,
         _state: &Self::State,
         commands: &Commands,
+        _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         commands.clone()
     }
@@ -281,6 +291,7 @@ impl SystemParam for WorldMetaView<'_> {
         snapshot: &'a Snapshot,
         _state: &Self::State,
         _commands: &Commands,
+        _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         WorldMetaView { snapshot }
     }
@@ -337,10 +348,11 @@ macro_rules! impl_system_param_tuple {
                 snapshot: &'a Snapshot,
                 state: &Self::State,
                 commands: &Commands,
+                guards: &mut GuardStore,
             ) -> Self::Item<'a> {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = state;
-                ($($P::fetch(bowl, snapshot, $P, commands),)*)
+                ($($P::fetch(bowl, snapshot, $P, commands, guards),)*)
             }
 
             fn always_run() -> bool {
@@ -965,8 +977,19 @@ where
                     let bowl = bowl.clone();
                     async move {
                         let commands = Commands::new();
-                        let params = F::Param::fetch(&bowl, snapshot, &invocation.state, &commands);
+                        // Read guards live here, in the invocation frame, so
+                        // borrows handed to the system stay locked until the
+                        // system function returns.
+                        let mut guards = GuardStore::new();
+                        let params = F::Param::fetch(
+                            &bowl,
+                            snapshot,
+                            &invocation.state,
+                            &commands,
+                            &mut guards,
+                        );
                         self.function.run(params).await;
+                        drop(guards);
 
                         finish_invocation(invocation.owner, invocation.deps, commands)
                     }
@@ -996,8 +1019,19 @@ where
                 let snapshot = Arc::clone(&snapshot);
                 let run = async move {
                     let commands = Commands::new();
-                    let params = F::Param::fetch(&bowl, &snapshot, &invocation.state, &commands);
+                    // Read guards live here, in the invocation frame, so
+                    // borrows handed to the system stay locked until the
+                    // system function returns.
+                    let mut guards = GuardStore::new();
+                    let params = F::Param::fetch(
+                        &bowl,
+                        &snapshot,
+                        &invocation.state,
+                        &commands,
+                        &mut guards,
+                    );
                     self.function.run(params).await;
+                    drop(guards);
 
                     let (output, memo_update) =
                         finish_invocation(invocation.owner, invocation.deps, commands);

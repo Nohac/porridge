@@ -12,7 +12,7 @@ use crate::{
     world::{ComponentRef, Revision, Snapshot, World},
 };
 
-type GuardStore = Vec<Box<dyn Any + Send>>;
+pub(crate) type GuardStore = Vec<Box<dyn Any + Send>>;
 
 /// A tracked system input.
 ///
@@ -26,18 +26,18 @@ type GuardStore = Vec<Box<dyn Any + Send>>;
 /// ```
 ///
 /// Query items borrow from guard-backed component cells through normal Rust
-/// lifetimes.
+/// lifetimes. The read guards backing those borrows are owned by the running
+/// invocation and stay held until the system function returns, so consuming
+/// the query with [`Query::item`] cannot release a row lock early.
 pub struct Query<T, F = ()> {
     item: T,
-    _guards: GuardStore,
     _filter: PhantomData<F>,
 }
 
 impl<T, F> Query<T, F> {
-    pub(crate) fn new_guarded(item: T, guards: GuardStore) -> Self {
+    pub(crate) fn new(item: T) -> Self {
         Self {
             item,
-            _guards: guards,
             _filter: PhantomData,
         }
     }
@@ -53,12 +53,6 @@ impl<T, F> Query<T, F> {
     }
 }
 
-// Query values are system parameter wrappers. Guard storage is only used inside
-// one running system invocation to keep read locks alive for references in
-// `item`; the runner never shares one query value between threads.
-unsafe impl<T: Send, F: Send> Send for Query<T, F> {}
-unsafe impl<T: Sync, F: Sync> Sync for Query<T, F> {}
-
 fn store_read_guard<'a, T: Component>(
     guard: ComponentRef<'a, T>,
     guards: &mut GuardStore,
@@ -67,11 +61,12 @@ fn store_read_guard<'a, T: Component>(
 
     // SAFETY: the returned reference points into the component protected by
     // `guard`. We erase the guard lifetime before storing it in the owning
-    // query/result guard store so the lock remains held at least as long as the
-    // returned query item can be used. The guard store is dropped with the
-    // query/result, releasing the read lock. The pointer does not point into
-    // the guard object itself, so moving the boxed guard does not invalidate the
-    // reference.
+    // guard store (the running invocation for system queries, the result value
+    // for external queries) so the lock remains held at least as long as the
+    // returned query item can be used. The guard store is dropped only after
+    // the system function returns / the result is dropped, releasing the read
+    // lock. The pointer does not point into the guard object itself, so moving
+    // the boxed guard does not invalidate the reference.
     let guard =
         unsafe { std::mem::transmute::<ComponentRef<'a, T>, ComponentRef<'static, T>>(guard) };
     guards.push(Box::new(guard));

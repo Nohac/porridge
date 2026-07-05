@@ -86,7 +86,20 @@ values are read through per-cell read guards held by the `Query`/`View`
 wrapper, commits go through buffered commands under the state lock. Readers
 of the same cell overlap freely.
 
-### ⚠ `Query::item(self)` releases read locks while borrows live
+### ⚠ `Query::item(self)` releases read locks while borrows live — FIXED
+
+*Fixed 2026-07-05:* read guards are now owned by the running invocation frame
+(created before `SystemParam::fetch`, dropped after the system function
+returns), so consuming the query cannot release row locks early and external
+`Mut` writes block until the reading system finishes — the protocol
+`access-scheduling.md` prescribes. No public API change; `Query` no longer
+carries guards (its manual `unsafe Send/Sync` impls are gone too). Residual
+notes: the blocking-writer window in the deadlock section below is now wider
+by design, making swap-on-write the natural follow-up; and a system that
+reads `&T` on a row and calls `with_latest` on the same row inside itself now
+self-deadlocks instead of racing (hang beats UB, but worth a doc note).
+
+Original finding, kept for context:
 
 `item(self)` moves the row data out and **drops the guard store**, releasing
 the cell read locks, while the returned `&T` references remain usable (their
