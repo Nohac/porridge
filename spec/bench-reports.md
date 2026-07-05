@@ -208,13 +208,57 @@ it is meaningless; the 100/1000 sizes (stable) show −18…−20 %.
 
 ### Remaining known work (not yet done)
 
-- Cached settled snapshot for external scoops — the read path is now entirely
-  clone-bound (`where_eq` ≈ clone cost; `read_scan/10000` bimodality).
-- Cheaper access-conflict checking — `view_scaling` still ~O(N²·V) from
-  per-row `Access` vectors and the nested `conflicts_with_running` loop.
-- Stable derived-entity identity (reuse spawned ids across reruns) to stop
-  entity-id growth from request churn.
+- ~~Cached settled snapshot for external scoops~~ (round 2)
+- ~~Cheaper access-conflict checking for views~~ (round 2)
+- ~~Stable derived-entity identity~~ (round 2)
+- ~~Memo hygiene for entities removed via `commands.remove`~~ (round 2)
 - Dirty-set filtered replans (replan only systems whose component footprint
   intersects committed changes) — less urgent now that no-op waves are gone.
-- Memo hygiene for entities removed via `commands.remove`.
 - Optional dense storage (`spec/performance-plan.md` §6).
+
+## Round 2 — read caching, view access, spawn identity, memo hygiene
+
+Four follow-up commits, measured with targeted groups (full-suite numbers
+below are the round-2 end state).
+
+1. **`cache settled snapshots for repeated reads`** — `State` caches one
+   `Arc<Snapshot>` keyed on `(next_entity, revision, mutations)`; reads of an
+   unchanged world share it and `QueryResult` holds the `Arc` instead of a
+   structural clone. Destructive `take` drops the cache before unwrapping
+   cells. `read_scan` 5 µs–930 µs → **~140 ns flat**; `where_eq` → **~320 ns**;
+   `incremental_settle` −13 %.
+2. **`declare component-level access for views`** — `Access.entity` became
+   `Option<Entity>` (`None` = whole store); a `View` declares one wildcard
+   read per component instead of materializing per-row access vectors at plan
+   time. `view_scaling` 14.6 µs / 147 µs / **517 µs** (was 21 µs / 439 µs /
+   3.78 ms) — and the remaining cost is actual work, not scheduling.
+3. **`reuse derived entity ids across reruns`** — spawned outputs reuse their
+   entity ids slot-by-slot per invocation, and `DerivedFrom` fingerprints its
+   captured anchors. The new `spawn_rerun` bench went 11 ms / 35 ms / 55 ms →
+   **17 µs / 82 µs / 346 µs**. This step also uncovered and fixed a real bug in
+   the round-1 diffing commit: stale *spawned* outputs were never removed
+   (the owner index kept old pairs, so the stale diff skipped them), leaking
+   derived entities into query results on every rerun. Same-entity outputs
+   masked it in earlier benches; a regression test now covers replacement and
+   id stability.
+4. **`purge memo entries when entities are removed`** — `commands.remove`
+   left memo entries keyed by dead entities forever; the commit path now
+   drains removed entities and purges matching memo entries (unit-tested, no
+   measurable perf change).
+
+Round-2 end state (same machine, `codegen-units = 1`):
+
+| bench | 8 / 100 | 32 / 1000 | 128 / 10000 |
+|---|---|---|---|
+| cold_settle | 40.6 µs | 185 µs | 809 µs |
+| incremental_settle | 24.3 µs | 86.5 µs | 357 µs |
+| identical_rerun | 11.5 µs | 52.0 µs | 230 µs |
+| spawn_rerun | 19.6 µs | 84.4 µs | 357 µs |
+| read_scan | 147 ns | 149 ns | 148 ns |
+| where_eq | 325 ns | 331 ns | — |
+| view_scaling (8/32/64) | 16.4 µs | 152 µs | 534 µs |
+
+Against the original baseline: cold settle at 128 files is **~1000× faster**
+(834 ms → 809 µs), a repeated read of an unchanged world is **~3 400× faster**
+(500 µs → 147 ns) and now O(1) in world size, and derived churn no longer
+grows the entity id space.
