@@ -96,8 +96,24 @@ struct Inner {
     deferred_bound_cleanup: StdMutex<Vec<Entity>>,
 }
 
+/// World counters identifying the state a snapshot was taken at.
+type SnapshotKey = (u64, u64, u64);
+
+fn snapshot_key(world: &World) -> SnapshotKey {
+    (
+        world.next_entity_raw(),
+        world.revision_raw(),
+        world.mutations_raw(),
+    )
+}
+
 struct State {
     world: World,
+    /// Reusable snapshot keyed by the world counters it was taken at.
+    ///
+    /// Repeated reads of an unchanged world share one structural clone
+    /// instead of paying O(entries) per scoop.
+    snapshot_cache: Option<(SnapshotKey, Arc<Snapshot>)>,
     systems: Vec<BoxedSystem>,
     memo: HashMap<SystemInvocation, MemoEntry>,
     completed_generation: u64,
@@ -288,7 +304,7 @@ pub trait ExternalScoop: Send {
     #[doc(hidden)]
     fn materialize(
         bowl: &Bowl,
-        snapshot: &Snapshot,
+        snapshot: &Arc<Snapshot>,
         args: &QueryArgs,
         scope: Option<TypeId>,
     ) -> Self::Output;
@@ -303,11 +319,11 @@ where
 
     fn materialize(
         bowl: &Bowl,
-        snapshot: &Snapshot,
+        snapshot: &Arc<Snapshot>,
         args: &QueryArgs,
         scope: Option<TypeId>,
     ) -> Self::Output {
-        QueryResult::new(bowl.clone(), snapshot.clone(), args, scope)
+        QueryResult::new(bowl.clone(), Arc::clone(snapshot), args, scope)
     }
 }
 
@@ -320,7 +336,7 @@ where
 
     fn materialize(
         bowl: &Bowl,
-        snapshot: &Snapshot,
+        snapshot: &Arc<Snapshot>,
         args: &QueryArgs,
         scope: Option<TypeId>,
     ) -> Self::Output {
@@ -340,7 +356,7 @@ where
 
     fn materialize(
         bowl: &Bowl,
-        snapshot: &Snapshot,
+        snapshot: &Arc<Snapshot>,
         args: &QueryArgs,
         scope: Option<TypeId>,
     ) -> Self::Output {
@@ -360,7 +376,7 @@ where
 
     fn materialize(
         bowl: &Bowl,
-        snapshot: &Snapshot,
+        snapshot: &Arc<Snapshot>,
         args: &QueryArgs,
         _scope: Option<TypeId>,
     ) -> Self::Output {
@@ -398,6 +414,9 @@ impl BoundEntity {
 
         let result = {
             let mut state = self.bowl.inner.state.lock().await;
+            // Taking unwraps component cells, which must not be kept alive by
+            // the shared snapshot cache.
+            state.snapshot_cache = None;
             let result = T::take(&mut state.world, entity);
             cleanup_bound_entity(&mut state, entity);
             state.settled_revision = state.world.revision_raw();
@@ -509,6 +528,7 @@ impl Bowl {
             inner: Arc::new(Inner {
                 state: Mutex::new(State {
                     world: World::new(),
+                    snapshot_cache: None,
                     systems: Vec::new(),
                     memo: HashMap::new(),
                     completed_generation: 0,
@@ -782,7 +802,7 @@ impl Bowl {
             (state.systems.clone(), std::mem::take(&mut state.memo))
         };
 
-        let snapshot = Arc::new(self.snapshot().await);
+        let snapshot = self.snapshot().await;
         let memo_snapshot = Arc::new(memo.clone());
         let mut runs = systems
             .iter()
@@ -847,12 +867,24 @@ impl Bowl {
         self.inner.state.lock().await.completed_generation
     }
 
-    /// Clones the current world snapshot.
+    /// Returns the current world snapshot, sharing the cached one when the
+    /// world has not changed since it was taken.
     ///
-    /// Component values are stored in shared guarded cells, so this is intended
-    /// to be a cheap structural clone suitable for system planning and reads.
-    async fn snapshot(&self) -> Snapshot {
-        self.inner.state.lock().await.world.clone()
+    /// Component values are stored in shared guarded cells, so a fresh
+    /// snapshot is a structural clone of the store maps, not of user data.
+    async fn snapshot(&self) -> Arc<Snapshot> {
+        let mut state = self.inner.state.lock().await;
+        let key = snapshot_key(&state.world);
+
+        if let Some((cached_key, snapshot)) = &state.snapshot_cache {
+            if *cached_key == key {
+                return Arc::clone(snapshot);
+            }
+        }
+
+        let snapshot = Arc::new(state.world.clone());
+        state.snapshot_cache = Some((key, Arc::clone(&snapshot)));
+        snapshot
     }
 
     /// Suspends until any generation completes, then lets the caller re-check
@@ -949,7 +981,7 @@ impl Bowl {
         loop {
             if needs_plan {
                 deferred_conflicts = false;
-                let snapshot = Arc::new(self.snapshot().await);
+                let snapshot = self.snapshot().await;
                 let memo_snapshot = Arc::new(memo.clone());
                 for planned in systems
                     .iter()
@@ -1232,7 +1264,7 @@ macro_rules! impl_external_scoop_tuple {
 
             fn materialize(
                 bowl: &Bowl,
-                snapshot: &Snapshot,
+                snapshot: &Arc<Snapshot>,
                 args: &QueryArgs,
                 scope: Option<TypeId>,
             ) -> Self::Output {

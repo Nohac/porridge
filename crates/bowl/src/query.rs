@@ -431,7 +431,7 @@ where
     Q: QueryParam,
 {
     bowl: Bowl,
-    snapshot: Snapshot,
+    snapshot: std::sync::Arc<Snapshot>,
     rows: Vec<Q::State>,
     guards: RefCell<GuardStore>,
     _marker: PhantomData<(Q, F)>,
@@ -445,7 +445,7 @@ where
     /// Creates a result over every row of `Q` in `snapshot`.
     pub(crate) fn new(
         bowl: Bowl,
-        snapshot: Snapshot,
+        snapshot: std::sync::Arc<Snapshot>,
         args: &QueryArgs,
         scope: Option<TypeId>,
     ) -> Self {
