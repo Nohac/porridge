@@ -17,8 +17,8 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use benches::{
-    Def, Parity, Path, Text, bump_all_sources, defs_bowl, file_name, file_pipeline_bowl,
-    parity_bowl, scan_bowl, settle_files, touch_file,
+    Def, Parity, ParityNote, Path, Text, bump_all_sources, defs_bowl, file_name,
+    file_pipeline_bowl, parity_bowl, scan_bowl, settle_files, spawn_parity_bowl, touch_file,
 };
 use bowl::{Entity, Eq, Query, Where};
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -83,6 +83,30 @@ fn identical_rerun(c: &mut Criterion) {
                 block_on(async {
                     bump_all_sources(&bowl).await;
                     black_box(bowl.scoop::<Query<(Entity, &Parity)>>().await.len())
+                })
+            })
+        });
+    }
+
+    group.finish();
+}
+
+fn spawn_rerun(c: &mut Criterion) {
+    let mut group = c.benchmark_group("spawn_rerun");
+    group.sample_size(10);
+
+    for rows in [8, 32, 128] {
+        let bowl = block_on(async {
+            let bowl = spawn_parity_bowl(rows).await;
+            bowl.scoop::<Query<(Entity, &ParityNote)>>().await;
+            bowl
+        });
+
+        group.bench_with_input(BenchmarkId::from_parameter(rows), &rows, |b, _| {
+            b.iter(|| {
+                block_on(async {
+                    bump_all_sources(&bowl).await;
+                    black_box(bowl.scoop::<Query<(Entity, &ParityNote)>>().await.len())
                 })
             })
         });
@@ -172,6 +196,6 @@ criterion_group!(
     config = Criterion::default()
         .measurement_time(Duration::from_secs(2))
         .warm_up_time(Duration::from_millis(300));
-    targets = cold_settle, incremental_settle, identical_rerun, read_scan, where_eq, view_scaling
+    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, where_eq, view_scaling
 );
 criterion_main!(engine);

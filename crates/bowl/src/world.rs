@@ -367,6 +367,14 @@ pub struct World {
     /// Keeps output replacement and ownership checks proportional to an
     /// invocation's own outputs instead of every stored component entry.
     derived_owners: HashMap<SystemInvocation, HashSet<(TypeId, Entity)>>,
+    /// Entities spawned by each invocation, in spawn order.
+    ///
+    /// Reruns reuse these ids slot by slot so idempotent spawn output keeps
+    /// its entity identity (and its component revisions) instead of growing
+    /// the id space on every rerun.
+    derived_spawns: HashMap<SystemInvocation, Vec<Entity>>,
+    /// Per-owner spawn cursor for the commit currently being applied.
+    spawn_cursors: HashMap<SystemInvocation, usize>,
 }
 
 impl Clone for World {
@@ -385,6 +393,8 @@ impl Clone for World {
             stores: self.stores.clone(),
             singleton_entities: self.singleton_entities.clone(),
             derived_owners: HashMap::new(),
+            derived_spawns: HashMap::new(),
+            spawn_cursors: HashMap::new(),
         }
     }
 }
@@ -405,6 +415,42 @@ impl World {
             stores: HashMap::new(),
             singleton_entities: HashMap::new(),
             derived_owners: HashMap::new(),
+            derived_spawns: HashMap::new(),
+            spawn_cursors: HashMap::new(),
+        }
+    }
+
+    /// Returns the entity for an invocation's next spawn slot.
+    ///
+    /// Slots are matched by spawn order within one commit; a rerun that spawns
+    /// the same outputs reuses the same entity ids.
+    pub(crate) fn spawn_derived(&mut self, owner: &SystemInvocation) -> Entity {
+        let cursor = self.spawn_cursors.entry(owner.clone()).or_default();
+        let slot = *cursor;
+        *cursor += 1;
+
+        let spawns = self.derived_spawns.entry(owner.clone()).or_default();
+        if let Some(entity) = spawns.get(slot) {
+            return *entity;
+        }
+
+        let entity = Entity(self.next_entity);
+        self.next_entity += 1;
+        self.derived_spawns
+            .get_mut(owner)
+            .expect("spawn list inserted above")
+            .push(entity);
+        entity
+    }
+
+    /// Ends the spawn phase of one commit, dropping unused trailing slots.
+    pub(crate) fn finish_derived_spawns(&mut self, owner: &SystemInvocation) {
+        let cursor = self.spawn_cursors.remove(owner).unwrap_or(0);
+        if let Some(spawns) = self.derived_spawns.get_mut(owner) {
+            spawns.truncate(cursor);
+            if spawns.is_empty() {
+                self.derived_spawns.remove(owner);
+            }
         }
     }
 
@@ -603,6 +649,7 @@ impl World {
     /// invocation clears its previous facts before applying the new command
     /// buffer.
     pub(crate) fn remove_derived_owned(&mut self, owner: &SystemInvocation) {
+        self.derived_spawns.remove(owner);
         let Some(outputs) = self.derived_owners.remove(owner) else {
             return;
         };
@@ -612,9 +659,16 @@ impl World {
         }
     }
 
-    /// Snapshot of the outputs currently owned by `owner`.
-    pub(crate) fn derived_outputs(&self, owner: &SystemInvocation) -> HashSet<(TypeId, Entity)> {
-        self.derived_owners.get(owner).cloned().unwrap_or_default()
+    /// Takes the outputs currently owned by `owner`, clearing its index entry.
+    ///
+    /// Commands applied afterwards rebuild the index with exactly the pairs
+    /// the rerun re-emits, which is what makes the stale diff correct for
+    /// spawned outputs that move to different entities.
+    pub(crate) fn take_derived_outputs(
+        &mut self,
+        owner: &SystemInvocation,
+    ) -> HashSet<(TypeId, Entity)> {
+        self.derived_owners.remove(owner).unwrap_or_default()
     }
 
     /// Removes outputs in `previous` that `owner` no longer owns.
@@ -684,6 +738,7 @@ impl World {
 
         let mut removed = Vec::new();
         for owner in owners {
+            self.derived_spawns.remove(&owner);
             let Some(outputs) = self.derived_owners.remove(&owner) else {
                 continue;
             };

@@ -149,6 +149,29 @@ pub async fn bump_all_sources(bowl: &Bowl) {
         .await;
 }
 
+/// Derived from [`Src`] onto a spawned entity; stays value-identical when
+/// `Src` changes by +2.
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct ParityNote(pub u64);
+
+pub async fn spawn_parity_note(query: Query<(Entity, &Src)>, mut commands: Commands) {
+    let (entity, src) = query.item();
+    commands.insert((DerivedFrom::new(entity), ParityNote(src.0 % 2)));
+}
+
+/// N `Src` rows plus a system that spawns one derived note per row.
+pub async fn spawn_parity_bowl(rows: usize) -> Bowl {
+    let bowl = Bowl::new();
+    bowl.add_system(spawn_parity_note).await;
+
+    for index in 0..rows {
+        bowl.insert((Src(index as u64 * 2),)).await;
+    }
+
+    bowl
+}
+
 /// `padding` entities that never match target queries, plus `targets` file
 /// entities. No systems.
 pub async fn scan_bowl(padding: usize, targets: usize) -> Bowl {

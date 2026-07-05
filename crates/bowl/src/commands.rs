@@ -122,7 +122,7 @@ impl<B: Bundle> CommandOp for SpawnCommand<B> {
     fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
         let entity = B::singleton_key()
             .map(|key| world.singleton_entity_or_spawn(key))
-            .unwrap_or_else(|| world.spawn_empty());
+            .unwrap_or_else(|| world.spawn_derived(owner));
         self.bundle.insert_derived(world, entity, owner.clone());
     }
 }

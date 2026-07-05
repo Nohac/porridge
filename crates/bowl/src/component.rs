@@ -128,7 +128,7 @@ pub struct DerivedFrom {
     anchors: Vec<DerivedAnchor>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash)]
 struct DerivedAnchor {
     entity: Entity,
     revision: Option<Revision>,
@@ -184,6 +184,12 @@ impl DerivedFrom {
 impl Component for DerivedFrom {
     fn tracked() -> bool {
         false
+    }
+
+    /// Fingerprints the captured anchors so a rerun that re-derives from
+    /// unchanged sources keeps the stored entry untouched.
+    fn fingerprint(&self) -> Option<u64> {
+        Some(hash_component(&self.anchors))
     }
 }
 

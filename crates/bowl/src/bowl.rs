@@ -1188,10 +1188,11 @@ async fn commit_system_run(
     // outputs so unchanged fingerprints keep their revisions, then whatever
     // the rerun did not re-emit is removed.
     for output in outputs {
-        let previous = state.world.derived_outputs(&output.owner);
+        let previous = state.world.take_derived_outputs(&output.owner);
         for command in output.commands {
             command.apply(&mut state.world, &output.owner);
         }
+        state.world.finish_derived_spawns(&output.owner);
         state.world.remove_derived_stale(&output.owner, previous);
     }
     for (owner, entry) in memo_updates {
@@ -1724,6 +1725,38 @@ mod tests {
             DerivedFrom::many([value_entity, label_entity]),
             Answer(value.0),
         ));
+    }
+
+    async fn spawn_b_note_from_a(query: Query<(Entity, &MutableA)>, mut commands: Commands) {
+        let (entity, a) = query.item();
+        commands.insert((DerivedFrom::new(entity), B(a.0 % 2)));
+    }
+
+    #[test]
+    fn rerun_replaces_spawned_outputs_and_reuses_entity_ids() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(spawn_b_note_from_a).await;
+            let source = bowl.insert((MutableA(0),)).await.entity();
+
+            let first = bowl.scoop::<Query<(Entity, &B)>>().await;
+            assert_eq!(first.len(), 1);
+            let first_entity = first.collect()[0].0;
+
+            for round in 1..4u32 {
+                bowl.scoop::<Query<(Entity, Cow<MutableA>)>>()
+                    .for_each(|(_, a)| a.0 += 2)
+                    .await;
+
+                let notes = bowl.scoop::<Query<(Entity, &B)>>().await;
+                // Old spawned outputs must be replaced, not accumulated, and
+                // idempotent reruns keep the same derived entity id.
+                assert_eq!(notes.len(), 1, "round {round}");
+                assert_eq!(notes.collect()[0].0, first_entity, "round {round}");
+            }
+
+            assert_ne!(first_entity, source);
+        });
     }
 
     #[test]
