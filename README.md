@@ -442,7 +442,10 @@ Available filter building blocks include:
 - `Where<Or<A, B>>`
 - `Where<Not<F>>`
 
-Filters currently scan entities. Typed indexes are a planned optimization.
+`Where<Eq<T>>` resolves candidates through a fingerprint index when `T` is a
+`#[component(hash)]` component, falling back to a store scan otherwise (hash
+collisions are re-verified with `PartialEq`). Other predicates scan the
+matching component store.
 
 ### Clone-On-Write External Queries
 
@@ -520,8 +523,32 @@ cell without cloning the payload. The method names are deliberately explicit:
 - `with_latest`: mutate the component currently attached to the entity.
 
 Both methods are synchronous critical sections: the closure cannot `.await`
-while live mutable access is held. System-level `Mut<T>` is also a
-scheduler-visible row-level write edge.
+while live mutable access is held.
+
+Inside systems, use `MutRef<'_, T>` instead. The scheduler grants the
+invocation exclusive row access, so systems mutate in place through a plain
+mutable borrow — no handles, no closures, no `T: Clone`:
+
+```rust
+# use bowl::{Commands, Component, Entity, MutRef, Query, Without};
+# #[derive(Component, Clone, Hash)]
+# #[component(hash)]
+# struct SourceText(String);
+# #[derive(Component)]
+# struct Formatted;
+async fn format_source(
+    query: Query<(Entity, MutRef<'_, SourceText>), Without<Formatted>>,
+    mut commands: Commands,
+) {
+    let (entity, mut text) = query.item();
+    text.0.push('\n');
+    commands.entity(entity).insert(Formatted);
+}
+```
+
+Revision bookkeeping happens when the invocation commits, and the commit
+absorbs the row's own write into the system's memo entry — a system's mutation
+never invalidates itself, so non-idempotent mutations run exactly once.
 
 For fingerprinted components, scoped mutation compares the fingerprint before
 and after the closure and bumps the revision only when the fingerprint changes.
@@ -529,9 +556,9 @@ Non-fingerprinted components are conservative and bump after a successful
 mutation.
 
 Read query results hold read guards for the rows they materialize. A `Mut<T>`
-write waits for active read guards or other writers on the same component cell
-to release, so keep borrowed query rows short-lived before issuing writes to the
-same component.
+write retries until active read guards or other writers on the same component
+cell release (it never blocks bowl-internal bookkeeping while waiting), so keep
+borrowed query rows short-lived before issuing writes to the same component.
 
 ### Bound Requests And Take
 
@@ -904,18 +931,21 @@ bowl.scoop::<Query<(Cow<PackageIndex>,)>>()
 ## Current Limitations
 
 - This is a prototype runtime, not a stabilized crate API.
-- External filters scan rows; equality indexes are not implemented yet.
 - Runtime filter args are keyed by component type, so using two `Eq<T>` args of
-  the same type in one filter is ambiguous.
+  the same type in one filter is ambiguous. Use `Named<Tag, Query<...>>` with
+  `.args_for::<Tag>(...)` for per-query args.
 - `Cow<T>` still requires `T: Clone`, although guarded live storage means it no
   longer needs clone-on-write payload replacement.
-- External and system `Mut<T>` use guarded component cells and do not require
-  `T: Clone`.
+- External `Mut<T>` and system `MutRef<'_, T>` use guarded component cells and
+  do not require `T: Clone`. System `MutRef` writes are live and non-revocable:
+  when a commit is discarded as stale, buffered commands roll back but in-place
+  mutations persist.
 - Systems are async, but the current runner polls local futures rather than
   spawning work across executor worker threads.
-- Output ownership is intentionally simple: rerunning a system invocation
-  removes previous derived outputs owned by that invocation before applying new
-  commands.
+- Output ownership is replace-by-invocation, implemented as a diff: commands
+  apply over the invocation's previous outputs (unchanged fingerprints keep
+  their revisions and spawned outputs keep their entity ids), and whatever the
+  rerun does not re-emit is removed.
 - Plugin APIs and ergonomic singleton bundle sugar are still future work.
 
 ## Repository Layout

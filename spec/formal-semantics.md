@@ -100,21 +100,28 @@ C(e, t) = v
 O(e, t) = Derived(i)
 ```
 
-Before derived writes from `i` are committed, previous derived outputs owned by
-`i` are removed:
+Derived writes from `i` replace its previous outputs by diffing:
 
 ```text
-remove { (e, t) | O(e, t) = Derived(i) }
-apply new commands from i
+previous = { (e, t) | O(e, t) = Derived(i) }
+apply new commands from i        (writes land over the old entries)
+remove previous \ re-emitted     (whatever the rerun did not produce again)
 ```
 
-This gives replace-by-invocation semantics:
+Applying over the old entries means a re-emitted component with an unchanged
+fingerprint keeps its revision, so an idempotent rerun causes no downstream
+invalidation. The observable result is still replace-by-invocation semantics:
 
 ```text
 same system invocation reruns
   old outputs for that invocation disappear
   new outputs replace them
 ```
+
+Entities spawned by an invocation are also reused slot by slot in spawn order,
+so an idempotent rerun keeps its derived entity ids. A system whose spawn
+order is data-dependent will see ids swap meaning between slots; ids are
+identity, not order (see Determinism).
 
 ## Systems
 
@@ -266,15 +273,20 @@ loop:
   plan runnable invocations from S and M
   start any planned invocation not in running
 
-  wait for one invocation to finish
-  remove it from running
+  wait for at least one invocation to finish
+  drain every invocation that has already finished
+  remove them from running
 
-  if its captured deps are still current in W_live:
-    commit its commands atomically
-    update M
-    re-plan from the new W_live
-  else:
-    discard its commands
+  for each finished invocation:
+    if its captured deps are still current in W_live:
+      commit its commands atomically
+      update M
+    else:
+      discard its commands
+
+  re-plan from W_live only when the batch changed the world, a discarded
+  run left its row memo-invalid, or a conflict-deferred row was freed
+  (a commit that changed nothing cannot enable new rows)
 
   stop when no runnable invocations exist and running is empty
 ```
@@ -296,9 +308,10 @@ One invocation commit is atomic:
 
 ```text
 commit(i, commands):
-  remove old Derived(i) outputs
-  apply every command in commands
-  publish M(i)
+  apply every command in commands over the old Derived(i) outputs
+  remove stale Derived(i) outputs the commands did not re-emit
+  reconcile rows mutated in place through MutRef access
+  publish M(i), absorbing i's own writes into its dep revisions
 ```
 
 Other systems never observe a partial command buffer. They observe either the
@@ -459,7 +472,10 @@ generate_ast(1)
 The intended deterministic surface is not log order or derived entity id order.
 The intended deterministic surface is the settled set of logical facts, assuming
 systems are deterministic and do not depend on incidental entity allocation
-order.
+order. Derived entity ids are additionally *stable*: a rerun reuses its spawn
+slots, so an id keeps pointing at "the invocation's Nth output" across reruns —
+but which logical fact occupies slot N is the system's business, not the
+runtime's.
 
 If a system needs stable ordering, it should use stable data in components, such
 as paths, spans, names, or explicit sort keys, rather than relying on the order

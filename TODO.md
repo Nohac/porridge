@@ -88,8 +88,9 @@ Current shortcut:
   - transitive outputs derived from those entities
 - Replace the current coarse invocation-owner cleanup with a model that can
   describe output families explicitly.
-- Avoid unnecessary revision bumps when a system reruns and re-emits equivalent
-  hash-stable output.
+- Done: reruns diff outputs instead of remove/reinsert, so equivalent
+  hash-stable output keeps its revisions, and spawned outputs reuse their
+  entity ids slot by slot.
 
 Current shortcut:
 - `Commands::entity(entity).insert(component)` and `Commands::insert(bundle)`
@@ -230,10 +231,11 @@ let rows = diagnostics.collect();
   - `Lte<T>`
 
 Current shortcut:
-- Queries scan entity ids from `0..next_entity`.
+- Queries iterate component stores (smallest participating store for tuples).
 - External queries support `Where`, `Eq`, `Gte`, `And`, `Or`, `Not`, `With`,
   `Without`, and typed `.args(...)`.
-- There are no indexes; all filters scan.
+- `Where<Eq<T>>` uses a per-store fingerprint index for `#[component(hash)]`
+  components; other predicates scan the candidate store.
 - Shared runtime args are keyed by component type. Use `Named<Tag, Query<...>>`
   plus `.args_for::<Tag>(...)` when separate queries in one scoop need different
   args of the same component type.
@@ -276,9 +278,12 @@ Current shortcut:
 - `Cow<T>` currently still requires `T: Clone`, although guarded live storage no
   longer mutates through `Arc::make_mut`.
 - `Mut<T>` external queries return inert handles with synchronous
-  `with_original` / `with_latest`; they do not clone payloads.
-- System queries can use `Mut<T>` as a scheduler-visible write edge, and the
-  runner serializes conflicting rows.
+  `with_original` / `with_latest`; they do not clone payloads and never wait
+  on a cell while holding runner state (try-lock plus yield/retry).
+- System queries use `MutRef<'_, T>` as a scheduler-visible write edge that
+  yields an in-place `&mut T` for the invocation; the runner serializes
+  conflicting rows and reconciles revisions at commit, absorbing a row's own
+  write into the invocation's memo entry.
 
 ## 9. Add Better Non-Settling And Cycle Diagnostics
 

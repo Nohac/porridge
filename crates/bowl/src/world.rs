@@ -114,6 +114,24 @@ impl<T> ComponentCell<T> {
         }
     }
 
+    /// Acquires the write guard only if the cell is currently uncontended.
+    ///
+    /// Callers holding the bowl state lock must use this instead of `write`
+    /// so they never block on a cell while other tasks may need the state
+    /// lock to release their guards.
+    fn try_write(self: &Arc<Self>) -> Option<ComponentWriteGuard<T>> {
+        let mut state = self.state.lock().expect("component lock poisoned");
+        if state.writer || state.readers != 0 {
+            return None;
+        }
+        state.writer = true;
+        drop(state);
+
+        Some(ComponentWriteGuard {
+            cell: Arc::clone(self),
+        })
+    }
+
     fn into_inner(self) -> T {
         self.value.into_inner()
     }
@@ -210,6 +228,31 @@ impl<T> Deref for ComponentRef<'_, T> {
     }
 }
 
+/// Write guard returned by system `Mut<T>` fetches.
+///
+/// Exclusivity is guaranteed twice over: the cell's writer slot, and the
+/// planner's access scheduling which never runs conflicting invocations
+/// concurrently.
+#[doc(hidden)]
+pub struct ComponentMut<'a, T> {
+    guard: ComponentWriteGuard<T>,
+    _marker: std::marker::PhantomData<&'a mut T>,
+}
+
+impl<T> Deref for ComponentMut<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl<T> DerefMut for ComponentMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
 /// Type-erased component store.
 ///
 /// Each component type has its own concrete `Store<T>`, kept behind this trait
@@ -223,6 +266,9 @@ trait StoreDyn: Send + Sync {
     ///
     /// Returns whether the component type is tracked.
     fn remove_entry_owned(&mut self, entity: Entity, owner: &SystemInvocation) -> Option<bool>;
+    /// Recomputes one entry's fingerprint after an in-place `Mut` write and
+    /// bumps revisions if the tracked value changed.
+    fn reconcile_entry(&mut self, entity: Entity, revision: &mut Revision);
     /// Removes one entry as part of whole-entity removal.
     ///
     /// The outer `Option` reports whether an entry existed; the inner value is
@@ -306,6 +352,32 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision> {
         self.entries.get(&entity).map(|entry| entry.revision)
+    }
+
+    fn reconcile_entry(&mut self, entity: Entity, revision: &mut Revision) {
+        let (before, after, changed) = {
+            let Some(entry) = self.entries.get_mut(&entity) else {
+                return;
+            };
+
+            let before = entry.fingerprint;
+            let after = entry.value.read().fingerprint();
+            entry.fingerprint = after;
+
+            let changed = T::tracked() && (before.is_none() || before != after);
+            if changed {
+                bump(revision);
+                entry.revision = *revision;
+            }
+
+            (before, after, changed)
+        };
+
+        let _ = changed;
+        if before != after {
+            self.unindex_fingerprint(entity, before);
+            self.index_fingerprint(entity, after);
+        }
     }
 
     fn remove_entry_owned(&mut self, entity: Entity, owner: &SystemInvocation) -> Option<bool> {
@@ -410,6 +482,16 @@ impl Clone for World {
 /// A snapshot is a structural clone of `World`; component cells are shared and
 /// reads are protected by component read guards.
 pub(crate) type Snapshot = World;
+
+/// Outcome of a non-blocking component mutation attempt.
+pub(crate) enum TryUpdate<R, F> {
+    /// The mutation ran; `changed` reflects fingerprint-based tracking.
+    Applied { changed: bool, result: R },
+    /// The component or entity does not exist.
+    Missing,
+    /// The cell is currently held; the closure is handed back for retry.
+    Busy(F),
+}
 
 impl World {
     /// Creates an empty world.
@@ -620,6 +702,35 @@ impl World {
             guard,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    /// Exclusively borrows a component for a system `Mut<T>` row.
+    ///
+    /// Waits for outstanding read guards (external result holders) to
+    /// release; the caller must not hold the bowl state lock. Revision and
+    /// fingerprint bookkeeping happens later, at commit, via
+    /// [`World::reconcile_written`].
+    pub(crate) fn get_mut<T: Component>(&self, entity: Entity) -> Option<ComponentMut<'_, T>> {
+        let guard = self.store::<T>()?.entries.get(&entity)?.value.write();
+
+        Some(ComponentMut {
+            guard,
+            _marker: std::marker::PhantomData,
+        })
+    }
+
+    /// Reconciles rows mutated in place by a finished invocation.
+    ///
+    /// Recomputes each written row's fingerprint; tracked value changes bump
+    /// the row and world revisions, and the fingerprint index is updated.
+    pub(crate) fn reconcile_written(&mut self, writes: &[(TypeId, Entity)]) {
+        for (type_id, entity) in writes {
+            let Some(store) = self.stores.get_mut(type_id) else {
+                continue;
+            };
+
+            store.reconcile_entry(*entity, &mut self.revision);
+        }
     }
 
     /// Returns the tracked revision for a component on an entity.
@@ -848,6 +959,62 @@ impl World {
         F: FnOnce(&mut T) -> R,
     {
         self.update_component_live(entity, f)
+    }
+
+    /// Attempts to mutate one component without waiting on its cell.
+    ///
+    /// Returns `Busy(f)` when the cell is held by a reader or writer, handing
+    /// the closure back so the caller can retry after yielding — without ever
+    /// blocking while it holds the bowl state lock.
+    pub(crate) fn try_update_component_live<T, F, R>(
+        &mut self,
+        entity: Entity,
+        f: F,
+    ) -> TryUpdate<R, F>
+    where
+        T: Component,
+        F: FnOnce(&mut T) -> R,
+    {
+        let next_revision = Revision(self.revision.0 + 1);
+        let (changed, result, before_fingerprint, after_fingerprint) = {
+            let Some(store) = self.store_mut_existing::<T>() else {
+                return TryUpdate::Missing;
+            };
+            let Some(entry) = store.entries.get_mut(&entity) else {
+                return TryUpdate::Missing;
+            };
+            let before_fingerprint = entry.fingerprint;
+
+            let Some(mut value) = entry.value.try_write() else {
+                return TryUpdate::Busy(f);
+            };
+            let result = f(&mut value);
+
+            let after_fingerprint = value.fingerprint();
+            entry.fingerprint = after_fingerprint;
+
+            let changed = T::tracked()
+                && (before_fingerprint.is_none() || before_fingerprint != after_fingerprint);
+
+            if changed {
+                entry.revision = next_revision;
+            }
+
+            (changed, result, before_fingerprint, after_fingerprint)
+        };
+
+        if before_fingerprint != after_fingerprint {
+            if let Some(store) = self.store_mut_existing::<T>() {
+                store.unindex_fingerprint(entity, before_fingerprint);
+                store.index_fingerprint(entity, after_fingerprint);
+            }
+        }
+
+        if changed {
+            self.revision = next_revision;
+        }
+
+        TryUpdate::Applied { changed, result }
     }
 
     /// Mutates one component in the live world without cloning the payload.

@@ -145,20 +145,31 @@ Fixes, in order of preference:
 The cells use a **blocking Condvar** protocol on executor threads. Ranked
 scenarios:
 
-1. ● *Writer blocks holding the state lock.* `with_component_mut` →
-   `cell.write()` waits for readers **while holding the async state mutex**.
-   If a reader guard is held by a task that itself needs the state lock to
-   make progress (e.g. user code holding `QueryResult::collect()` rows
-   across an `.await` of another bowl call), the system wedges. Likelihood
-   today: moderate — it needs a held-guards-across-await pattern plus a
-   writer, but nothing prevents or even warns about it.
-2. ● *Single-threaded executors.* Any cell wait (even without the state
-   lock) blocks the only thread; if the guard holder is a task on the same
-   executor, that is an immediate deadlock. The engine tests use
-   `block_on`; real deployments on tokio's multi-thread runtime merely
-   stall a worker.
+1. ● *Writer blocks holding the state lock.* — **FIXED 2026-07-05:**
+   `with_latest`/`with_original` now use `try_write` in a retry loop that
+   releases the state lock and yields between attempts, so they never wait
+   on a cell while holding it.
+2. ● *Single-threaded executors.* Largely defused by the same change for
+   external writers; system `MutRef` fetches still block on external read
+   guards (the intended external-read-blocks-internal-write protocol), so
+   holding `collect()`ed rows across an await of a settle remains a
+   documented anti-pattern.
 3. ○ *`for_each` re-entrancy* is documented ("do not call back into the same
    bowl") but not enforced; violation deadlocks on the state lock.
+
+**System `Mut` redesign (2026-07-05):** system-side mutation is now
+`MutRef<'_, T>` — a scheduler-granted in-place `&mut T` (no `Clone`), backed
+by an invocation-held write guard. Revision/fingerprint bookkeeping happens
+at commit, and the commit absorbs the row's own write into the memo entry,
+which fixed a pre-existing convergence bug: `with_latest` inside a system
+invalidated the system's *own* commit, silently double-running every
+system-side mutation and requiring user-written idempotence to settle
+(regression tests now pin single-run semantics for non-idempotent
+mutations). `Mut<T>` remains the external scoop type with optimistic
+`with_original`/`with_latest` handles. Known documented residual: `MutRef`
+writes are live and non-revocable — if a commit is discarded as stale (only
+external interference can cause that), the mutation persists while the
+commands roll back.
 
 Reduction strategies (deep dive candidate): swap-on-write instead of
 in-place write when readers are active (writers never wait — readers keep

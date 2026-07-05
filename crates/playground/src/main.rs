@@ -3,8 +3,8 @@ mod lang;
 use std::collections::HashSet;
 
 use bowl::{
-    Bowl, Commands, Component, Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt,
-    Where, With, Without, cleanup_stale_derived,
+    Bowl, Commands, Component, Entity, Eq, Gte, Mut, MutRef, Named, Phase, Query, Singleton,
+    SystemExt, Where, With, Without, cleanup_stale_derived,
 };
 use futures::{StreamExt, stream::FuturesUnordered};
 use tracing::{info, warn};
@@ -201,48 +201,32 @@ fn init_tracing() {
 }
 
 async fn touch_file_text_once(
-    query: Query<(Entity, Mut<FileText>), Without<StressTouched>>,
+    query: Query<(Entity, MutRef<'_, FileText>), Without<StressTouched>>,
     mut commands: Commands,
 ) {
     short_sleep().await;
 
-    let (entity, text) = query.item();
-    let updated = text
-        .with_latest(|text| {
-            if !text.0.contains("type StressTouchedBySystem") {
-                text.0.push_str("\ntype StressTouchedBySystem");
-            }
-        })
-        .await;
+    let (entity, mut text) = query.item();
+    if !text.0.contains("type StressTouchedBySystem") {
+        text.0.push_str("\ntype StressTouchedBySystem");
+    }
 
-    info!(
-        entity = entity.raw(),
-        updated = updated.is_some(),
-        "touch_file_text_once"
-    );
+    info!(entity = entity.raw(), "touch_file_text_once");
     commands.entity(entity).insert(StressTouched);
 }
 
 async fn seed_extra_imports_once(
-    query: Query<(Entity, Mut<SystemImportDb>), Without<ImportDbStressTouched>>,
+    query: Query<(Entity, MutRef<'_, SystemImportDb>), Without<ImportDbStressTouched>>,
     mut commands: Commands,
 ) {
     short_sleep().await;
 
-    let (entity, imports) = query.item();
-    let updated = imports
-        .with_latest(|imports| {
-            imports.0.insert("std.fs".to_string());
-            imports.0.insert("derp.fs".to_string());
-            imports.0.insert("storm.lib".to_string());
-        })
-        .await;
+    let (entity, mut imports) = query.item();
+    imports.0.insert("std.fs".to_string());
+    imports.0.insert("derp.fs".to_string());
+    imports.0.insert("storm.lib".to_string());
 
-    info!(
-        entity = entity.raw(),
-        updated = updated.is_some(),
-        "seed_extra_imports_once"
-    );
+    info!(entity = entity.raw(), "seed_extra_imports_once");
     commands.entity(entity).insert(ImportDbStressTouched);
 }
 

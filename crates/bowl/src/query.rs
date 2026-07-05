@@ -9,7 +9,7 @@ use variadics_please::all_tuples;
 
 use crate::{
     Bowl, Component, Entity,
-    world::{ComponentRef, Revision, Snapshot, World},
+    world::{ComponentMut, ComponentRef, Revision, Snapshot, World},
 };
 
 pub(crate) type GuardStore = Vec<Box<dyn Any + Send>>;
@@ -74,6 +74,64 @@ fn store_read_guard<'a, T: Component>(
     // SAFETY: the read guard stored above keeps this component immutably locked
     // for the lifetime of the query item.
     unsafe { &*value }
+}
+
+fn store_write_guard<'a, T: Component>(
+    mut guard: ComponentMut<'a, T>,
+    guards: &mut GuardStore,
+) -> &'a mut T {
+    let value = &mut *guard as *mut T;
+
+    // SAFETY: mirrors `store_read_guard`, but for the exclusive writer slot.
+    // The write guard is stored in the invocation guard store, so the cell
+    // stays exclusively locked until the system function returns; exactly one
+    // `&mut T` is handed out per guard, and the planner never runs another
+    // invocation touching this row concurrently.
+    let guard =
+        unsafe { std::mem::transmute::<ComponentMut<'a, T>, ComponentMut<'static, T>>(guard) };
+    guards.push(Box::new(guard));
+
+    // SAFETY: the write guard stored above keeps this component exclusively
+    // locked for the lifetime of the query item.
+    unsafe { &mut *value }
+}
+
+/// Exclusive in-place access to one component row inside a system.
+///
+/// A system declaring `Mut<T>` in its query owns the row for the whole
+/// invocation: the scheduler runs no conflicting invocation concurrently, and
+/// the cell's write lock is held until the system function returns. Mutate
+/// through `Deref`/`DerefMut`; revision bookkeeping happens when the
+/// invocation commits, and a value with an unchanged fingerprint keeps its
+/// revision.
+pub struct MutRef<'a, T> {
+    entity: Entity,
+    value: &'a mut T,
+}
+
+impl<T> MutRef<'_, T> {
+    pub(crate) fn new(entity: Entity, value: &mut T) -> MutRef<'_, T> {
+        MutRef { entity, value }
+    }
+
+    /// Entity this row belongs to.
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+}
+
+impl<T> std::ops::Deref for MutRef<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for MutRef<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.value
+    }
 }
 
 /// Assigns a type-level name to an external scoop query.
@@ -156,7 +214,12 @@ fn cow_rows_hinted<T: Component>(snapshot: &Snapshot, hint: Option<Vec<Entity>>)
 #[derive(Debug, Clone, Copy)]
 pub struct Cow<T>(PhantomData<T>);
 
-/// Scoped live mutable access to one component on one entity.
+/// Scoped live mutable access to one component on one entity, obtained
+/// through an external scoop.
+///
+/// Inside systems, use [`MutRef`] instead: the scheduler grants the
+/// invocation exclusive row access, so systems mutate in place through a
+/// plain mutable borrow rather than optimistic handles.
 ///
 /// This type is intentionally not a conventional mutable reference. A
 /// `Mut<T>` handle is inert until one of its mutation methods is called:
@@ -595,6 +658,22 @@ impl Dep {
     pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
         snapshot.revision_by_type(self.type_id, self.entity) == Some(self.revision)
     }
+
+    /// Absorbs the post-commit revision when the dep row was written by the
+    /// owning invocation itself.
+    pub(crate) fn refresh_written(&mut self, world: &Snapshot, writes: &[(TypeId, Entity)]) {
+        let written = writes
+            .iter()
+            .any(|(type_id, entity)| *type_id == self.type_id && *entity == self.entity);
+
+        if !written {
+            return;
+        }
+
+        if let Some(revision) = world.revision_by_type(self.type_id, self.entity) {
+            self.revision = revision;
+        }
+    }
 }
 
 /// Describes how a query-shaped type is enumerated and fetched from a snapshot.
@@ -816,9 +895,9 @@ impl<T: Component> QueryParam for &T {
 
 impl<T: Component> ExternalReadQueryParam for &T {}
 
-impl<T: Component> QueryParam for (Mut<T>,) {
+impl<T: Component> QueryParam for (MutRef<'_, T>,) {
     type State = Entity;
-    type Item<'a> = Mut<T>;
+    type Item<'a> = MutRef<'a, T>;
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
         snapshot.entities_with::<T>()
@@ -853,12 +932,18 @@ impl<T: Component> QueryParam for (Mut<T>,) {
     }
 
     fn fetch<'a>(
-        bowl: &Bowl,
+        _bowl: &Bowl,
         snapshot: &'a Snapshot,
         state: &Self::State,
-        _guards: &mut GuardStore,
+        guards: &mut GuardStore,
     ) -> Self::Item<'a> {
-        Mut::new(bowl.clone(), *state, snapshot.revision::<T>(*state))
+        let value = store_write_guard(
+            snapshot
+                .get_mut::<T>(*state)
+                .expect("query row referenced a missing component"),
+            guards,
+        );
+        MutRef::new(*state, value)
     }
 }
 
@@ -936,8 +1021,8 @@ impl<T: Component> QueryPart for &T {
 
 impl<T: Component> ExternalReadQueryPart for &T {}
 
-impl<T: Component> QueryPart for Mut<T> {
-    type Item<'a> = Mut<T>;
+impl<T: Component> QueryPart for MutRef<'_, T> {
+    type Item<'a> = MutRef<'a, T>;
 
     fn store_len(snapshot: &Snapshot) -> usize {
         snapshot.store_len::<T>()
@@ -966,12 +1051,18 @@ impl<T: Component> QueryPart for Mut<T> {
     }
 
     fn fetch<'a>(
-        bowl: &Bowl,
+        _bowl: &Bowl,
         snapshot: &'a Snapshot,
         entity: Entity,
-        _guards: &mut GuardStore,
+        guards: &mut GuardStore,
     ) -> Self::Item<'a> {
-        Mut::new(bowl.clone(), entity, snapshot.revision::<T>(entity))
+        let value = store_write_guard(
+            snapshot
+                .get_mut::<T>(entity)
+                .expect("query row referenced a missing component"),
+            guards,
+        );
+        MutRef::new(entity, value)
     }
 }
 

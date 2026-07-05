@@ -121,7 +121,10 @@ with_original / with_latest
 
 External `Mut<T>` does not clone component payloads. It writes the guarded live
 component cell; active read guards and other writers are coordinated by that
-cell.
+cell. The writer never blocks while holding runner state: it attempts the cell
+with a try-lock and, when the cell is held, releases the state lock and yields
+before retrying, so guard holders that need the runner cannot deadlock with
+external writers.
 
 External read query results also hold read guards for materialized rows. This
 is DashMap-like: keeping read results alive can delay writes to the same
@@ -163,16 +166,25 @@ section rather than an accidental `.await` footgun.
 
 ## Current System Mut Scheduling
 
-System-level `Mut<T>` is an access declaration, not a hidden COW value:
+System-level mutation uses `MutRef<'_, T>`: an access declaration that yields a
+plain in-place `&mut T`, not an optimistic handle. The scheduler grants the
+invocation exclusive row access for its whole duration, so there is nothing to
+be optimistic about — `with_original`/`with_latest` are external-only.
 
 ```rust
-async fn update_file(query: Query<(Entity, Mut<RopeyFile>)>) {
-    let (_entity, file) = query.item();
-    file.with_latest(|file| {
-        file.apply_delta(delta);
-    }).await;
+async fn update_file(query: Query<(Entity, MutRef<'_, RopeyFile>)>) {
+    let (_entity, mut file) = query.item();
+    file.apply_delta(delta);
 }
 ```
+
+The cell's write guard is owned by the running invocation and released when
+the system function returns. Revision and fingerprint bookkeeping happens at
+commit; the commit also absorbs the row's own new revision into the
+invocation's memo entry, so a system's write does not invalidate its own memo.
+`MutRef` writes are live and non-revocable: if the commit is discarded as
+stale (only external interference can cause that, since all declared rows are
+reserved), buffered commands roll back but the in-place mutation persists.
 
 Before running that invocation, the planner can infer:
 

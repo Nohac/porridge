@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
+use std::{any::TypeId, collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
 
 use async_fn_traits::{
     AsyncFn1, AsyncFn2, AsyncFn3, AsyncFn4, AsyncFn5, AsyncFn6, AsyncFn7, AsyncFn8,
@@ -9,8 +9,8 @@ use crate::{
     Bowl, Commands, DerivedFrom, Entity, Query, View,
     commands::CommandOp,
     query::{
-        Access, Dep, GuardStore, QueryFilter, QueryParam, filtered_access, filtered_deps,
-        filtered_rows,
+        Access, AccessKind, Dep, GuardStore, QueryFilter, QueryParam, filtered_access,
+        filtered_deps, filtered_rows,
     },
     world::{Snapshot, SystemId, SystemInvocation},
 };
@@ -68,6 +68,12 @@ pub(crate) struct SystemRun {
     pub(crate) completed: bool,
     pub(crate) outputs: Vec<SystemOutput>,
     pub(crate) memo_updates: Vec<(SystemInvocation, MemoEntry)>,
+    /// Rows the invocations mutated in place through `MutRef` access.
+    ///
+    /// The commit reconciles their fingerprints/revisions and refreshes the
+    /// matching memo deps so an invocation's own write does not invalidate
+    /// its own memo entry.
+    pub(crate) writes: Vec<(TypeId, Entity)>,
 }
 
 impl SystemRun {
@@ -76,6 +82,7 @@ impl SystemRun {
             completed: false,
             outputs: Vec::new(),
             memo_updates: Vec::new(),
+            writes: Vec::new(),
         }
     }
 }
@@ -84,6 +91,23 @@ impl MemoEntry {
     pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
         self.deps.iter().all(|dep| dep.is_current(snapshot))
     }
+
+    /// Refreshes deps for rows this invocation wrote itself, absorbing the
+    /// post-commit revisions ("my write is my output, not a changed input").
+    pub(crate) fn refresh_written(&mut self, world: &Snapshot, writes: &[(TypeId, Entity)]) {
+        for dep in &mut self.deps {
+            dep.refresh_written(world, writes);
+        }
+    }
+}
+
+/// Extracts the rows an invocation has exclusive write access to.
+fn written_rows(access: &[Access]) -> Vec<(TypeId, Entity)> {
+    access
+        .iter()
+        .filter(|access| access.kind == AccessKind::Write)
+        .filter_map(|access| access.entity.map(|entity| (access.component, entity)))
+        .collect()
 }
 
 pub(crate) struct PlannedSystemRun<'a> {
@@ -427,14 +451,21 @@ fn finish_invocation(
 
 async fn collect_invocations<Fut>(futures: Vec<Fut>) -> SystemRun
 where
-    Fut: Future<Output = (SystemOutput, (SystemInvocation, MemoEntry))>,
+    Fut: Future<
+        Output = (
+            SystemOutput,
+            (SystemInvocation, MemoEntry),
+            Vec<(TypeId, Entity)>,
+        ),
+    >,
 {
     let rows = join_all(futures).await;
     let mut run = SystemRun::empty();
 
-    for (output, memo_update) in rows {
+    for (output, memo_update, writes) in rows {
         run.outputs.push(output);
         run.memo_updates.push(memo_update);
+        run.writes.extend(writes);
     }
 
     run
@@ -811,6 +842,7 @@ where
                     commands: commands.take(),
                 }],
                 memo_updates: Vec::new(),
+                writes: Vec::new(),
             }
         }
         .boxed()
@@ -976,6 +1008,7 @@ where
                 .map(|invocation| {
                     let bowl = bowl.clone();
                     async move {
+                        let writes = written_rows(&invocation.access);
                         let commands = Commands::new();
                         // Read guards live here, in the invocation frame, so
                         // borrows handed to the system stay locked until the
@@ -991,7 +1024,9 @@ where
                         self.function.run(params).await;
                         drop(guards);
 
-                        finish_invocation(invocation.owner, invocation.deps, commands)
+                        let (output, memo_update) =
+                            finish_invocation(invocation.owner, invocation.deps, commands);
+                        (output, memo_update, writes)
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1018,6 +1053,7 @@ where
                 let bowl = bowl.clone();
                 let snapshot = Arc::clone(&snapshot);
                 let run = async move {
+                    let writes = written_rows(&invocation.access);
                     let commands = Commands::new();
                     // Read guards live here, in the invocation frame, so
                     // borrows handed to the system stay locked until the
@@ -1040,6 +1076,7 @@ where
                         completed: true,
                         outputs: vec![output],
                         memo_updates: vec![memo_update],
+                        writes,
                     }
                 }
                 .boxed();

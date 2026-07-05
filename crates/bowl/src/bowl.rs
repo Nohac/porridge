@@ -25,7 +25,7 @@ use crate::{
         ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
     },
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
-    world::{Snapshot, SystemId, SystemInvocation, World},
+    world::{Snapshot, SystemId, SystemInvocation, TryUpdate, World},
 };
 
 const DEFAULT_COMMIT_LIMIT: u64 = 10_000;
@@ -580,12 +580,26 @@ impl Bowl {
         T: Component,
         F: FnOnce(&mut T) -> R,
     {
-        let mut state = self.inner.state.lock().await;
-        if state.world.revision::<T>(entity) != original_revision {
-            return None;
-        }
+        let mut f = f;
+        loop {
+            {
+                let mut state = self.inner.state.lock().await;
+                if state.world.revision::<T>(entity) != original_revision {
+                    return None;
+                }
 
-        apply_component_mutation::<T, F, R>(&mut state, entity, f)
+                match apply_component_mutation::<T, F, R>(&mut state, entity, f) {
+                    TryUpdate::Applied { result, .. } => return Some(result),
+                    TryUpdate::Missing => return None,
+                    TryUpdate::Busy(back) => f = back,
+                }
+            }
+
+            // The cell is held by a reader or writer. Retry after yielding so
+            // the holder can make progress; the state lock is not held while
+            // we wait, so guard holders that need it cannot deadlock with us.
+            yield_once().await;
+        }
     }
 
     pub(crate) async fn with_component_mut<T, F, R>(&self, entity: Entity, f: F) -> Option<R>
@@ -593,8 +607,19 @@ impl Bowl {
         T: Component,
         F: FnOnce(&mut T) -> R,
     {
-        let mut state = self.inner.state.lock().await;
-        apply_component_mutation::<T, F, R>(&mut state, entity, f)
+        let mut f = f;
+        loop {
+            {
+                let mut state = self.inner.state.lock().await;
+                match apply_component_mutation::<T, F, R>(&mut state, entity, f) {
+                    TryUpdate::Applied { result, .. } => return Some(result),
+                    TryUpdate::Missing => return None,
+                    TryUpdate::Busy(back) => f = back,
+                }
+            }
+
+            yield_once().await;
+        }
     }
 
     /// Returns whether the live world currently holds derived outputs owned by
@@ -1077,14 +1102,14 @@ impl Bowl {
     }
 }
 
-fn apply_component_mutation<T, F, R>(state: &mut State, entity: Entity, f: F) -> Option<R>
+fn apply_component_mutation<T, F, R>(state: &mut State, entity: Entity, f: F) -> TryUpdate<R, F>
 where
     T: Component,
     F: FnOnce(&mut T) -> R,
 {
-    let (changed, result) = state.world.update_component_live::<T, F, R>(entity, f)?;
+    let outcome = state.world.try_update_component_live::<T, F, R>(entity, f);
 
-    if changed {
+    if let TryUpdate::Applied { changed: true, .. } = &outcome {
         state.normal_clean = false;
         if state.pending_generation.is_none() {
             let next_generation = state.next_generation;
@@ -1092,7 +1117,23 @@ where
         }
     }
 
-    Some(result)
+    outcome
+}
+
+/// Suspends once so other tasks (typically a guard holder we are waiting on)
+/// can make progress before a retry.
+async fn yield_once() {
+    let mut yielded = false;
+    futures::future::poll_fn(move |context| {
+        if yielded {
+            std::task::Poll::Ready(())
+        } else {
+            yielded = true;
+            context.waker().wake_by_ref();
+            std::task::Poll::Pending
+        }
+    })
+    .await;
 }
 
 fn conflicts_with_running(
@@ -1169,20 +1210,27 @@ async fn commit_system_run(
 ) -> CommitProgress {
     let outputs = run.outputs;
     let memo_updates = run.memo_updates;
+    let writes = run.writes;
 
     let mut state = state.lock().await;
+    let before_revision = state.world.revision_raw();
+    let before_mutations = state.world.mutations_raw();
+
     if !memo_updates
         .iter()
         .all(|(_owner, entry)| entry.is_current(&state.world))
     {
+        // The commands are discarded, but in-place `MutRef` writes already
+        // happened and are not revocable: reconcile their revisions so
+        // downstream consumers still observe the change.
+        state.world.reconcile_written(&writes);
+        let needs_followup = state.world.revision_raw() != before_revision;
         return CommitProgress {
+            needs_followup,
             stale: true,
-            ..CommitProgress::default()
+            commits: u64::from(needs_followup),
         };
     }
-
-    let before_revision = state.world.revision_raw();
-    let before_mutations = state.world.mutations_raw();
 
     // Replace outputs by diffing: commands apply over the invocation's old
     // outputs so unchanged fingerprints keep their revisions, then whatever
@@ -1195,7 +1243,10 @@ async fn commit_system_run(
         state.world.finish_derived_spawns(&output.owner);
         state.world.remove_derived_stale(&output.owner, previous);
     }
-    for (owner, entry) in memo_updates {
+
+    state.world.reconcile_written(&writes);
+    for (owner, mut entry) in memo_updates {
+        entry.refresh_written(&state.world, &writes);
         memo.insert(owner, entry);
     }
 
@@ -1356,8 +1407,8 @@ mod tests {
 
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
-        Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt, View, Where, With,
-        cleanup_stale_derived,
+        Entity, Eq, Gte, Mut, MutRef, Named, Phase, Query, Singleton, SystemExt, View, Where,
+        With, Without, cleanup_stale_derived,
     };
 
     struct A(u32);
@@ -1591,7 +1642,7 @@ mod tests {
         read_rank_for_access_test(query).await;
     }
 
-    async fn write_rank_for_access_test(query: Query<(Entity, Mut<Rank>)>) {
+    async fn write_rank_for_access_test(query: Query<(Entity, MutRef<'_, Rank>)>) {
         let (_entity, rank) = query.item();
         let writers = ACTIVE_WRITERS.fetch_add(1, Ordering::SeqCst) + 1;
         record_max(&MAX_ACTIVE_WRITERS, writers);
@@ -1737,6 +1788,60 @@ mod tests {
 
     struct Doomed;
     impl Component for Doomed {}
+
+    async fn increment_once(
+        query: Query<(Entity, MutRef<'_, MutableA>), Without<Note>>,
+        mut commands: Commands,
+    ) {
+        let (entity, mut a) = query.item();
+        REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
+        a.0 += 1;
+        commands.entity(entity).insert(Note);
+    }
+
+    #[test]
+    fn system_mut_applies_non_idempotent_mutation_exactly_once() {
+        block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
+            REQUEST_RUNS.store(0, Ordering::SeqCst);
+
+            let bowl = Bowl::new();
+            bowl.add_system(increment_once).await;
+            bowl.insert((MutableA(0),)).await;
+
+            let values = bowl.scoop::<Query<(Entity, &MutableA)>>().await;
+            assert_eq!(values.collect()[0].1.0, 1);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    async fn set_rank_unconditionally(query: Query<(Entity, MutRef<'_, Rank>)>) {
+        let (_entity, mut rank) = query.item();
+        REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
+        rank.0 = 42;
+    }
+
+    #[test]
+    fn system_mut_write_does_not_invalidate_its_own_memo() {
+        block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
+            REQUEST_RUNS.store(0, Ordering::SeqCst);
+
+            let bowl = Bowl::new();
+            bowl.add_system(set_rank_unconditionally).await;
+            bowl.insert((Rank(1),)).await;
+
+            // A system that always writes its Mut row must still settle after
+            // one run: the commit absorbs the row's own write into the memo.
+            let ranks = bowl.scoop::<Query<(Entity, &Rank)>>().await;
+            assert_eq!(ranks.collect()[0].1.0, 42);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+        });
+    }
 
     async fn remove_doomed(query: Query<Entity, With<Doomed>>, mut commands: Commands) {
         commands.remove(query.item());
