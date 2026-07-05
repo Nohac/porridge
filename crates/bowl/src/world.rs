@@ -1,7 +1,7 @@
 use std::{
     any::{Any, TypeId},
     cell::UnsafeCell,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ops::{Deref, DerefMut},
     sync::{Arc, Condvar, Mutex},
 };
@@ -237,12 +237,47 @@ trait StoreDyn: Send + Sync {
 /// Concrete storage for one component type.
 struct Store<T> {
     entries: BTreeMap<Entity, ComponentEntry<T>>,
+    /// Fingerprint → entities index for equality lookups.
+    ///
+    /// Only entries with a fingerprint participate. The map is shared with
+    /// snapshots and copied on the first live write after a clone, so
+    /// snapshot clones stay cheap while external `Where<Eq<T>>` queries can
+    /// resolve candidates without scanning.
+    by_fingerprint: Arc<HashMap<u64, BTreeSet<Entity>>>,
+}
+
+impl<T> Store<T> {
+    fn index_fingerprint(&mut self, entity: Entity, fingerprint: Option<u64>) {
+        let Some(fingerprint) = fingerprint else {
+            return;
+        };
+
+        Arc::make_mut(&mut self.by_fingerprint)
+            .entry(fingerprint)
+            .or_default()
+            .insert(entity);
+    }
+
+    fn unindex_fingerprint(&mut self, entity: Entity, fingerprint: Option<u64>) {
+        let Some(fingerprint) = fingerprint else {
+            return;
+        };
+
+        let index = Arc::make_mut(&mut self.by_fingerprint);
+        if let Some(entities) = index.get_mut(&fingerprint) {
+            entities.remove(&entity);
+            if entities.is_empty() {
+                index.remove(&fingerprint);
+            }
+        }
+    }
 }
 
 impl<T> Clone for Store<T> {
     fn clone(&self) -> Self {
         Self {
             entries: self.entries.clone(),
+            by_fingerprint: Arc::clone(&self.by_fingerprint),
         }
     }
 }
@@ -251,6 +286,7 @@ impl<T> Default for Store<T> {
     fn default() -> Self {
         Self {
             entries: BTreeMap::new(),
+            by_fingerprint: Arc::new(HashMap::new()),
         }
     }
 }
@@ -278,7 +314,8 @@ impl<T: Component> StoreDyn for Store<T> {
             return None;
         }
 
-        self.entries.remove(&entity);
+        let removed = self.entries.remove(&entity)?;
+        self.unindex_fingerprint(entity, removed.fingerprint);
         T::on_remove(ComponentHookContext::new(entity));
 
         Some(T::tracked())
@@ -290,6 +327,7 @@ impl<T: Component> StoreDyn for Store<T> {
         revision: &mut Revision,
     ) -> Option<Option<SystemInvocation>> {
         let removed = self.entries.remove(&entity)?;
+        self.unindex_fingerprint(entity, removed.fingerprint);
 
         let context = ComponentHookContext::new(entity);
         T::on_entity_remove(context);
@@ -465,7 +503,8 @@ impl World {
         }
 
         let new_owner = owner.clone();
-        let previous = self.store_mut::<T>().entries.insert(
+        let store = self.store_mut::<T>();
+        let previous = store.entries.insert(
             entity,
             ComponentEntry {
                 value: Arc::new(ComponentCell::new(value)),
@@ -475,6 +514,15 @@ impl World {
                 owner,
             },
         );
+
+        if let Some(previous_entry) = &previous {
+            if previous_entry.fingerprint != fingerprint {
+                store.unindex_fingerprint(entity, previous_entry.fingerprint);
+                store.index_fingerprint(entity, fingerprint);
+            }
+        } else {
+            store.index_fingerprint(entity, fingerprint);
+        }
 
         let type_id = TypeId::of::<T>();
         if let Some(previous_owner) = previous.and_then(|entry| entry.owner) {
@@ -690,7 +738,9 @@ impl World {
     where
         T: Component,
     {
-        let removed = self.store_mut_existing::<T>()?.entries.remove(&entity)?;
+        let store = self.store_mut_existing::<T>()?;
+        let removed = store.entries.remove(&entity)?;
+        store.unindex_fingerprint(entity, removed.fingerprint);
 
         T::on_remove(ComponentHookContext::new(entity));
 
@@ -729,33 +779,7 @@ impl World {
         T: Component + Clone,
         F: FnOnce(&mut T) -> R,
     {
-        let next_revision = Revision(self.revision.0 + 1);
-        let (changed, result) = {
-            let store = self.store_mut_existing::<T>()?;
-            let entry = store.entries.get_mut(&entity)?;
-            let before_fingerprint = entry.fingerprint;
-
-            let mut value = entry.value.write();
-            let result = f(&mut value);
-
-            let after_fingerprint = value.fingerprint();
-            entry.fingerprint = after_fingerprint;
-
-            let changed = T::tracked()
-                && (before_fingerprint.is_none() || before_fingerprint != after_fingerprint);
-
-            if changed {
-                entry.revision = next_revision;
-            }
-
-            (changed, result)
-        };
-
-        if changed {
-            self.revision = next_revision;
-        }
-
-        Some((changed, result))
+        self.update_component_live(entity, f)
     }
 
     /// Mutates one component in the live world without cloning the payload.
@@ -769,7 +793,7 @@ impl World {
         F: FnOnce(&mut T) -> R,
     {
         let next_revision = Revision(self.revision.0 + 1);
-        let (changed, result) = {
+        let (changed, result, before_fingerprint, after_fingerprint) = {
             let store = self.store_mut_existing::<T>()?;
             let entry = store.entries.get_mut(&entity)?;
             let before_fingerprint = entry.fingerprint;
@@ -787,8 +811,15 @@ impl World {
                 entry.revision = next_revision;
             }
 
-            (changed, result)
+            (changed, result, before_fingerprint, after_fingerprint)
         };
+
+        if before_fingerprint != after_fingerprint {
+            if let Some(store) = self.store_mut_existing::<T>() {
+                store.unindex_fingerprint(entity, before_fingerprint);
+                store.index_fingerprint(entity, after_fingerprint);
+            }
+        }
 
         if changed {
             self.revision = next_revision;
@@ -812,6 +843,14 @@ impl World {
     /// Number of entities that currently have a component of type `T`.
     pub(crate) fn store_len<T: Component>(&self) -> usize {
         self.store::<T>().map_or(0, |store| store.entries.len())
+    }
+
+    /// Entities whose `T` component currently has this fingerprint, ascending.
+    pub(crate) fn entities_with_fingerprint<T: Component>(&self, fingerprint: u64) -> Vec<Entity> {
+        self.store::<T>()
+            .and_then(|store| store.by_fingerprint.get(&fingerprint))
+            .map(|entities| entities.iter().copied().collect())
+            .unwrap_or_default()
     }
 
     /// Current global revision.

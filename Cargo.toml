@@ -6,3 +6,9 @@ members = [
     "crates/playground",
 ]
 resolver = "3"
+
+# Single codegen unit keeps benchmark numbers stable: the engine's hot loops
+# are sensitive to codegen-unit partitioning, which otherwise swings
+# view-heavy benches by ±40% between unrelated code changes.
+[profile.bench]
+codegen-units = 1

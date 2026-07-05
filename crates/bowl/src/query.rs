@@ -143,6 +143,16 @@ pub struct Not<F>(PhantomData<F>);
 #[derive(Debug, Clone, Copy)]
 pub struct Without<T>(PhantomData<T>);
 
+fn cow_rows_hinted<T: Component>(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Entity> {
+    match hint {
+        Some(mut candidates) => {
+            candidates.retain(|entity| snapshot.has::<T>(*entity));
+            candidates
+        }
+        None => snapshot.entities_with::<T>(),
+    }
+}
+
 /// Clone-on-write component projection for external update queries.
 ///
 /// `Cow<T>` does not represent scheduler-level exclusive access. It is only
@@ -633,6 +643,8 @@ pub trait CowQueryParam {
 
     /// Enumerates candidate row states from the current live world.
     fn rows(snapshot: &Snapshot) -> Vec<Self::State>;
+    /// Enumerates row states, optionally restricted to filter candidates.
+    fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State>;
     /// Mutates one previously-enumerated row.
     fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
     where
@@ -648,6 +660,10 @@ where
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
         snapshot.entities_with::<T>()
+    }
+
+    fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
+        cow_rows_hinted::<T>(snapshot, hint)
     }
 
     fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
@@ -670,6 +686,10 @@ where
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
         snapshot.entities_with::<T>()
+    }
+
+    fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
+        cow_rows_hinted::<T>(snapshot, hint)
     }
 
     fn for_each_mut<F>(world: &mut World, state: &Self::State, f: F) -> bool
@@ -727,6 +747,16 @@ impl<T: Component> QueryParam for &T {
         snapshot.entities_with::<T>()
     }
 
+    fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
+        match hint {
+            Some(mut candidates) => {
+                candidates.retain(|entity| snapshot.has::<T>(*entity));
+                candidates
+            }
+            None => Self::rows(snapshot),
+        }
+    }
+
     fn keys(state: &Self::State) -> Vec<Entity> {
         vec![*state]
     }
@@ -764,6 +794,16 @@ impl<T: Component> QueryParam for (Mut<T>,) {
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
         snapshot.entities_with::<T>()
+    }
+
+    fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
+        match hint {
+            Some(mut candidates) => {
+                candidates.retain(|entity| snapshot.has::<T>(*entity));
+                candidates
+            }
+            None => Self::rows(snapshot),
+        }
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
@@ -936,6 +976,17 @@ macro_rules! impl_entity_query_param {
                 candidates
             }
 
+            fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
+                match hint {
+                    Some(mut candidates) => {
+                        candidates.retain(|entity| true $(&& $P::matches(snapshot, *entity))*);
+                        candidates
+                    }
+                    None => Self::rows(snapshot),
+                }
+            }
+
+
             fn keys(state: &Self::State) -> Vec<Entity> {
                 vec![*state]
             }
@@ -1060,6 +1111,15 @@ where
 pub trait ExternalFilter<State>: 'static {
     fn matches(snapshot: &Snapshot, args: &QueryArgs, scope: Option<TypeId>, state: &State)
     -> bool;
+
+    /// Entities this filter could match, resolved through an index.
+    fn entity_candidates(
+        _snapshot: &Snapshot,
+        _args: &QueryArgs,
+        _scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        None
+    }
 }
 
 impl<State> ExternalFilter<State> for () {
@@ -1086,6 +1146,14 @@ where
     ) -> bool {
         F::matches(state.entity(), snapshot, args, scope)
     }
+
+    fn entity_candidates(
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        F::candidates(snapshot, args, scope)
+    }
 }
 
 impl<State, T> ExternalFilter<State> for With<T>
@@ -1100,6 +1168,14 @@ where
         state: &State,
     ) -> bool {
         snapshot.has::<T>(state.entity())
+    }
+
+    fn entity_candidates(
+        snapshot: &Snapshot,
+        _args: &QueryArgs,
+        _scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        Some(snapshot.entities_with::<T>())
     }
 }
 
@@ -1126,6 +1202,15 @@ pub trait ExternalQueryFilter<Q: QueryParam>: 'static {
         scope: Option<TypeId>,
         state: &Q::State,
     ) -> bool;
+
+    /// Entities this filter could match, resolved through an index.
+    fn entity_candidates(
+        _snapshot: &Snapshot,
+        _args: &QueryArgs,
+        _scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        None
+    }
 }
 
 impl<Q, F> ExternalQueryFilter<Q> for F
@@ -1141,6 +1226,14 @@ where
     ) -> bool {
         F::matches(snapshot, args, scope, state)
     }
+
+    fn entity_candidates(
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        F::entity_candidates(snapshot, args, scope)
+    }
 }
 
 /// Runtime-argument filter expression used inside [`Where`].
@@ -1151,6 +1244,19 @@ pub trait FilterExpr: 'static {
         args: &QueryArgs,
         scope: Option<TypeId>,
     ) -> bool;
+
+    /// Entities this expression could match, resolved through an index.
+    ///
+    /// `None` means the expression cannot narrow candidates and enumeration
+    /// falls back to store iteration. Candidates are a superset of matches;
+    /// `matches` is always applied afterwards.
+    fn candidates(
+        _snapshot: &Snapshot,
+        _args: &QueryArgs,
+        _scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        None
+    }
 }
 
 impl<T> FilterExpr for Eq<T>
@@ -1166,6 +1272,15 @@ where
         snapshot
             .get::<T>(entity)
             .is_some_and(|value| *value == *args.get::<T>(scope))
+    }
+
+    fn candidates(
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        let fingerprint = args.get::<T>(scope).fingerprint()?;
+        Some(snapshot.entities_with_fingerprint::<T>(fingerprint))
     }
 }
 
@@ -1194,6 +1309,14 @@ impl<T: Component> FilterExpr for With<T> {
     ) -> bool {
         snapshot.has::<T>(entity)
     }
+
+    fn candidates(
+        snapshot: &Snapshot,
+        _args: &QueryArgs,
+        _scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        Some(snapshot.entities_with::<T>())
+    }
 }
 
 impl<T: Component> FilterExpr for Without<T> {
@@ -1219,6 +1342,16 @@ where
         scope: Option<TypeId>,
     ) -> bool {
         A::matches(entity, snapshot, args, scope) && B::matches(entity, snapshot, args, scope)
+    }
+
+    fn candidates(
+        snapshot: &Snapshot,
+        args: &QueryArgs,
+        scope: Option<TypeId>,
+    ) -> Option<Vec<Entity>> {
+        // Either side narrows the candidate set; `matches` still verifies the
+        // full conjunction.
+        A::candidates(snapshot, args, scope).or_else(|| B::candidates(snapshot, args, scope))
     }
 }
 
@@ -1268,7 +1401,7 @@ where
     Q: QueryParam,
     F: ExternalQueryFilter<Q>,
 {
-    Q::rows(snapshot)
+    Q::rows_hinted(snapshot, F::entity_candidates(snapshot, args, scope))
         .into_iter()
         .filter(|state| F::matches(snapshot, args, scope, state))
         .collect()
@@ -1283,7 +1416,7 @@ where
     Q: CowQueryParam,
     F: ExternalFilter<Q::State>,
 {
-    Q::rows(snapshot)
+    Q::rows_hinted(snapshot, F::entity_candidates(snapshot, args, scope))
         .into_iter()
         .filter(|state| F::matches(snapshot, args, scope, state))
         .collect()
@@ -1298,8 +1431,15 @@ where
     T: Component,
     F: ExternalFilter<Entity>,
 {
-    snapshot
-        .entities_with::<T>()
+    let candidates = match F::entity_candidates(snapshot, args, scope) {
+        Some(mut candidates) => {
+            candidates.retain(|entity| snapshot.has::<T>(*entity));
+            candidates
+        }
+        None => snapshot.entities_with::<T>(),
+    };
+
+    candidates
         .into_iter()
         .filter(|entity| F::matches(snapshot, args, scope, entity))
         .map(|entity| (entity, snapshot.revision::<T>(entity)))

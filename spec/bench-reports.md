@@ -131,3 +131,33 @@ two *previous* commits mid-session reproduced ~925–950 µs on those too: the
 machine's memory-bound performance drifted between runs (thermal/load), not
 the code. Cross-run absolute numbers carry that caveat; the final report
 re-runs baseline vs. HEAD back-to-back in one session.
+
+## Step 5 — equality index (`index component fingerprints for eq filters`)
+
+Each `Store<T>` now keeps a fingerprint → entities index behind an `Arc`
+(shared with snapshots, copied on first live write after a clone).
+`Where<Eq<T>>` resolves candidates through the index when the bound argument
+has a fingerprint (`#[component(hash)]`), falling back to a scan otherwise;
+`matches` still verifies with `PartialEq`, so hash collisions stay correct.
+External `With<T>` filters and `And` chains narrow candidates the same way.
+
+| bench | 8 / 100 | 32 / 1000 | 128 / 10000 | vs step 4 |
+|---|---|---|---|---|
+| cold_settle | 47.2 µs | 214 µs | 897 µs | +3…+7 % (index maintenance) |
+| incremental_settle | 29.2 µs | 107 µs | 472 µs | flat |
+| identical_rerun | 13.7 µs | 61.4 µs | 258 µs | +7 % (index maintenance) |
+| read_scan | 5.1 µs | 39.1 µs | 968 µs* | flat |
+| where_eq | **7.7 µs** | **77.5 µs** | — | **−58 % / −60 %** |
+| view_scaling (8/32/64) | 21.1 µs | 439 µs | 3.78 ms | flat |
+
+`where_eq` is now bounded by the per-scoop snapshot clone (2 000 entries →
+~77 µs; compare `read_scan/1000` at 39 µs for ~1 000 entries), not the lookup —
+the remaining read-side win would come from caching settled snapshots.
+
+Measurement infrastructure note: `view_scaling/64` initially *appeared* to
+regress +40 % (3.7 → 5.4 ms) on this change. Bisecting showed neither half of
+the change caused it, and pinning `codegen-units = 1` for the bench profile
+*inverted* the comparison — the engine's hot access-conflict loops are that
+sensitive to codegen-unit partitioning. The workspace now pins
+`[profile.bench] codegen-units = 1` so future runs measure the code, not the
+layout lottery.
