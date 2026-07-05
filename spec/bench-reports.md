@@ -52,3 +52,29 @@ Notes:
   (`World::clone` Arc-bumps every entry). Addressed in step 3.
 - Settle benches unmoved, as predicted — they are bound by replanning waves and
   the O(all entries) commit path, not row enumeration (steps 2–3).
+
+## Step 2 — shared planning snapshots (`share planning snapshots across invocations`)
+
+Each planning wave now builds one `Arc<Snapshot>` and one `Arc` memo table
+shared by every planned invocation. Previously `FunctionSystem::stream_runs`
+deep-cloned the entire `World` (all store maps and bookkeeping) **once per
+planned invocation**, and wrapper systems deep-cloned the memo table per wave.
+
+| bench | 8 / 100 | 32 / 1000 | 128 / 10000 | vs step 1 |
+|---|---|---|---|---|
+| cold_settle | 165 µs | 2.52 ms | **39.7 ms** | **−59 % / −84 % / −95 %** |
+| incremental_settle | 40.5 µs | 161 µs | 657 µs | **−32 % / −34 % / −40 %** |
+| identical_rerun | 32.3 µs | 400 µs | **5.76 ms** | **−42 % / −76 % / −93 %** |
+| read_scan | 5.1 µs | 39.8 µs | 397 µs | flat (external scoops still clone once, by design) |
+| where_eq | 17.9 µs | 189 µs | — | −7 % |
+| view_scaling (8/32/64) | 56.9 µs | 1.79 ms | 12.8 ms | −10…−17 % |
+
+The per-invocation snapshot clone was the single dominant engine cost:
+super-quadratic settle scaling mostly collapsed (cold_settle 8→128 now scales
+~O(N^2), down from ~O(N^2.7) at 22× the absolute cost).
+
+Discovered the hard way: a first attempt at output diffing (next step) placed
+a `derived_owners` index inside `World`, where per-invocation snapshot clones
+deep-copied it — cold_settle/128 regressed to 1.75 s (+103 %). That run is
+recorded in `tmp/bench/bench-step2a.txt`; the index must stay out of snapshot
+clones, and this step had to land first.

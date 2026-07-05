@@ -772,12 +772,14 @@ impl Bowl {
             (state.systems.clone(), std::mem::take(&mut state.memo))
         };
 
-        let snapshot = self.snapshot().await;
-        let memo_snapshot = memo.clone();
+        let snapshot = Arc::new(self.snapshot().await);
+        let memo_snapshot = Arc::new(memo.clone());
         let mut runs = systems
             .iter()
             .filter(|system| system.phase == Phase::Cleanup)
-            .flat_map(|system| system.stream_runs(self.clone(), snapshot.clone(), &memo_snapshot))
+            .flat_map(|system| {
+                system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo_snapshot)
+            })
             .map(|planned| {
                 let owner = planned.owner;
                 async move {
@@ -935,13 +937,13 @@ impl Bowl {
 
         loop {
             if needs_plan {
-                let snapshot = self.snapshot().await;
-                let memo_snapshot = memo.clone();
+                let snapshot = Arc::new(self.snapshot().await);
+                let memo_snapshot = Arc::new(memo.clone());
                 for planned in systems
                     .iter()
                     .filter(|system| system.phase == phase)
                     .flat_map(|system| {
-                        system.stream_runs(self.clone(), snapshot.clone(), &memo_snapshot)
+                        system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo_snapshot)
                     })
                 {
                     if !running.insert(planned.owner.clone()) {

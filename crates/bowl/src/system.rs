@@ -451,8 +451,8 @@ pub(crate) trait Runnable: Send + Sync {
     fn stream_runs<'a>(
         &'a self,
         bowl: Bowl,
-        snapshot: Snapshot,
-        memo: &HashMap<SystemInvocation, MemoEntry>,
+        snapshot: Arc<Snapshot>,
+        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
     ) -> Vec<PlannedSystemRun<'a>>;
 
     fn run_settled<'a>(
@@ -656,8 +656,8 @@ where
     fn stream_runs<'a>(
         &'a self,
         _bowl: Bowl,
-        snapshot: Snapshot,
-        memo: &HashMap<SystemInvocation, MemoEntry>,
+        snapshot: Arc<Snapshot>,
+        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
     ) -> Vec<PlannedSystemRun<'a>> {
         if !self.has_work(&snapshot, memo) {
             return Vec::new();
@@ -667,7 +667,7 @@ where
             system: self.id,
             keys: Vec::new(),
         };
-        let memo = memo.clone();
+        let memo = Arc::clone(memo);
         let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
 
         vec![PlannedSystemRun {
@@ -716,8 +716,8 @@ where
     fn stream_runs<'a>(
         &'a self,
         _bowl: Bowl,
-        snapshot: Snapshot,
-        memo: &HashMap<SystemInvocation, MemoEntry>,
+        snapshot: Arc<Snapshot>,
+        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
     ) -> Vec<PlannedSystemRun<'a>> {
         if !self.has_work(&snapshot, memo) {
             return Vec::new();
@@ -727,7 +727,7 @@ where
             system: self.id,
             keys: Vec::new(),
         };
-        let memo = memo.clone();
+        let memo = Arc::clone(memo);
         let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
 
         vec![PlannedSystemRun {
@@ -758,8 +758,8 @@ where
     fn stream_runs<'a>(
         &'a self,
         bowl: Bowl,
-        snapshot: Snapshot,
-        memo: &HashMap<SystemInvocation, MemoEntry>,
+        snapshot: Arc<Snapshot>,
+        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
     ) -> Vec<PlannedSystemRun<'a>> {
         self.system.stream_runs(bowl, snapshot, memo)
     }
@@ -880,8 +880,8 @@ impl BoxedSystem {
     pub(crate) fn stream_runs<'a>(
         &'a self,
         bowl: Bowl,
-        snapshot: Snapshot,
-        memo: &HashMap<SystemInvocation, MemoEntry>,
+        snapshot: Arc<Snapshot>,
+        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
     ) -> Vec<PlannedSystemRun<'a>> {
         self.runnable.stream_runs(bowl, snapshot, memo)
     }
@@ -977,8 +977,8 @@ where
     fn stream_runs<'a>(
         &'a self,
         bowl: Bowl,
-        snapshot: Snapshot,
-        memo: &HashMap<SystemInvocation, MemoEntry>,
+        snapshot: Arc<Snapshot>,
+        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
     ) -> Vec<PlannedSystemRun<'a>> {
         plan_invocations::<F::Param>(self.id, &snapshot, memo)
             .invocations
@@ -987,7 +987,7 @@ where
                 let owner = invocation.owner.clone();
                 let access = invocation.access.clone();
                 let bowl = bowl.clone();
-                let snapshot = snapshot.clone();
+                let snapshot = Arc::clone(&snapshot);
                 let run = async move {
                     let commands = Commands::new();
                     let params = F::Param::fetch(&bowl, &snapshot, &invocation.state, &commands);
