@@ -1,8 +1,9 @@
 use std::{
     any::{Any, TypeId},
+    cell::UnsafeCell,
     collections::{BTreeMap, HashMap, HashSet},
-    ops::Deref,
-    sync::{Arc, RwLock, RwLockReadGuard},
+    ops::{Deref, DerefMut},
+    sync::{Arc, Condvar, Mutex},
 };
 
 use crate::{
@@ -47,7 +48,7 @@ pub(crate) enum Origin {
 /// without cloning user component data, while live mutation can wait for active
 /// read guards instead of requiring unique `Arc<T>` ownership.
 struct ComponentEntry<T> {
-    value: Arc<RwLock<T>>,
+    value: Arc<ComponentCell<T>>,
     revision: Revision,
     fingerprint: Option<u64>,
     origin: Origin,
@@ -66,6 +67,130 @@ impl<T> Clone for ComponentEntry<T> {
     }
 }
 
+struct ComponentCell<T> {
+    state: Mutex<ComponentLockState>,
+    available: Condvar,
+    value: UnsafeCell<T>,
+}
+
+#[derive(Default)]
+struct ComponentLockState {
+    readers: usize,
+    writer: bool,
+}
+
+impl<T> ComponentCell<T> {
+    fn new(value: T) -> Self {
+        Self {
+            state: Mutex::new(ComponentLockState::default()),
+            available: Condvar::new(),
+            value: UnsafeCell::new(value),
+        }
+    }
+
+    fn read(self: &Arc<Self>) -> ComponentReadGuard<T> {
+        let mut state = self.state.lock().expect("component lock poisoned");
+        while state.writer {
+            state = self.available.wait(state).expect("component lock poisoned");
+        }
+        state.readers += 1;
+        drop(state);
+
+        ComponentReadGuard {
+            cell: Arc::clone(self),
+        }
+    }
+
+    fn write(self: &Arc<Self>) -> ComponentWriteGuard<T> {
+        let mut state = self.state.lock().expect("component lock poisoned");
+        while state.writer || state.readers != 0 {
+            state = self.available.wait(state).expect("component lock poisoned");
+        }
+        state.writer = true;
+        drop(state);
+
+        ComponentWriteGuard {
+            cell: Arc::clone(self),
+        }
+    }
+
+    fn into_inner(self) -> T {
+        self.value.into_inner()
+    }
+}
+
+// SAFETY: ComponentCell only exposes `T` through read/write guards. The lock
+// state ensures many readers or one writer, and `Component: Send + Sync`.
+unsafe impl<T: Send> Send for ComponentCell<T> {}
+// SAFETY: shared access to `T` is guarded by the lock state. Readers require
+// `T: Sync`, writers require unique access, and `Component: Send + Sync`.
+unsafe impl<T: Send + Sync> Sync for ComponentCell<T> {}
+
+struct ComponentReadGuard<T> {
+    cell: Arc<ComponentCell<T>>,
+}
+
+impl<T> Deref for ComponentReadGuard<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: the guard increments the reader count while no writer is
+        // active. Writers wait for the reader count to reach zero before
+        // obtaining `&mut T`.
+        unsafe { &*self.cell.value.get() }
+    }
+}
+
+impl<T> Drop for ComponentReadGuard<T> {
+    fn drop(&mut self) {
+        let mut state = self.cell.state.lock().expect("component lock poisoned");
+        state.readers -= 1;
+        if state.readers == 0 {
+            self.cell.available.notify_all();
+        }
+    }
+}
+
+// SAFETY: the guard owns an `Arc` to the cell and unlocks by updating shared
+// lock state on drop, so it does not rely on thread-affine OS guard semantics.
+unsafe impl<T: Send + Sync> Send for ComponentReadGuard<T> {}
+unsafe impl<T: Sync> Sync for ComponentReadGuard<T> {}
+
+struct ComponentWriteGuard<T> {
+    cell: Arc<ComponentCell<T>>,
+}
+
+impl<T> Deref for ComponentWriteGuard<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: the guard owns the exclusive writer slot, so no mutable alias
+        // or active writer can exist. Shared references are allowed from `&mut`.
+        unsafe { &*self.cell.value.get() }
+    }
+}
+
+impl<T> DerefMut for ComponentWriteGuard<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: the guard owns the exclusive writer slot and all readers are
+        // excluded until it drops.
+        unsafe { &mut *self.cell.value.get() }
+    }
+}
+
+impl<T> Drop for ComponentWriteGuard<T> {
+    fn drop(&mut self) {
+        let mut state = self.cell.state.lock().expect("component lock poisoned");
+        state.writer = false;
+        self.cell.available.notify_all();
+    }
+}
+
+// SAFETY: like ComponentReadGuard, this unlocks through shared lock state on
+// drop rather than through thread-affine OS guard ownership.
+unsafe impl<T: Send + Sync> Send for ComponentWriteGuard<T> {}
+unsafe impl<T: Sync> Sync for ComponentWriteGuard<T> {}
+
 /// Read guard returned by query fetches.
 ///
 /// This is the guarded replacement for borrowing directly from a shared
@@ -73,7 +198,8 @@ impl<T> Clone for ComponentEntry<T> {
 /// field access like `component.field`.
 #[doc(hidden)]
 pub struct ComponentRef<'a, T> {
-    guard: RwLockReadGuard<'a, T>,
+    guard: ComponentReadGuard<T>,
+    _marker: std::marker::PhantomData<&'a T>,
 }
 
 impl<T> Deref for ComponentRef<'_, T> {
@@ -335,7 +461,7 @@ impl World {
         self.store_mut::<T>().entries.insert(
             entity,
             ComponentEntry {
-                value: Arc::new(RwLock::new(value)),
+                value: Arc::new(ComponentCell::new(value)),
                 revision,
                 fingerprint,
                 origin,
@@ -348,15 +474,12 @@ impl World {
 
     /// Borrows a component from the world/snapshot.
     pub(crate) fn get<T: Component>(&self, entity: Entity) -> Option<ComponentRef<'_, T>> {
-        let guard = self
-            .store::<T>()?
-            .entries
-            .get(&entity)?
-            .value
-            .read()
-            .expect("component read lock poisoned");
+        let guard = self.store::<T>()?.entries.get(&entity)?.value.read();
 
-        Some(ComponentRef { guard })
+        Some(ComponentRef {
+            guard,
+            _marker: std::marker::PhantomData,
+        })
     }
 
     /// Returns the tracked revision for a component on an entity.
@@ -466,7 +589,7 @@ impl World {
             }
         }
 
-        let value = Arc::try_unwrap(removed.value).ok()?.into_inner().ok()?;
+        let value = Arc::try_unwrap(removed.value).ok()?.into_inner();
 
         Some(Arc::new(value))
     }
@@ -487,7 +610,7 @@ impl World {
             let entry = store.entries.get_mut(&entity)?;
             let before_fingerprint = entry.fingerprint;
 
-            let mut value = entry.value.write().expect("component write lock poisoned");
+            let mut value = entry.value.write();
             let result = f(&mut value);
 
             let after_fingerprint = value.fingerprint();
@@ -526,7 +649,7 @@ impl World {
             let entry = store.entries.get_mut(&entity)?;
             let before_fingerprint = entry.fingerprint;
 
-            let mut value = entry.value.write().expect("component write lock poisoned");
+            let mut value = entry.value.write();
             let result = f(&mut value);
 
             let after_fingerprint = value.fingerprint();

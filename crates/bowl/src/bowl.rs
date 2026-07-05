@@ -265,10 +265,10 @@ where
 
 impl<S> IntoFuture for ScoopBuilder<S>
 where
-    S: ExternalScoop + 'static,
+    S: ExternalScoop + Send + 'static,
 {
     type Output = S::Output;
-    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output>>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(self.materialize())
@@ -280,7 +280,7 @@ where
 ///
 /// `Query<T, F>` scoops one result set. Tuples of `ExternalScoop` specs scoop
 /// multiple independent result sets from the same snapshot.
-pub trait ExternalScoop {
+pub trait ExternalScoop: Send {
     /// Result produced by awaiting `Bowl::scoop::<Self>()`.
     type Output;
 
@@ -295,8 +295,8 @@ pub trait ExternalScoop {
 
 impl<Q, F> ExternalScoop for Query<Q, F>
 where
-    Q: ExternalReadQueryParam,
-    F: ExternalQueryFilter<Q>,
+    Q: ExternalReadQueryParam + Send,
+    F: ExternalQueryFilter<Q> + Send,
 {
     type Output = QueryResult<Q, F>;
 
@@ -313,7 +313,7 @@ where
 impl<T, F> ExternalScoop for Query<(Mut<T>,), F>
 where
     T: Component,
-    F: ExternalFilter<Entity>,
+    F: ExternalFilter<Entity> + Send,
 {
     type Output = MutResult<T, F>;
 
@@ -333,7 +333,7 @@ where
 impl<T, F> ExternalScoop for Query<(Entity, Mut<T>), F>
 where
     T: Component,
-    F: ExternalFilter<Entity>,
+    F: ExternalFilter<Entity> + Send,
 {
     type Output = EntityMutResult<T, F>;
 
@@ -352,7 +352,7 @@ where
 
 impl<Tag, S> ExternalScoop for Named<Tag, S>
 where
-    Tag: 'static,
+    Tag: Send + 'static,
     S: ExternalScoop,
 {
     type Output = S::Output;

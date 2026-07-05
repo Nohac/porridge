@@ -1,11 +1,14 @@
 mod lang;
 
-use std::time::Duration;
+use std::collections::HashSet;
 
 use bowl::{
-    Bowl, Commands, Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt, Where, With,
-    cleanup_stale_derived,
+    Bowl, Commands, Component, Entity, Eq, Gte, Mut, Named, Phase, Query, Singleton, SystemExt,
+    Where, With, Without, cleanup_stale_derived,
 };
+use futures::{StreamExt, stream::FuturesUnordered};
+use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 
 use crate::lang::{
     analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
@@ -16,8 +19,16 @@ use crate::lang::{
     service::hover_info,
 };
 
-#[tokio::main(flavor = "current_thread")]
+struct StressTouched;
+impl Component for StressTouched {}
+
+struct ImportDbStressTouched;
+impl Component for ImportDbStressTouched {}
+
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
+    init_tracing();
+
     let db = Bowl::new();
 
     db.add_system(parse_file.on_settled(|mut commands: Commands| {
@@ -31,6 +42,8 @@ async fn main() {
     db.add_system(check_imports).await;
     db.add_system(check_duplicate_defs).await;
     db.add_system(hover_info).await;
+    db.add_system(touch_file_text_once).await;
+    db.add_system(seed_extra_imports_once).await;
     db.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
         .await;
     db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup))
@@ -42,7 +55,7 @@ async fn main() {
     ))
     .await;
 
-    println!("\nregister std.net import with Mut<SystemImportDb>");
+    info!("register std.net import with Mut<SystemImportDb>");
     for (entity, imports) in db
         .scoop::<Query<(Entity, Mut<SystemImportDb>)>>()
         .await
@@ -50,7 +63,7 @@ async fn main() {
     {
         imports
             .with_latest(|imports| {
-                println!("mutating import database entity {}", entity.raw());
+                info!(entity = entity.raw(), "mutating import database");
                 imports.0.insert("std.net".to_string());
             })
             .await;
@@ -71,7 +84,7 @@ async fn main() {
     ))
     .await;
 
-    println!("\nnamed multi-scoop by file path");
+    info!("named multi-scoop by file path");
     struct MainSource;
     struct LibSource;
     let (main_source, lib_source) = db
@@ -82,52 +95,52 @@ async fn main() {
         .args_for::<MainSource>(FilePath("main.porridge".to_string()))
         .args_for::<LibSource>(FilePath("lib.porridge".to_string()))
         .await;
-    println!(
-        "main/lib source matches: {}/{}",
-        main_source.len(),
-        lib_source.len()
+    info!(
+        main = main_source.len(),
+        lib = lib_source.len(),
+        "source matches"
     );
 
-    println!("query diagnostics");
+    info!("query diagnostics");
     let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;
     for (entity, diagnostic) in diagnostics.collect() {
-        println!("entity {}: {}", entity.raw(), diagnostic.0);
+        info!(entity = entity.raw(), diagnostic = %diagnostic.0);
     }
 
-    println!("\ndefinitions");
+    info!("definitions");
     let definitions = db.scoop::<Query<(Entity, &AstDef)>>().await;
     for (entity, def) in definitions.collect() {
-        println!(
-            "entity {}: {} `{}` at {:?}",
-            entity.raw(),
-            def.kind(),
-            def.name(),
-            def.span()
+        info!(
+            entity = entity.raw(),
+            kind = %def.kind(),
+            name = def.name(),
+            span = ?def.span(),
+            "definition"
         );
     }
 
-    println!("query diagnostics again");
+    info!("query diagnostics again");
     let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;
     for (entity, diagnostic) in diagnostics.collect() {
-        println!("entity {}: {}", entity.raw(), diagnostic.0);
+        info!(entity = entity.raw(), diagnostic = %diagnostic.0);
     }
 
-    println!("\ndiagnostics at warning or above");
+    info!("diagnostics at warning or above");
     let diagnostics = db
         .scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
         .args(Severity::Warning)
         .await;
     for (entity, diagnostic) in diagnostics.collect() {
-        println!("entity {}: {}", entity.raw(), diagnostic.0);
+        info!(entity = entity.raw(), diagnostic = %diagnostic.0);
     }
 
-    println!("\nast available markers");
+    info!("ast available markers");
     let ast_available = db.scoop::<Query<(Entity, &AstAvailable)>>().await;
     for (entity, _) in ast_available.collect() {
-        println!("entity {}", entity.raw());
+        info!(entity = entity.raw(), "ast available");
     }
 
-    println!("\nhover request");
+    info!("hover request");
     if let Ok(info) = db
         .insert((
             HoverRequest,
@@ -141,7 +154,7 @@ async fn main() {
         .take::<HoverInfo>()
         .await
     {
-        println!("{}", info.0);
+        info!(hover = %info.0);
     }
 
     db.insert((
@@ -150,7 +163,10 @@ async fn main() {
     ))
     .await;
 
-    println!("\nhover request");
+    info!("spawn a contrived async task storm");
+    run_task_storm(db.clone()).await;
+
+    info!("hover request");
     if let Ok(info) = db
         .insert((
             HoverRequest,
@@ -164,11 +180,230 @@ async fn main() {
         .take::<HoverInfo>()
         .await
     {
-        println!("{}", info.0);
+        info!(hover = %info.0);
     }
 
     let hover_facts = db.scoop::<Query<(Entity, &HoverInfo)>>().await;
-    println!("hover facts after request: {}", hover_facts.collect().len());
+    info!(
+        count = hover_facts.collect().len(),
+        "hover facts after request"
+    );
+}
+
+fn init_tracing() {
+    if std::env::var_os("RUST_LOG").is_none() {
+        return;
+    }
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+}
+
+async fn touch_file_text_once(
+    query: Query<(Entity, Mut<FileText>), Without<StressTouched>>,
+    mut commands: Commands,
+) {
+    short_sleep().await;
+
+    let (entity, text) = query.item();
+    let updated = text
+        .with_latest(|text| {
+            if !text.0.contains("type StressTouchedBySystem") {
+                text.0.push_str("\ntype StressTouchedBySystem");
+            }
+        })
+        .await;
+
+    info!(
+        entity = entity.raw(),
+        updated = updated.is_some(),
+        "touch_file_text_once"
+    );
+    commands.entity(entity).insert(StressTouched);
+}
+
+async fn seed_extra_imports_once(
+    query: Query<(Entity, Mut<SystemImportDb>), Without<ImportDbStressTouched>>,
+    mut commands: Commands,
+) {
+    short_sleep().await;
+
+    let (entity, imports) = query.item();
+    let updated = imports
+        .with_latest(|imports| {
+            imports.0.insert("std.fs".to_string());
+            imports.0.insert("derp.fs".to_string());
+            imports.0.insert("storm.lib".to_string());
+        })
+        .await;
+
+    info!(
+        entity = entity.raw(),
+        updated = updated.is_some(),
+        "seed_extra_imports_once"
+    );
+    commands.entity(entity).insert(ImportDbStressTouched);
+}
+
+async fn run_task_storm(db: Bowl) {
+    let paths = [
+        "main.porridge",
+        "lib.porridge",
+        "foo.porridge",
+        "storm-a.porridge",
+        "storm-b.porridge",
+        "storm-c.porridge",
+    ];
+
+    for (index, path) in paths.iter().enumerate().skip(3) {
+        db.insert((
+            FilePath((*path).to_string()),
+            FileText(format!(
+                "import storm.lib\nfn storm_{index}() {{ return {index}; }}\ntype Storm{index}"
+            )),
+        ))
+        .await;
+    }
+
+    let mut spawned = FuturesUnordered::new();
+
+    for path in paths {
+        let db = db.clone();
+        spawned.push(tokio::spawn(async move {
+            short_sleep().await;
+            mutate_file_by_path(db, path.to_string()).await;
+            format!("mutated {path}")
+        }));
+    }
+
+    for path in paths {
+        let db = db.clone();
+        spawned.push(tokio::spawn(async move {
+            let row_count = {
+                let result = db
+                    .scoop::<Query<(Entity, &FileText), Where<Eq<FilePath>>>>()
+                    .args(FilePath(path.to_string()))
+                    .await;
+                result.collect().len()
+            };
+            short_sleep().await;
+            format!("read {row_count} file rows for {path}")
+        }));
+    }
+
+    for offset in [0, 8, 24, 40, 64, 128] {
+        let db = db.clone();
+        spawned.push(tokio::spawn(async move {
+            let target = if offset % 2 == 0 {
+                "main.porridge"
+            } else {
+                "foo.porridge"
+            };
+            let response = db
+                .insert((
+                    HoverRequest,
+                    FilePath(target.to_string()),
+                    Position { offset },
+                ))
+                .await
+                .bind()
+                .take::<HoverInfo>()
+                .await
+                .map(|info| info.0.clone())
+                .unwrap_or_else(|error| format!("hover miss: {error}"));
+            format!("hover {target}@{offset}: {response}")
+        }));
+    }
+
+    for name in ["std.fs", "storm.extra", "derp.fs", "std.net"] {
+        let db = db.clone();
+        spawned.push(tokio::spawn(async move {
+            let imports = db.scoop::<Query<(Entity, Mut<SystemImportDb>)>>().await;
+            for (entity, imports) in imports.collect() {
+                imports
+                    .with_latest(|imports| {
+                        imports.0.insert(name.to_string());
+                    })
+                    .await;
+                info!(name, entity = entity.raw(), "task import mut");
+            }
+            format!("registered import {name}")
+        }));
+    }
+
+    while let Some(result) = spawned.next().await {
+        match result {
+            Ok(message) => info!(%message, "task completed"),
+            Err(error) => warn!(%error, "task failed"),
+        }
+    }
+
+    info!("concurrent multi-scoop fanout");
+    let mut fanout = FuturesUnordered::new();
+    for threshold in [Severity::Warning, Severity::Error] {
+        let db = db.clone();
+        fanout.push(async move {
+            let (diagnostics, defs, files) = db
+                .scoop::<(
+                    Query<(Entity, &Diagnostic), Where<Gte<Severity>>>,
+                    Query<(Entity, &AstDef)>,
+                    Query<(Entity, &FilePath)>,
+                )>()
+                .args(threshold)
+                .await;
+            let diagnostic_count = diagnostics.collect().len();
+            let def_names = defs
+                .collect()
+                .into_iter()
+                .map(|(_, def)| def.name().to_string())
+                .collect::<Vec<_>>();
+            let file_count = files.collect().len();
+            (diagnostic_count, def_names, file_count)
+        });
+    }
+
+    while let Some((diagnostics, defs, files)) = fanout.next().await {
+        info!(
+            diagnostics,
+            defs = %defs.join(","),
+            files,
+            "fanout"
+        );
+    }
+
+    let final_imports = db.scoop::<Query<(Entity, &SystemImportDb)>>().await;
+    for (entity, imports) in final_imports.collect() {
+        let sorted = imports.0.iter().cloned().collect::<HashSet<_>>();
+        info!(
+            entity = entity.raw(),
+            entries = sorted.len(),
+            "final import db"
+        );
+    }
+}
+
+async fn mutate_file_by_path(db: Bowl, path: String) {
+    let files = db
+        .scoop::<Query<(Entity, Mut<FileText>), Where<Eq<FilePath>>>>()
+        .args(FilePath(path.clone()))
+        .await;
+
+    for (entity, text) in files.collect() {
+        let path = path.clone();
+        let updated = text
+            .with_latest(|text| {
+                text.0
+                    .push_str(&format!("\nfn generated_for_{}() {{ return 0; }}", path));
+            })
+            .await;
+        info!(
+            entity = entity.raw(),
+            path,
+            updated = updated.is_some(),
+            "external file mut"
+        );
+    }
 }
 
 async fn cleanup_ephemeral(query: Query<Entity, With<Ephemeral>>, mut commands: Commands) {
@@ -179,6 +414,6 @@ async fn cleanup_ephemeral(query: Query<Entity, With<Ephemeral>>, mut commands: 
 }
 
 pub(crate) async fn short_sleep() {
-    let millis = 50 + rand::random::<u64>() % 751;
-    tokio::time::sleep(Duration::from_millis(millis)).await;
+    // let millis = 50 + rand::random::<u64>() % 751;
+    // tokio::time::sleep(Duration::from_millis(millis)).await;
 }

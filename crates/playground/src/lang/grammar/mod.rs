@@ -1,6 +1,11 @@
-use std::{collections::HashSet, fmt};
+use std::{
+    collections::{HashSet, hash_map::DefaultHasher},
+    fmt,
+    hash::{Hash, Hasher},
+};
 
 use bowl::{Component, ComponentHookContext, Entity};
+use tracing::info;
 
 pub(crate) mod lexer;
 pub(crate) mod parser;
@@ -13,8 +18,19 @@ pub(crate) struct FilePath(pub(crate) String);
 #[component(hash)]
 pub(crate) struct FileText(pub(crate) String);
 
-#[derive(Component, Clone)]
+#[derive(Clone)]
 pub(crate) struct SystemImportDb(pub(crate) HashSet<String>);
+
+impl Component for SystemImportDb {
+    fn fingerprint(&self) -> Option<u64> {
+        let mut imports = self.0.iter().collect::<Vec<_>>();
+        imports.sort();
+
+        let mut hasher = DefaultHasher::new();
+        imports.hash(&mut hasher);
+        Some(hasher.finish())
+    }
+}
 
 impl Default for SystemImportDb {
     fn default() -> Self {
@@ -33,11 +49,11 @@ impl Component for AstAvailable {
     }
 
     fn on_insert(context: ComponentHookContext) {
-        println!("AstAvailable insert({})", context.entity().raw());
+        info!(entity = context.entity().raw(), "AstAvailable insert");
     }
 
     fn on_remove(context: ComponentHookContext) {
-        println!("AstAvailable remove({})", context.entity().raw());
+        info!(entity = context.entity().raw(), "AstAvailable remove");
     }
 }
 
@@ -50,11 +66,11 @@ impl Component for CstAvailable {
     }
 
     fn on_insert(context: ComponentHookContext) {
-        println!("CstAvailable insert({})", context.entity().raw());
+        info!(entity = context.entity().raw(), "CstAvailable insert");
     }
 
     fn on_remove(context: ComponentHookContext) {
-        println!("CstAvailable remove({})", context.entity().raw());
+        info!(entity = context.entity().raw(), "CstAvailable remove");
     }
 }
 

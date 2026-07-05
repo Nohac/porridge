@@ -1,6 +1,9 @@
 use std::{collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
 
-use futures::future::{FutureExt, LocalBoxFuture, join_all};
+use async_fn_traits::{
+    AsyncFn1, AsyncFn2, AsyncFn3, AsyncFn4, AsyncFn5, AsyncFn6, AsyncFn7, AsyncFn8,
+};
+use futures::future::{BoxFuture, FutureExt, join_all};
 
 use crate::{
     Bowl, Commands, DerivedFrom, Entity, Query, View,
@@ -83,7 +86,7 @@ impl MemoEntry {
 pub(crate) struct PlannedSystemRun<'a> {
     pub(crate) owner: SystemInvocation,
     pub(crate) access: Vec<Access>,
-    pub(crate) run: LocalBoxFuture<'a, SystemRun>,
+    pub(crate) run: BoxFuture<'a, SystemRun>,
 }
 
 struct PlannedRun<State> {
@@ -114,8 +117,8 @@ struct PlannedInvocation<State> {
 /// drive per-row execution while ambient params like `View` and `Commands`
 /// participate in the same machinery without special role flags.
 pub(crate) trait SystemParam {
-    type State: Clone;
-    type Item<'a>;
+    type State: Clone + Send;
+    type Item<'a>: Send;
 
     fn states(snapshot: &Snapshot) -> Vec<Self::State>;
     fn keys(state: &Self::State) -> Vec<Entity>;
@@ -135,7 +138,7 @@ pub(crate) trait SystemParam {
 impl<Q, Filter> SystemParam for Query<Q, Filter>
 where
     Q: QueryParam,
-    Filter: QueryFilter<Q>,
+    Filter: QueryFilter<Q> + Send,
 {
     type State = Q::State;
     type Item<'a> = Query<Q::Item<'a>, Filter>;
@@ -170,8 +173,8 @@ where
 
 impl<'view, Q, Filter> SystemParam for View<'view, Q, Filter>
 where
-    Q: QueryParam,
-    Filter: QueryFilter<Q>,
+    Q: QueryParam + Send,
+    Filter: QueryFilter<Q> + Send + Sync,
 {
     type State = ();
     type Item<'a> = View<'a, Q, Filter>;
@@ -430,10 +433,9 @@ where
 /// table. It returns command buffers and memo updates that need to be committed
 /// for this generation.
 ///
-/// The returned future is local rather than `Send`. This lets ordinary async
-/// functions borrow snapshot data across `.await` without forcing the first
-/// implementation to solve cross-thread spawning. The bowl can still be shared;
-/// this only constrains where the evaluation future may be polled.
+/// Returned futures are `Send`, so external bowl operations can be spawned on a
+/// multi-threaded executor. Borrowed query data remains valid because the query
+/// wrappers own read guards for the duration of each system invocation.
 pub(crate) trait Runnable: Send + Sync {
     fn has_work(&self, _snapshot: &Snapshot, _memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
         false
@@ -444,7 +446,7 @@ pub(crate) trait Runnable: Send + Sync {
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun>;
+    ) -> BoxFuture<'a, SystemRun>;
 
     fn stream_runs<'a>(
         &'a self,
@@ -458,8 +460,8 @@ pub(crate) trait Runnable: Send + Sync {
         _bowl: Bowl,
         _snapshot: &'a Snapshot,
         _memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
-        async { SystemRun::empty() }.boxed_local()
+    ) -> BoxFuture<'a, SystemRun> {
+        async { SystemRun::empty() }.boxed()
     }
 }
 
@@ -626,7 +628,7 @@ where
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
+    ) -> BoxFuture<'a, SystemRun> {
         async move {
             let has_work = self.system.has_work(snapshot, memo);
             let start_commands = has_work.then(|| {
@@ -648,7 +650,7 @@ where
 
             run
         }
-        .boxed_local()
+        .boxed()
     }
 
     fn stream_runs<'a>(
@@ -666,7 +668,7 @@ where
             keys: Vec::new(),
         };
         let memo = memo.clone();
-        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed_local();
+        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
 
         vec![PlannedSystemRun {
             owner,
@@ -689,7 +691,7 @@ where
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
+    ) -> BoxFuture<'a, SystemRun> {
         async move {
             let mut run = self.system.run(bowl, snapshot, memo).await;
             let owner = SystemInvocation {
@@ -708,7 +710,7 @@ where
 
             run
         }
-        .boxed_local()
+        .boxed()
     }
 
     fn stream_runs<'a>(
@@ -726,7 +728,7 @@ where
             keys: Vec::new(),
         };
         let memo = memo.clone();
-        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed_local();
+        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
 
         vec![PlannedSystemRun {
             owner,
@@ -749,7 +751,7 @@ where
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
+    ) -> BoxFuture<'a, SystemRun> {
         self.system.run(bowl, snapshot, memo)
     }
 
@@ -767,7 +769,7 @@ where
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
+    ) -> BoxFuture<'a, SystemRun> {
         async move {
             let run = self.system.run(bowl, snapshot, memo).await;
             let owner = SystemInvocation {
@@ -793,7 +795,7 @@ where
                 memo_updates: Vec::new(),
             }
         }
-        .boxed_local()
+        .boxed()
     }
 }
 
@@ -871,7 +873,7 @@ impl BoxedSystem {
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
+    ) -> BoxFuture<'a, SystemRun> {
         self.runnable.run(bowl, snapshot, memo)
     }
 
@@ -889,7 +891,7 @@ impl BoxedSystem {
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
+    ) -> BoxFuture<'a, SystemRun> {
         self.runnable.run_settled(bowl, snapshot, memo)
     }
 }
@@ -947,7 +949,7 @@ where
         bowl: Bowl,
         snapshot: &'a Snapshot,
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
-    ) -> LocalBoxFuture<'a, SystemRun> {
+    ) -> BoxFuture<'a, SystemRun> {
         async move {
             let planned = plan_invocations::<F::Param>(self.id, snapshot, memo);
             let row_futures = planned
@@ -969,7 +971,7 @@ where
             run.completed = planned.completed;
             run
         }
-        .boxed_local()
+        .boxed()
     }
 
     fn stream_runs<'a>(
@@ -1000,7 +1002,7 @@ where
                         memo_updates: vec![memo_update],
                     }
                 }
-                .boxed_local();
+                .boxed();
 
                 PlannedSystemRun { owner, access, run }
             })
@@ -1011,35 +1013,41 @@ where
 pub(crate) trait SystemParamFunction<Marker>: Send + Sync + 'static {
     type Param: SystemParam;
 
-    fn run<'a>(&'a self, params: <Self::Param as SystemParam>::Item<'a>) -> LocalBoxFuture<'a, ()>;
+    fn run<'a>(&'a self, params: <Self::Param as SystemParam>::Item<'a>) -> BoxFuture<'a, ()>;
 }
 
 macro_rules! impl_system_param_function {
-    ($($P:ident),*) => {
+    ($AsyncFnN:ident; $($P:ident),*) => {
         impl<F, $($P),*> SystemParamFunction<fn($($P),*)> for F
         where
             F: Send + Sync + 'static,
             $($P: SystemParam + 'static,)*
-            for<'a> F: AsyncFn($($P),*) + AsyncFn($($P::Item<'a>),*),
+            F: AsyncFn($($P),*),
+            for<'a> F: $AsyncFnN<$($P::Item<'a>,)* Output = ()>,
+            for<'a> <F as $AsyncFnN<$($P::Item<'a>,)*>>::OutputFuture: Send,
         {
             type Param = ($($P,)*);
 
             fn run<'a>(
                 &'a self,
                 params: <Self::Param as SystemParam>::Item<'a>,
-            ) -> LocalBoxFuture<'a, ()> {
+            ) -> BoxFuture<'a, ()> {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = params;
-                async move {
-                    (self)($($P),*).await;
-                }
-                .boxed_local()
+                (self)($($P),*).boxed()
             }
         }
     };
 }
 
-all_tuples!(impl_system_param_function, 1, 8, P);
+impl_system_param_function!(AsyncFn1; P0);
+impl_system_param_function!(AsyncFn2; P0, P1);
+impl_system_param_function!(AsyncFn3; P0, P1, P2);
+impl_system_param_function!(AsyncFn4; P0, P1, P2, P3);
+impl_system_param_function!(AsyncFn5; P0, P1, P2, P3, P4);
+impl_system_param_function!(AsyncFn6; P0, P1, P2, P3, P4, P5);
+impl_system_param_function!(AsyncFn7; P0, P1, P2, P3, P4, P5, P6);
+impl_system_param_function!(AsyncFn8; P0, P1, P2, P3, P4, P5, P6, P7);
 
 impl<F, Marker> IntoSystem<(FunctionSystemMarker, Marker)> for F
 where

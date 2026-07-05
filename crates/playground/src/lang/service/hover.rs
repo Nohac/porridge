@@ -2,6 +2,7 @@ use crate::lang::grammar::{
     AstAvailable, AstDef, FilePath, FileText, HoverInfo, HoverRequest, Position,
 };
 use bowl::{Commands, Entity, Query, View, With};
+use tracing::info;
 
 pub(crate) async fn hover_info(
     _: Query<Entity, With<AstAvailable>>,
@@ -12,7 +13,7 @@ pub(crate) async fn hover_info(
 ) {
     crate::short_sleep().await;
 
-    println!("hover_info");
+    info!("hover_info");
     let (request, path, position) = query.item();
 
     let Some((_file, _path, text)) = files.iter().find(|(_, file_path, _)| *file_path == path)

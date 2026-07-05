@@ -12,7 +12,7 @@ use crate::{
     world::{ComponentRef, Revision, Snapshot, World},
 };
 
-type GuardStore = Vec<Box<dyn Any>>;
+type GuardStore = Vec<Box<dyn Any + Send>>;
 
 /// A tracked system input.
 ///
@@ -593,8 +593,8 @@ impl Dep {
 /// `fetch` is safe because row states are produced from the same structural
 /// snapshot and read guards are kept alive by the owning query/result.
 pub trait QueryParam {
-    type State: Clone;
-    type Item<'a>;
+    type State: Clone + Send;
+    type Item<'a>: Send;
 
     /// Enumerates all row states in `snapshot`.
     fn rows(snapshot: &Snapshot) -> Vec<Self::State>;
@@ -792,7 +792,7 @@ impl<T: Component> QueryParam for (Mut<T>,) {
 /// One entry in an entity query tuple.
 #[doc(hidden)]
 pub trait QueryPart {
-    type Item<'a>;
+    type Item<'a>: Send;
 
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;

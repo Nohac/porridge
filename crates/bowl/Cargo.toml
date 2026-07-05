@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async_fn_traits = "0.1.1"
 futures = "0.3.31"
 macros = { path = "../macros" }
 variadics_please = "2.0.0"

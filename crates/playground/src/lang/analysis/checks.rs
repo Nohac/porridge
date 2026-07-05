@@ -1,5 +1,6 @@
 use crate::lang::grammar::{AstDef, Diagnostic, ImportDecl, Severity, SystemImportDb};
 use bowl::{Commands, DerivedFrom, Entity, Query, View};
+use tracing::info;
 
 fn emit_diagnostic(
     commands: &mut Commands,
@@ -17,7 +18,7 @@ pub(crate) async fn check_imports(
 ) {
     crate::short_sleep().await;
 
-    println!("check_imports");
+    info!("check_imports");
     let (import, import_decl) = query.item();
     let (system_entity, system) = system_imports.iter().next().unwrap();
 
@@ -40,7 +41,7 @@ pub(crate) async fn check_duplicate_defs(
 
     crate::short_sleep().await;
 
-    println!("check_duplicate_defs({})", entity.raw());
+    info!(entity = entity.raw(), "check_duplicate_defs");
 
     let Some((previous, previous_def)) = defs
         .iter()

@@ -5,13 +5,14 @@ use crate::lang::grammar::{
     parser::{CstData, Node, NodeRef, Parser, Rule},
 };
 use bowl::{Commands, DerivedFrom, Entity, Query};
+use tracing::info;
 
 pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands) {
     let (file, text) = query.item();
 
     crate::short_sleep().await;
 
-    println!("parse_file({})", file.raw());
+    info!(entity = file.raw(), "parse_file");
 
     let mut diags = Vec::new();
     let cst = Parser::new(&text.0, &mut diags).parse(&mut diags);
@@ -33,7 +34,7 @@ pub(crate) async fn generate_ast(
 
     crate::short_sleep().await;
 
-    println!("generate_ast({})", file.raw());
+    info!(entity = file.raw(), "generate_ast");
 
     for fact in ast_facts(&parsed.cst, &text.0) {
         match fact {
