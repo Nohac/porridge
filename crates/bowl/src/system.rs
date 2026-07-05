@@ -191,11 +191,12 @@ where
         Vec::new()
     }
 
-    fn access(snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
-        filtered_rows::<Q, Filter>(snapshot)
-            .into_iter()
-            .flat_map(|state| filtered_access::<Q, Filter>(snapshot, &state))
-            .collect()
+    fn access(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
+        // A view reads whatever rows exist when it is built, so it declares
+        // component-level access instead of enumerating rows at plan time.
+        let mut access = Q::access_all();
+        access.extend(Filter::access_all());
+        access
     }
 
     fn fetch<'a>(

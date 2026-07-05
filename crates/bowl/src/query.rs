@@ -235,13 +235,14 @@ where
     }
 }
 
-/// Scheduler-visible access to one component row.
+/// Scheduler-visible access to one component row, or to a whole component
+/// store when `entity` is `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[doc(hidden)]
 pub struct Access {
     pub(crate) kind: AccessKind,
     pub(crate) component: TypeId,
-    pub(crate) entity: Entity,
+    pub(crate) entity: Option<Entity>,
 }
 
 impl Access {
@@ -249,7 +250,7 @@ impl Access {
         Self {
             kind: AccessKind::Read,
             component: TypeId::of::<T>(),
-            entity,
+            entity: Some(entity),
         }
     }
 
@@ -257,14 +258,35 @@ impl Access {
         Self {
             kind: AccessKind::Write,
             component: TypeId::of::<T>(),
-            entity,
+            entity: Some(entity),
+        }
+    }
+
+    /// Shared access to every row of `T`, used by ambient `View` params.
+    pub(crate) fn read_all<T: Component>() -> Self {
+        Self {
+            kind: AccessKind::Read,
+            component: TypeId::of::<T>(),
+            entity: None,
+        }
+    }
+
+    /// Exclusive access to every row of `T`.
+    pub(crate) fn write_all<T: Component>() -> Self {
+        Self {
+            kind: AccessKind::Write,
+            component: TypeId::of::<T>(),
+            entity: None,
         }
     }
 
     pub(crate) fn conflicts(self, other: Self) -> bool {
         self.component == other.component
-            && self.entity == other.entity
             && (self.kind == AccessKind::Write || other.kind == AccessKind::Write)
+            && match (self.entity, other.entity) {
+                (Some(own), Some(other)) => own == other,
+                _ => true,
+            }
     }
 }
 
@@ -623,6 +645,9 @@ pub trait QueryParam {
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
     /// Returns component rows this query item reads or writes while running.
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
+    /// Returns component-level access covering every possible row, used by
+    /// ambient params that read whole stores.
+    fn access_all() -> Vec<Access>;
     /// Fetches the user-facing item for a previously enumerated row.
     fn fetch<'a>(
         bowl: &Bowl,
@@ -727,6 +752,10 @@ impl QueryParam for Entity {
         Vec::new()
     }
 
+    fn access_all() -> Vec<Access> {
+        Vec::new()
+    }
+
     fn fetch<'a>(
         _bowl: &Bowl,
         _snapshot: &'a Snapshot,
@@ -769,6 +798,10 @@ impl<T: Component> QueryParam for &T {
 
     fn access(_snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
         vec![Access::read::<T>(*state)]
+    }
+
+    fn access_all() -> Vec<Access> {
+        vec![Access::read_all::<T>()]
     }
 
     fn fetch<'a>(
@@ -820,6 +853,10 @@ impl<T: Component> QueryParam for (Mut<T>,) {
         vec![Access::write::<T>(*state)]
     }
 
+    fn access_all() -> Vec<Access> {
+        vec![Access::write_all::<T>()]
+    }
+
     fn fetch<'a>(
         bowl: &Bowl,
         snapshot: &'a Snapshot,
@@ -845,6 +882,7 @@ pub trait QueryPart {
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
+    fn access_all() -> Access;
     fn fetch<'a>(
         bowl: &Bowl,
         snapshot: &'a Snapshot,
@@ -880,6 +918,10 @@ impl<T: Component> QueryPart for &T {
 
     fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
         vec![Access::read::<T>(entity)]
+    }
+
+    fn access_all() -> Access {
+        Access::read_all::<T>()
     }
 
     fn fetch<'a>(
@@ -922,6 +964,10 @@ impl<T: Component> QueryPart for Mut<T> {
 
     fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
         vec![Access::write::<T>(entity)]
+    }
+
+    fn access_all() -> Access {
+        Access::write_all::<T>()
     }
 
     fn fetch<'a>(
@@ -1003,6 +1049,10 @@ macro_rules! impl_entity_query_param {
                 access
             }
 
+            fn access_all() -> Vec<Access> {
+                vec![$($P::access_all(),)*]
+            }
+
             fn fetch<'a>(
                 bowl: &Bowl,
                 snapshot: &'a Snapshot,
@@ -1042,6 +1092,10 @@ pub trait QueryFilter<Q: QueryParam> {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool;
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access>;
+    /// Component-level access covering every row this filter inspects.
+    fn access_all() -> Vec<Access> {
+        Vec::new()
+    }
     /// Entities this filter could match, used to drive row enumeration for
     /// params without a component store of their own (`Query<Entity, ...>`).
     fn entity_candidates(_snapshot: &Snapshot) -> Option<Vec<Entity>> {
@@ -1083,6 +1137,10 @@ where
         vec![Access::read::<T>(state.entity())]
     }
 
+    fn access_all() -> Vec<Access> {
+        vec![Access::read_all::<T>()]
+    }
+
     fn entity_candidates(snapshot: &Snapshot) -> Option<Vec<Entity>> {
         Some(snapshot.entities_with::<T>())
     }
@@ -1104,6 +1162,10 @@ where
 
     fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
         vec![Access::read::<T>(state.entity())]
+    }
+
+    fn access_all() -> Vec<Access> {
+        vec![Access::read_all::<T>()]
     }
 }
 
