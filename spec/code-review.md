@@ -177,7 +177,22 @@ the old value, which *is* snapshot semantics); an async-aware cell lock; or
 planner-visible external access. A `try_write`-with-diagnostics fallback
 would at least convert silent deadlocks into actionable panics.
 
-### Cancellation safety ⚠
+### Cancellation safety ⚠ — FIXED
+
+*Fixed 2026-07-05:* `run_evaluation` now wraps the memo table and generation
+bookkeeping in an `EvaluationGuard`. If the driver future is dropped mid-run
+(timeout, LSP `$/cancelRequest`), the guard restores the memo, re-queues the
+generation, clears `running_generation`, and wakes waiters — the existing
+single-flight promotion race then elects a new driver, which replans only the
+work that had not yet committed (streaming commits are already durable).
+Regression test: `cancelled_evaluation_driver_does_not_wedge_the_bowl`, which
+reproduced the permanent busy-spin before the fix. Residual caveat: an
+in-flight invocation holding `MutRef` access that gets cancelled may leave a
+partially applied in-place mutation with no revision reconciliation; the
+invocation reruns (its memo was never published), so `MutRef` systems should
+tolerate re-running over their own partial writes.
+
+Original finding, kept for context:
 
 `run_evaluation` takes the memo table (`std::mem::take`) and marks
 `running_generation` before awaiting user futures. If the *driving caller's

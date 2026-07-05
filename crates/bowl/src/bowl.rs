@@ -957,18 +957,30 @@ impl Bowl {
         _runner: futures::lock::MutexGuard<'_, ()>,
         commit_budget: &mut CommitBudget,
     ) {
-        let Some((generation, systems, mut memo, startup)) = self.start_evaluation().await else {
+        let Some((generation, systems, memo, startup)) = self.start_evaluation().await else {
             return;
+        };
+
+        // The driver is an ordinary caller's future and may be dropped at any
+        // await point (timeouts, LSP request cancellation). The guard owns the
+        // memo table and, on an abandoned run, restores state so any waiter
+        // can be promoted to a new driver: committed invocations are already
+        // durable in the world, only in-flight work is lost and replanned.
+        let mut guard = EvaluationGuard {
+            bowl: self.clone(),
+            generation,
+            memo: Some(memo),
         };
 
         let mut normal_phase_changed = false;
 
         for phase in Phase::ordered(startup) {
             normal_phase_changed |= self
-                .run_phase_streaming(&systems, *phase, &mut memo, commit_budget)
+                .run_phase_streaming(&systems, *phase, guard.memo_mut(), commit_budget)
                 .await;
         }
 
+        let memo = guard.complete();
         let waiters = {
             let mut state = self.inner.state.lock().await;
             state.memo = memo;
@@ -1099,6 +1111,62 @@ impl Bowl {
         let memo = std::mem::take(&mut state.memo);
 
         Some((generation, systems, memo, startup))
+    }
+}
+
+/// Restores evaluation bookkeeping when a driver future is dropped mid-run.
+///
+/// Holds the memo table for the duration of one evaluation. On normal
+/// completion the runner takes it back with [`EvaluationGuard::complete`]; on
+/// an abandoned run, `Drop` returns the memo to state, re-queues the
+/// generation, and wakes waiters so another caller can drive it.
+struct EvaluationGuard {
+    bowl: Bowl,
+    generation: u64,
+    memo: Option<HashMap<SystemInvocation, MemoEntry>>,
+}
+
+impl EvaluationGuard {
+    fn memo_mut(&mut self) -> &mut HashMap<SystemInvocation, MemoEntry> {
+        self.memo
+            .as_mut()
+            .expect("evaluation guard already completed")
+    }
+
+    fn complete(mut self) -> HashMap<SystemInvocation, MemoEntry> {
+        self.memo
+            .take()
+            .expect("evaluation guard already completed")
+    }
+}
+
+impl Drop for EvaluationGuard {
+    fn drop(&mut self) {
+        let Some(memo) = self.memo.take() else {
+            return;
+        };
+
+        // The state guard is never held across an await point anywhere in the
+        // crate, so at drop time the lock is either free or held by a task
+        // mid-poll on another thread for a short synchronous section.
+        let mut state = loop {
+            if let Some(state) = self.bowl.inner.state.try_lock() {
+                break state;
+            }
+            std::thread::yield_now();
+        };
+
+        state.memo = memo;
+        state.running_generation = None;
+        if state.pending_generation.is_none() {
+            state.pending_generation = Some(self.generation);
+        }
+        let waiters = std::mem::take(&mut state.waiters);
+        drop(state);
+
+        for waiter in waiters {
+            let _ = waiter.send(());
+        }
     }
 }
 
@@ -1788,6 +1856,53 @@ mod tests {
 
     struct Doomed;
     impl Component for Doomed {}
+
+    async fn make_b_after_yield(query: Query<(Entity, &A)>, mut commands: Commands) {
+        yield_once().await;
+        let (entity, a) = query.item();
+        commands.entity(entity).insert(B(a.0 + 1));
+    }
+
+    #[test]
+    fn cancelled_evaluation_driver_does_not_wedge_the_bowl() {
+        use std::future::IntoFuture;
+        use std::task::Context;
+
+        let bowl = Bowl::new();
+        block_on(async {
+            bowl.add_system(make_b_after_yield).await;
+            bowl.insert((A(1),)).await;
+        });
+
+        // Become the evaluation driver and suspend mid-run: one poll takes the
+        // runner lock, consumes the pending generation, takes the memo table,
+        // and parks inside the phase loop at the system's yield point. Then
+        // drop the driver, simulating a cancelled caller (LSP cancel, timeout).
+        {
+            let waker = futures::task::noop_waker();
+            let mut context = Context::from_waker(&waker);
+            let mut driver = bowl.scoop::<Query<(Entity, &B)>>().into_future();
+            assert!(
+                driver.as_mut().poll(&mut context).is_pending(),
+                "driver should suspend mid-evaluation"
+            );
+        }
+
+        // A subsequent caller must still be able to drive the bowl to a
+        // settled result. Run it on another thread so a wedged bowl shows up
+        // as a timeout instead of hanging the test suite.
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let reader = bowl.clone();
+        std::thread::spawn(move || {
+            let rows = block_on(async { reader.scoop::<Query<(Entity, &B)>>().await.len() });
+            let _ = sender.send(rows);
+        });
+
+        let rows = receiver
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .expect("bowl wedged after the evaluation driver was cancelled");
+        assert_eq!(rows, 1);
+    }
 
     async fn increment_once(
         query: Query<(Entity, MutRef<'_, MutableA>), Without<Note>>,
