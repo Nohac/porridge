@@ -771,13 +771,18 @@ where
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> BoxFuture<'a, SystemRun> {
         async move {
+            let check_bowl = bowl.clone();
             let run = self.system.run(bowl, snapshot, memo).await;
             let owner = SystemInvocation {
                 system: self.id,
                 keys: Vec::new(),
             };
-            let should_emit_settled =
-                run.completed && run.outputs.is_empty() && !snapshot.has_derived_owned(&owner);
+            // Ownership lives with the live world, not snapshots; the settle
+            // runner does not commit while settled hooks run, so this check
+            // matches the snapshot the hook planned from.
+            let should_emit_settled = run.completed
+                && run.outputs.is_empty()
+                && !check_bowl.has_derived_owned(&owner).await;
 
             if !should_emit_settled {
                 return SystemRun::empty();

@@ -576,6 +576,15 @@ impl Bowl {
         apply_component_mutation::<T, F, R>(&mut state, entity, f)
     }
 
+    /// Returns whether the live world currently holds derived outputs owned by
+    /// `owner`.
+    ///
+    /// Snapshots do not carry the ownership index, so settled hooks check the
+    /// live bowl instead.
+    pub(crate) async fn has_derived_owned(&self, owner: &SystemInvocation) -> bool {
+        self.inner.state.lock().await.world.has_derived_owned(owner)
+    }
+
     /// Registers a system.
     ///
     /// Systems are stored in registration order. During evaluation, systems
@@ -1102,35 +1111,36 @@ async fn commit_system_run(
     state: &Mutex<State>,
     run: SystemRun,
 ) -> CommitProgress {
-    let mut outputs = Vec::new();
-
-    outputs.extend(run.outputs);
+    let outputs = run.outputs;
     let memo_updates = run.memo_updates;
 
+    let mut state = state.lock().await;
+    if !memo_updates
+        .iter()
+        .all(|(_owner, entry)| entry.is_current(&state.world))
     {
-        let state = state.lock().await;
-        if !memo_updates
-            .iter()
-            .all(|(_owner, entry)| entry.is_current(&state.world))
-        {
-            return CommitProgress::default();
-        }
+        return CommitProgress::default();
     }
 
-    let mut state = state.lock().await;
     let before_revision = state.world.revision_raw();
-    let mut applied_command = false;
+    let before_mutations = state.world.mutations_raw();
+
+    // Replace outputs by diffing: commands apply over the invocation's old
+    // outputs so unchanged fingerprints keep their revisions, then whatever
+    // the rerun did not re-emit is removed.
     for output in outputs {
-        state.world.remove_derived_owned(&output.owner);
+        let previous = state.world.derived_outputs(&output.owner);
         for command in output.commands {
-            applied_command = true;
             command.apply(&mut state.world, &output.owner);
         }
+        state.world.remove_derived_stale(&output.owner, previous);
     }
     for (owner, entry) in memo_updates {
         memo.insert(owner, entry);
     }
-    let needs_followup = applied_command || state.world.revision_raw() != before_revision;
+
+    let needs_followup = state.world.revision_raw() != before_revision
+        || state.world.mutations_raw() != before_mutations;
     CommitProgress {
         needs_followup,
         commits: u64::from(needs_followup),

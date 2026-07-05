@@ -78,3 +78,29 @@ a `derived_owners` index inside `World`, where per-invocation snapshot clones
 deep-copied it — cold_settle/128 regressed to 1.75 s (+103 %). That run is
 recorded in `tmp/bench/bench-step2a.txt`; the index must stay out of snapshot
 clones, and this step had to land first.
+
+## Step 3 — derived output diffing (`diff derived outputs on commit`)
+
+Commits now apply commands *over* the invocation's previous outputs (so equal
+fingerprints keep their revisions) and then remove only what the rerun did not
+re-emit, driven by a live-world `derived_owners` index (owner → outputs) that
+replaces the per-commit `retain` over every entry of every store. The index is
+excluded from snapshot clones; settled hooks check ownership through the live
+bowl. The memo-currency check and command application also now happen under
+one state lock, closing a window where a commit could apply after its deps
+went stale.
+
+| bench | 8 / 100 | 32 / 1000 | 128 / 10000 | vs step 2 |
+|---|---|---|---|---|
+| cold_settle | 165 µs | 2.45 ms | 39.5 ms | flat |
+| incremental_settle | 39.0 µs | 158 µs | 657 µs | flat |
+| identical_rerun | 30.1 µs | 381 µs | 5.68 ms | −5…−7 % |
+| read_scan | 5.2 µs | 39.4 µs | 410 µs | flat |
+| where_eq | 17.8 µs | 187 µs | — | flat |
+| view_scaling (8/32/64) | 53.4 µs | 1.83 ms | 13.9 ms | flat (noisy) |
+
+Small standalone numbers by design: the runner still replans the phase after
+*every* commit, including ones that changed nothing. What this step buys is
+that value-identical reruns now produce `needs_followup = false` commits (no
+revision bumps, no downstream invalidation) — the signal the next step uses to
+skip replan waves.

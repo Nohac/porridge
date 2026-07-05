@@ -219,14 +219,19 @@ trait StoreDyn: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision>;
-    fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision);
-    fn has_derived_owned(&self, owner: &SystemInvocation) -> bool;
-    fn remove_derived_touched_by(
+    /// Removes one derived entry if it is still owned by `owner`.
+    ///
+    /// Returns whether the component type is tracked.
+    fn remove_entry_owned(&mut self, entity: Entity, owner: &SystemInvocation) -> Option<bool>;
+    /// Removes one entry as part of whole-entity removal.
+    ///
+    /// The outer `Option` reports whether an entry existed; the inner value is
+    /// the derived owner, if any.
+    fn remove_entity(
         &mut self,
-        keys: &HashSet<Entity>,
+        entity: Entity,
         revision: &mut Revision,
-    ) -> Vec<Entity>;
-    fn remove_entity(&mut self, entity: Entity, revision: &mut Revision) -> Vec<SystemInvocation>;
+    ) -> Option<Option<SystemInvocation>>;
 }
 
 /// Concrete storage for one component type.
@@ -267,62 +272,24 @@ impl<T: Component> StoreDyn for Store<T> {
         self.entries.get(&entity).map(|entry| entry.revision)
     }
 
-    fn remove_derived_owned(&mut self, owner: &SystemInvocation, revision: &mut Revision) {
-        let before = self.entries.len();
-        self.entries.retain(|entity, entry| {
-            let remove = entry.origin == Origin::Derived && entry.owner.as_ref() == Some(owner);
-
-            if remove {
-                T::on_remove(ComponentHookContext::new(*entity));
-            }
-
-            !remove
-        });
-
-        if T::tracked() && self.entries.len() != before {
-            bump(revision);
+    fn remove_entry_owned(&mut self, entity: Entity, owner: &SystemInvocation) -> Option<bool> {
+        let entry = self.entries.get(&entity)?;
+        if entry.origin != Origin::Derived || entry.owner.as_ref() != Some(owner) {
+            return None;
         }
+
+        self.entries.remove(&entity);
+        T::on_remove(ComponentHookContext::new(entity));
+
+        Some(T::tracked())
     }
 
-    fn has_derived_owned(&self, owner: &SystemInvocation) -> bool {
-        self.entries
-            .values()
-            .any(|entry| entry.origin == Origin::Derived && entry.owner.as_ref() == Some(owner))
-    }
-
-    fn remove_derived_touched_by(
+    fn remove_entity(
         &mut self,
-        keys: &HashSet<Entity>,
+        entity: Entity,
         revision: &mut Revision,
-    ) -> Vec<Entity> {
-        let mut removed = Vec::new();
-
-        self.entries.retain(|entity, entry| {
-            let remove = entry.origin == Origin::Derived
-                && entry
-                    .owner
-                    .as_ref()
-                    .is_some_and(|owner| owner.keys.iter().any(|key| keys.contains(key)));
-
-            if remove {
-                removed.push(*entity);
-                T::on_remove(ComponentHookContext::new(*entity));
-            }
-
-            !remove
-        });
-
-        if T::tracked() && !removed.is_empty() {
-            bump(revision);
-        }
-
-        removed
-    }
-
-    fn remove_entity(&mut self, entity: Entity, revision: &mut Revision) -> Vec<SystemInvocation> {
-        let Some(removed) = self.entries.remove(&entity) else {
-            return Vec::new();
-        };
+    ) -> Option<Option<SystemInvocation>> {
+        let removed = self.entries.remove(&entity)?;
 
         let context = ComponentHookContext::new(entity);
         T::on_entity_remove(context);
@@ -332,7 +299,7 @@ impl<T: Component> StoreDyn for Store<T> {
             bump(revision);
         }
 
-        removed.owner.into_iter().collect()
+        Some(removed.owner)
     }
 }
 
@@ -342,7 +309,6 @@ impl Clone for Box<dyn StoreDyn> {
     }
 }
 
-#[derive(Clone)]
 #[doc(hidden)]
 /// Component storage for the live world and structural snapshots.
 ///
@@ -351,8 +317,38 @@ impl Clone for Box<dyn StoreDyn> {
 pub struct World {
     next_entity: u64,
     revision: Revision,
+    /// Bumped on every structural change (entry added or removed, or a value
+    /// replaced without a matching fingerprint), including untracked
+    /// components. Unlike `revision`, this signals "the world is different"
+    /// without implying dependency invalidation.
+    mutations: u64,
     stores: HashMap<TypeId, Box<dyn StoreDyn>>,
     singleton_entities: HashMap<TypeId, Entity>,
+    /// Derived outputs currently owned by each system invocation.
+    ///
+    /// Keeps output replacement and ownership checks proportional to an
+    /// invocation's own outputs instead of every stored component entry.
+    derived_owners: HashMap<SystemInvocation, HashSet<(TypeId, Entity)>>,
+}
+
+impl Clone for World {
+    /// Structural clone used for snapshots.
+    ///
+    /// The derived-owner index is intentionally left empty: it is runner
+    /// bookkeeping for replacing outputs in the live world, and cloning it per
+    /// snapshot would make every planning wave pay for the whole ownership
+    /// table. Ownership checks against a snapshot must go through the live
+    /// bowl instead.
+    fn clone(&self) -> Self {
+        Self {
+            next_entity: self.next_entity,
+            revision: self.revision,
+            mutations: self.mutations,
+            stores: self.stores.clone(),
+            singleton_entities: self.singleton_entities.clone(),
+            derived_owners: HashMap::new(),
+        }
+    }
 }
 
 /// Structural read source for one generation.
@@ -367,8 +363,10 @@ impl World {
         Self {
             next_entity: 0,
             revision: Revision(0),
+            mutations: 0,
             stores: HashMap::new(),
             singleton_entities: HashMap::new(),
+            derived_owners: HashMap::new(),
         }
     }
 
@@ -438,14 +436,18 @@ impl World {
         }
 
         let fingerprint = value.fingerprint();
+        let previous_fingerprint = self
+            .store::<T>()
+            .and_then(|store| store.entries.get(&entity))
+            .map(|entry| entry.fingerprint);
+        let fingerprint_matches = previous_fingerprint
+            .is_some_and(|previous| previous.is_some() && previous == fingerprint);
+
         let revision = if T::tracked() {
             let old_revision = self
                 .store::<T>()
                 .and_then(|store| store.entries.get(&entity))
-                .and_then(|entry| {
-                    (entry.fingerprint.is_some() && entry.fingerprint == fingerprint)
-                        .then_some(entry.revision)
-                });
+                .and_then(|entry| fingerprint_matches.then_some(entry.revision));
 
             match old_revision {
                 Some(revision) => revision,
@@ -458,7 +460,12 @@ impl World {
             self.revision
         };
 
-        self.store_mut::<T>().entries.insert(
+        if !fingerprint_matches {
+            self.mutations += 1;
+        }
+
+        let new_owner = owner.clone();
+        let previous = self.store_mut::<T>().entries.insert(
             entity,
             ComponentEntry {
                 value: Arc::new(ComponentCell::new(value)),
@@ -469,7 +476,34 @@ impl World {
             },
         );
 
+        let type_id = TypeId::of::<T>();
+        if let Some(previous_owner) = previous.and_then(|entry| entry.owner) {
+            if Some(&previous_owner) != new_owner.as_ref() {
+                self.unindex_derived(&previous_owner, type_id, entity);
+            }
+        }
+        if origin == Origin::Derived {
+            if let Some(new_owner) = new_owner {
+                self.derived_owners
+                    .entry(new_owner)
+                    .or_default()
+                    .insert((type_id, entity));
+            }
+        }
+
         T::on_insert(ComponentHookContext::new(entity));
+    }
+
+    /// Drops one output from an invocation's ownership index.
+    fn unindex_derived(&mut self, owner: &SystemInvocation, type_id: TypeId, entity: Entity) {
+        let Some(outputs) = self.derived_owners.get_mut(owner) else {
+            return;
+        };
+
+        outputs.remove(&(type_id, entity));
+        if outputs.is_empty() {
+            self.derived_owners.remove(owner);
+        }
     }
 
     /// Borrows a component from the world/snapshot.
@@ -521,16 +555,71 @@ impl World {
     /// invocation clears its previous facts before applying the new command
     /// buffer.
     pub(crate) fn remove_derived_owned(&mut self, owner: &SystemInvocation) {
-        for store in self.stores.values_mut() {
-            store.remove_derived_owned(owner, &mut self.revision);
+        let Some(outputs) = self.derived_owners.remove(owner) else {
+            return;
+        };
+
+        for (type_id, entity) in outputs {
+            self.remove_derived_entry(type_id, entity, owner);
         }
+    }
+
+    /// Snapshot of the outputs currently owned by `owner`.
+    pub(crate) fn derived_outputs(&self, owner: &SystemInvocation) -> HashSet<(TypeId, Entity)> {
+        self.derived_owners.get(owner).cloned().unwrap_or_default()
+    }
+
+    /// Removes outputs in `previous` that `owner` no longer owns.
+    ///
+    /// This is the second half of output replacement by diffing: commands were
+    /// applied over the invocation's old outputs (so unchanged fingerprints
+    /// kept their revisions), and whatever the rerun did not re-emit is
+    /// removed here.
+    pub(crate) fn remove_derived_stale(
+        &mut self,
+        owner: &SystemInvocation,
+        previous: HashSet<(TypeId, Entity)>,
+    ) {
+        for (type_id, entity) in previous {
+            let still_owned = self
+                .derived_owners
+                .get(owner)
+                .is_some_and(|outputs| outputs.contains(&(type_id, entity)));
+
+            if !still_owned {
+                self.remove_derived_entry(type_id, entity, owner);
+            }
+        }
+    }
+
+    /// Removes one derived store entry if `owner` still owns it.
+    fn remove_derived_entry(
+        &mut self,
+        type_id: TypeId,
+        entity: Entity,
+        owner: &SystemInvocation,
+    ) -> bool {
+        let Some(store) = self.stores.get_mut(&type_id) else {
+            return false;
+        };
+
+        let Some(tracked) = store.remove_entry_owned(entity, owner) else {
+            return false;
+        };
+
+        self.mutations += 1;
+        if tracked {
+            bump(&mut self.revision);
+        }
+
+        true
     }
 
     /// Returns whether any derived component is currently owned by `owner`.
     pub(crate) fn has_derived_owned(&self, owner: &SystemInvocation) -> bool {
-        self.stores
-            .values()
-            .any(|store| store.has_derived_owned(owner))
+        self.derived_owners
+            .get(owner)
+            .is_some_and(|outputs| !outputs.is_empty())
     }
 
     /// Removes derived components whose owner key set intersects `keys`.
@@ -538,10 +627,27 @@ impl World {
     /// The returned entities form the next cleanup frontier: a derived entity
     /// touched by a bound request may itself own more derived outputs.
     pub(crate) fn remove_derived_touched_by(&mut self, keys: &HashSet<Entity>) -> Vec<Entity> {
-        self.stores
-            .values_mut()
-            .flat_map(|store| store.remove_derived_touched_by(keys, &mut self.revision))
-            .collect()
+        let owners = self
+            .derived_owners
+            .keys()
+            .filter(|owner| owner.keys.iter().any(|key| keys.contains(key)))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let mut removed = Vec::new();
+        for owner in owners {
+            let Some(outputs) = self.derived_owners.remove(&owner) else {
+                continue;
+            };
+
+            for (type_id, entity) in outputs {
+                if self.remove_derived_entry(type_id, entity, &owner) {
+                    removed.push(entity);
+                }
+            }
+        }
+
+        removed
     }
 
     /// Removes every component attached to `entity`.
@@ -550,9 +656,22 @@ impl World {
     /// so the caller can clear any remaining outputs for those invocations.
     pub(crate) fn remove_entity(&mut self, entity: Entity) -> Vec<SystemInvocation> {
         let mut owners = Vec::new();
+        let mut unindex = Vec::new();
 
-        for store in self.stores.values_mut() {
-            owners.extend(store.remove_entity(entity, &mut self.revision));
+        for (type_id, store) in self.stores.iter_mut() {
+            let Some(owner) = store.remove_entity(entity, &mut self.revision) else {
+                continue;
+            };
+
+            self.mutations += 1;
+            if let Some(owner) = owner {
+                unindex.push((owner.clone(), *type_id));
+                owners.push(owner);
+            }
+        }
+
+        for (owner, type_id) in unindex {
+            self.unindex_derived(&owner, type_id, entity);
         }
 
         self.singleton_entities
@@ -575,8 +694,14 @@ impl World {
 
         T::on_remove(ComponentHookContext::new(entity));
 
+        self.mutations += 1;
         if T::tracked() {
             bump(&mut self.revision);
+        }
+
+        if let Some(owner) = &removed.owner {
+            let owner = owner.clone();
+            self.unindex_derived(&owner, TypeId::of::<T>(), entity);
         }
 
         if let Some(key) = T::singleton_key() {
@@ -692,6 +817,11 @@ impl World {
     /// Current global revision.
     pub(crate) fn revision_raw(&self) -> u64 {
         self.revision.0
+    }
+
+    /// Current structural mutation counter.
+    pub(crate) fn mutations_raw(&self) -> u64 {
+        self.mutations
     }
 
     /// Returns the typed component store for `T`, if it exists.
