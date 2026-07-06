@@ -262,3 +262,35 @@ Against the original baseline: cold settle at 128 files is **~1000× faster**
 (834 ms → 809 µs), a repeated read of an unchanged world is **~3 400× faster**
 (500 µs → 147 ns) and now O(1) in world size, and derived churn no longer
 grows the entity id space.
+
+## Epoch overhead round (2026-07-06)
+
+The epochs/preemption implementation (`spec/epochs.md`) initially regressed
+hot paths, measured against a `pre_epoch` criterion baseline:
+
+- `read_scan`: **+12% to +24%** — settled scoops went from one state-lock
+  acquisition to three (`EpochGuard` enter + drop around the settled
+  early-return).
+- `identical_rerun`: **+8% to +14%** — per planning wave, one state lock for
+  the preempt probe plus one for waker registration and a oneshot
+  allocation.
+
+Fixes, in the same change set:
+
+1. **Settled fast path**: `settle()` returns under its first lock when
+   nothing is pending, running, changed, or deferred — no epoch exists to
+   freeze, so no guard is created. Settled reads keep their single-lock
+   cost.
+2. **Lock-free preempt signaling**: `preempt_waiters` became an
+   `AtomicUsize` and the runner wake-up an `AtomicWaker` on `Inner`; the
+   per-wave probe is one atomic load, waker registration is
+   allocation-free, and the mutator drop-guard needs no lock at all.
+
+Post-fix numbers vs the same baseline: `read_scan` recovered to baseline
+(−17% to +2% across sizes/runs), `where_eq` mixed (−7% to +12%),
+`identical_rerun` small sizes +7–10%. Caveat: run-to-run variance on the
+identical binary spanned ~20% during this session (the environmental
+bimodality documented in round 1), so residuals inside that band are not
+attributable. The remaining structural cost per non-settled settle is two
+uncontended lock round-trips (epoch guard) plus one atomic load and one
+`poll_fn` frame per wave — tens of nanoseconds.

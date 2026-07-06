@@ -5,8 +5,38 @@ write-triggered preemption, and the analysis that motivated it: why gate
 markers failed as an ordering tool, what they remain good for, and the
 hierarchy of ordering mechanisms.
 
-Status: design, not implemented. The current engine drains pending inputs
-into every generation, including mid-settle reopened ones.
+Status: core implemented (input freezing with watermark promotion,
+default-preemptive external `Mut` with tiered drop, the preemption window,
+and Startup-slot restarts). Still pending: the `.deferred()`/`.preempting()`
+API modifiers, the preemption budget, the stale-read scoop, and epoch
+gating for `Cow` `for_each`. Regression tests:
+`external_insert_mid_epoch_defers_to_the_next_epoch`,
+`gated_consumers_never_observe_mid_derivation_state`, and
+`preemptive_mut_restarts_the_epoch_and_retracts_markers` in bowl.
+
+Implementation refinements the design pass missed:
+
+- **Watermark promotion.** "Deferred to the next epoch" needed precision
+  under concurrent settles: promotion keyed on `settling == 0` starves a
+  caller whose own request was deferred (its settle holds the count that
+  blocks promotion — every storm hover missed). Instead, deferred inputs
+  carry an arrival sequence and every settle records an entry watermark;
+  at its epoch boundaries a settle promotes exactly the inputs that
+  arrived *before it entered* and drives them as the next epoch, while
+  anything newer stays deferred. A last-settler-out backstop promotes the
+  remainder so deferral never becomes loss.
+- **Deferred inserts record the completed generation.** A deferred input
+  has no pending generation yet; recording a future one makes
+  `ensure_evaluated` hot-spin on a generation that never materializes
+  (try-lock the runner, no-op, retry — a storm `take` pinned a worker
+  forever). The recorded generation must be trivially satisfied; the
+  caller's settle does the real driving via its watermark.
+- **Runner poll fairness.** The combined await over the read/write run
+  streams must poll each stream at most once per task poll: re-polling a
+  stream whose sibling is empty defeats `FuturesUnordered`'s self-wake
+  fairness yield, letting `yield_once`-style suspension points complete
+  within a single driver poll — which silently removes cancellation
+  boundaries.
 
 ## Motivation: the two-layer marker failure
 
