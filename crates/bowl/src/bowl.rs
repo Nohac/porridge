@@ -30,6 +30,12 @@ use crate::{
 
 const DEFAULT_COMMIT_LIMIT: u64 = 10_000;
 
+/// How many times one generation may be preempted before further
+/// preemptive writes degrade to deferred (spec/epochs.md): they wait for
+/// the generation's natural end instead of forcing a boundary, so forward
+/// progress is guaranteed under write bursts.
+const PREEMPTION_BUDGET: u32 = 4;
+
 /// Guardrail for one external evaluation attempt.
 ///
 /// A bowl settles when no normal-phase system invocation can make progress.
@@ -148,6 +154,13 @@ struct State {
     preempt_restart: bool,
     waiters: Vec<oneshot::Sender<()>>,
     settled_revision: u64,
+    /// Snapshot retained at the last settle for `last_settled` scoops.
+    /// Invalidated by destructive takes (a retained snapshot pins every
+    /// component cell).
+    settled_snapshot: Option<Arc<Snapshot>>,
+    /// One-shot subscribers to fire (with the settled revision) when a
+    /// settle that performed work completes.
+    settle_watchers: Vec<oneshot::Sender<u64>>,
     normal_clean: bool,
     startup_ran: bool,
 }
@@ -193,9 +206,68 @@ pub struct BoundEntity {
 ///
 /// `ScoopBuilder` can be awaited directly to produce the requested result, or
 /// it can first receive runtime filter arguments with [`ScoopBuilder::args`].
+/// External handle to one existing entity, from [`Bowl::entity`].
+pub struct BowlEntity {
+    bowl: Bowl,
+    entity: Entity,
+}
+
+impl BowlEntity {
+    /// Queues a bundle onto this entity. Same epoch semantics as
+    /// [`Bowl::insert`], including `.preempting()`.
+    pub fn insert<B>(&self, bundle: B) -> InsertBuilder<B>
+    where
+        B: Bundle,
+    {
+        InsertBuilder {
+            bowl: self.bowl.clone(),
+            bundle,
+            preempting: false,
+            target: Some(self.entity),
+        }
+    }
+}
+
+/// Builder for [`Bowl::insert`]; awaiting it queues the bundle.
+pub struct InsertBuilder<B> {
+    bowl: Bowl,
+    bundle: B,
+    preempting: bool,
+    target: Option<Entity>,
+}
+
+impl<B> InsertBuilder<B> {
+    /// Forces an epoch boundary instead of deferring to the next epoch
+    /// (spec/epochs.md): in-flight read-only work is dropped, writers are
+    /// drained, and the restarted generation drains this input. Cooperative
+    /// (deferred) is the default because a new entity invalidates no
+    /// in-flight work.
+    pub fn preempting(mut self) -> Self {
+        self.preempting = true;
+        self
+    }
+}
+
+impl<B> IntoFuture for InsertBuilder<B>
+where
+    B: Bundle,
+{
+    type Output = InsertedEntity;
+    type IntoFuture = Pin<Box<dyn Future<Output = InsertedEntity> + Send>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(async move {
+            self.bowl
+                .insert_inner(self.bundle, self.preempting, self.target)
+                .await
+        })
+    }
+}
+
 pub struct ScoopBuilder<S> {
     bowl: Bowl,
     args: QueryArgs,
+    last_settled: bool,
     _marker: PhantomData<S>,
 }
 
@@ -218,6 +290,17 @@ impl<S> ScoopBuilder<S> {
         values.insert_into(&mut self.args, Some(TypeId::of::<Tag>()));
         self
     }
+
+    /// Reads the last settled state without waiting for the bowl to settle
+    /// (spec/epochs.md, stale reads). The pressure valve for
+    /// latency-tolerant readers — a live status view keeps rendering while
+    /// an epoch churns. Falls back to the current world when no settled
+    /// view has been retained yet (fresh bowl, or invalidated by a
+    /// destructive take).
+    pub fn last_settled(mut self) -> Self {
+        self.last_settled = true;
+        self
+    }
 }
 
 impl<S> ScoopBuilder<S>
@@ -225,10 +308,80 @@ where
     S: ExternalScoop,
 {
     async fn materialize(self) -> S::Output {
+        if self.last_settled {
+            let retained = {
+                let state = self.bowl.inner.state.lock().await;
+                state.settled_snapshot.as_ref().map(Arc::clone)
+            };
+            let snapshot = match retained {
+                Some(snapshot) => snapshot,
+                None => self.bowl.snapshot().await,
+            };
+            return S::materialize(&self.bowl, &snapshot, &self.args, None);
+        }
+
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
         let snapshot = self.bowl.snapshot().await;
         S::materialize(&self.bowl, &snapshot, &self.args, None)
+    }
+}
+
+impl<Q, F> ScoopBuilder<Query<Q, F>>
+where
+    Q: ExternalReadQueryParam + Send,
+    F: ExternalQueryFilter<Q> + Send,
+{
+    /// Reads only rows whose tracked components changed after `cursor` —
+    /// the delta source for state-sync replication
+    /// (spec/daemon-client.md, revision-cursor reads). Pair with
+    /// [`Bowl::settled_revision`] as the cursor source and
+    /// [`Bowl::next_settle`] to wake when new deltas exist.
+    pub async fn changed_since(self, cursor: u64) -> QueryResult<Q, F> {
+        self.bowl.settle().await;
+        self.bowl.drain_deferred_bound_cleanup().await;
+        let snapshot = self.bowl.snapshot().await;
+        let mut result =
+            QueryResult::<Q, F>::new(self.bowl.clone(), Arc::clone(&snapshot), &self.args, None);
+        result.retain_rows(|state| {
+            Q::deps(&snapshot, state)
+                .iter()
+                .any(|dep| dep.revision_raw() > cursor)
+        });
+        result
+    }
+
+    /// Destructively consumes the matched rows: materializes them, then
+    /// removes the row entities under the same state lock — the
+    /// deliver-then-delete contract for stream facts
+    /// (spec/daemon-client.md, drain reads). The returned result stays
+    /// readable from its snapshot after the removal.
+    pub async fn drain(self) -> QueryResult<Q, F>
+    where
+        Q::State: crate::query::EntityQueryState,
+    {
+        self.bowl.settle().await;
+        self.bowl.drain_deferred_bound_cleanup().await;
+
+        let mut state = self.bowl.inner.state.lock().await;
+        let snapshot = snapshot_locked(&mut state);
+        let result =
+            QueryResult::<Q, F>::new(self.bowl.clone(), Arc::clone(&snapshot), &self.args, None);
+
+        let was_settled = bowl_is_settled(&state);
+        let entities: Vec<Entity> = result
+            .rows()
+            .iter()
+            .map(|row| crate::query::EntityQueryState::entity(row))
+            .collect();
+        for entity in entities {
+            cleanup_bound_entity(&mut state, entity);
+        }
+        if was_settled {
+            state.settled_revision = state.world.revision_raw();
+        }
+
+        result
     }
 }
 
@@ -440,8 +593,9 @@ impl BoundEntity {
         let result = loop {
             let mut state = self.bowl.inner.state.lock().await;
             // Taking unwraps component cells, which must not be kept alive by
-            // the shared snapshot cache.
+            // the shared snapshot cache or the retained settled snapshot.
             state.snapshot_cache = None;
+            state.settled_snapshot = None;
 
             // In-flight snapshots and live query results can still share the
             // cells this take needs; removing a shared cell would lose the
@@ -601,6 +755,8 @@ impl Bowl {
                     preempt_restart: false,
                     waiters: Vec::new(),
                     settled_revision: 0,
+                    settled_snapshot: None,
+                    settle_watchers: Vec::new(),
                     normal_clean: true,
                     startup_ran: false,
                 }),
@@ -639,6 +795,7 @@ impl Bowl {
         &self,
         entity: Entity,
         original_revision: Option<crate::world::Revision>,
+        deferred: bool,
         f: F,
     ) -> Option<R>
     where
@@ -646,7 +803,7 @@ impl Bowl {
         F: FnOnce(&mut T) -> R,
     {
         let mut f = f;
-        let mut waiter = PreemptWaiter::new(self);
+        let mut waiter = PreemptWaiter::new(self, deferred);
         loop {
             {
                 let mut state = self.inner.state.lock().await;
@@ -678,13 +835,18 @@ impl Bowl {
         }
     }
 
-    pub(crate) async fn with_component_mut<T, F, R>(&self, entity: Entity, f: F) -> Option<R>
+    pub(crate) async fn with_component_mut<T, F, R>(
+        &self,
+        entity: Entity,
+        deferred: bool,
+        f: F,
+    ) -> Option<R>
     where
         T: Component,
         F: FnOnce(&mut T) -> R,
     {
         let mut f = f;
-        let mut waiter = PreemptWaiter::new(self);
+        let mut waiter = PreemptWaiter::new(self, deferred);
         loop {
             {
                 let mut state = self.inner.state.lock().await;
@@ -754,39 +916,105 @@ impl Bowl {
     ///
     /// The returned [`InsertedEntity`] remembers the generation that will
     /// include this bundle.
-    pub async fn insert<B>(&self, bundle: B) -> InsertedEntity
+    pub fn insert<B>(&self, bundle: B) -> InsertBuilder<B>
     where
         B: Bundle,
     {
-        let mut state = self.inner.state.lock().await;
-        let entity = B::singleton_key()
-            .map(|key| state.world.singleton_entity_or_spawn(key))
-            .unwrap_or_else(|| state.world.spawn_empty());
-        let mut commands = Vec::new();
-        bundle.queue(entity, &mut commands);
-        let next_generation = state.next_generation;
-        let generation = if state.settling > 0 {
-            // An epoch is actively driving: this input belongs to the next
-            // epoch (spec/epochs.md). No pending generation exists for it
-            // yet, so record the completed generation — `ensure_evaluated`
-            // must be trivially satisfied (a later target would hot-spin on
-            // a generation that never materializes); the caller's own
-            // settle drives the promoted work via its watermark.
-            state.input_seq += 1;
-            let tag = state.input_seq;
-            state
-                .deferred_inputs
-                .extend(commands.into_iter().map(|command| (tag, command)));
-            state.completed_generation
-        } else {
-            state.pending_inputs.extend(commands);
-            *state.pending_generation.get_or_insert(next_generation)
-        };
+        InsertBuilder {
+            bowl: self.clone(),
+            bundle,
+            preempting: false,
+            target: None,
+        }
+    }
 
-        InsertedEntity {
+    /// External access to an *existing* entity, mirroring
+    /// `commands.entity(..)` inside systems.
+    ///
+    /// The main use is targeted inserts (spec/daemon-client.md): clients
+    /// applying replicated deltas and long-running task adapters reporting
+    /// completion facts write onto entities they did not create.
+    pub fn entity(&self, entity: Entity) -> BowlEntity {
+        BowlEntity {
             bowl: self.clone(),
             entity,
-            generation,
+        }
+    }
+
+    async fn insert_inner<B>(
+        &self,
+        bundle: B,
+        preempting: bool,
+        target: Option<Entity>,
+    ) -> InsertedEntity
+    where
+        B: Bundle,
+    {
+        let (entity, mut commands) = {
+            let mut state = self.inner.state.lock().await;
+            let entity = target.unwrap_or_else(|| {
+                B::singleton_key()
+                    .map(|key| state.world.singleton_entity_or_spawn(key))
+                    .unwrap_or_else(|| state.world.spawn_empty())
+            });
+            let mut commands = Vec::new();
+            bundle.queue(entity, &mut commands);
+            let next_generation = state.next_generation;
+
+            if state.settling == 0 {
+                state.pending_inputs.extend(commands);
+                let generation = *state.pending_generation.get_or_insert(next_generation);
+                return InsertedEntity {
+                    bowl: self.clone(),
+                    entity,
+                    generation,
+                };
+            }
+
+            if !preempting {
+                // An epoch is actively driving: this input belongs to the
+                // next epoch (spec/epochs.md). No pending generation exists
+                // for it yet, so record the completed generation —
+                // `ensure_evaluated` must be trivially satisfied (a later
+                // target would hot-spin on a generation that never
+                // materializes); the caller's own settle drives the promoted
+                // work via its watermark.
+                state.input_seq += 1;
+                let tag = state.input_seq;
+                state
+                    .deferred_inputs
+                    .extend(commands.into_iter().map(|command| (tag, command)));
+                let generation = state.completed_generation;
+                return InsertedEntity {
+                    bowl: self.clone(),
+                    entity,
+                    generation,
+                };
+            }
+
+            (entity, commands)
+        };
+
+        // Preempting insert mid-epoch: force a boundary (cancel → queue →
+        // continue) so the restarted generation drains this input instead
+        // of the next epoch.
+        let mut waiter = PreemptWaiter::new(self, false);
+        loop {
+            {
+                let mut state = self.inner.state.lock().await;
+                if waiter.boundary_reached(&mut state) {
+                    waiter.finish();
+                    state.pending_inputs.append(&mut commands);
+                    let next_generation = state.next_generation;
+                    let generation = *state.pending_generation.get_or_insert(next_generation);
+                    return InsertedEntity {
+                        bowl: self.clone(),
+                        entity,
+                        generation,
+                    };
+                }
+            }
+            yield_once().await;
         }
     }
 
@@ -812,6 +1040,7 @@ impl Bowl {
         ScoopBuilder {
             bowl: self.clone(),
             args: QueryArgs::default(),
+            last_settled: false,
             _marker: PhantomData,
         }
     }
@@ -858,12 +1087,13 @@ impl Bowl {
         // guard bookkeeping is skipped entirely — settled reads keep their
         // single-lock cost.
         {
-            let state = self.inner.state.lock().await;
+            let mut state = self.inner.state.lock().await;
             if state.pending_generation.is_none()
                 && state.running_generation.is_none()
                 && state.world.revision_raw() == state.settled_revision
                 && state.deferred_inputs.is_empty()
             {
+                refresh_settled_snapshot(&mut state);
                 return;
             }
         }
@@ -884,6 +1114,7 @@ impl Bowl {
                     if promote_deferred_inputs(&mut state, epoch.watermark) {
                         continue;
                     }
+                    refresh_settled_snapshot(&mut state);
                     return;
                 }
 
@@ -903,6 +1134,7 @@ impl Bowl {
                     if promote_deferred_inputs(&mut state, epoch.watermark) {
                         continue;
                     }
+                    refresh_settled_snapshot(&mut state);
                     return;
                 }
                 clean && state.normal_clean
@@ -918,6 +1150,14 @@ impl Bowl {
                 let mut state = self.inner.state.lock().await;
                 if promote_deferred_inputs(&mut state, epoch.watermark) {
                     continue;
+                }
+                refresh_settled_snapshot(&mut state);
+                // This settle performed work: fire the settle watchers.
+                let settled_revision = state.settled_revision;
+                let watchers = std::mem::take(&mut state.settle_watchers);
+                drop(state);
+                for watcher in watchers {
+                    let _ = watcher.send(settled_revision);
                 }
                 return;
             }
@@ -1029,6 +1269,26 @@ impl Bowl {
         self.inner.state.lock().await.completed_generation
     }
 
+    /// Revision counter of the last settled state — the cursor source for
+    /// [`changed_since`](ScoopBuilder::changed_since) delta reads.
+    pub async fn settled_revision(&self) -> u64 {
+        self.inner.state.lock().await.settled_revision
+    }
+
+    /// Resolves after the next settle that performed work, with the settled
+    /// revision — the push signal for publishers
+    /// (spec/daemon-client.md, settle notifications). No-op settles (reads
+    /// of an already-settled bowl) do not fire it.
+    pub async fn next_settle(&self) -> u64 {
+        let receiver = {
+            let mut state = self.inner.state.lock().await;
+            let (sender, receiver) = oneshot::channel();
+            state.settle_watchers.push(sender);
+            receiver
+        };
+        receiver.await.unwrap_or(0)
+    }
+
     /// Returns the current world snapshot, sharing the cached one when the
     /// world has not changed since it was taken.
     ///
@@ -1036,17 +1296,7 @@ impl Bowl {
     /// snapshot is a structural clone of the store maps, not of user data.
     async fn snapshot(&self) -> Arc<Snapshot> {
         let mut state = self.inner.state.lock().await;
-        let key = snapshot_key(&state.world);
-
-        if let Some((cached_key, snapshot)) = &state.snapshot_cache {
-            if *cached_key == key {
-                return Arc::clone(snapshot);
-            }
-        }
-
-        let snapshot = Arc::new(state.world.clone());
-        state.snapshot_cache = Some((key, Arc::clone(&snapshot)));
-        snapshot
+        snapshot_locked(&mut state)
     }
 
     /// Suspends until any generation completes, then lets the caller re-check
@@ -1113,9 +1363,20 @@ impl Bowl {
 
         let mut phases: &[Phase] = Phase::ordered(startup);
         let mut index = 0;
+        let mut preemptions: u32 = 0;
         while index < phases.len() {
+            // Past the budget, preemptive writes degrade to deferred: the
+            // runner stops honoring boundaries mid-phase and waiters apply
+            // at the generation's natural end.
+            let allow_preempt = preemptions < PREEMPTION_BUDGET;
             match self
-                .run_phase_streaming(&systems, phases[index], guard.memo_mut(), commit_budget)
+                .run_phase_streaming(
+                    &systems,
+                    phases[index],
+                    guard.memo_mut(),
+                    commit_budget,
+                    allow_preempt,
+                )
                 .await
             {
                 PhaseRun::Completed(changed) => {
@@ -1124,6 +1385,7 @@ impl Bowl {
                 }
                 PhaseRun::Preempted(changed) => {
                     normal_phase_changed |= changed;
+                    preemptions += 1;
                     {
                         let mut state = self.inner.state.lock().await;
                         state.preempt_restart = false;
@@ -1164,6 +1426,7 @@ impl Bowl {
         phase: Phase,
         memo: &mut HashMap<SystemInvocation, MemoEntry>,
         commit_budget: &mut CommitBudget,
+        allow_preempt: bool,
     ) -> PhaseRun {
         let mut phase_changed = false;
         let mut running = HashSet::new();
@@ -1177,11 +1440,12 @@ impl Bowl {
         let mut deferred_conflicts = false;
 
         loop {
-            if self
-                .inner
-                .preempt_waiters
-                .load(atomic::Ordering::SeqCst)
-                > 0
+            if allow_preempt
+                && self
+                    .inner
+                    .preempt_waiters
+                    .load(atomic::Ordering::SeqCst)
+                    > 0
             {
                 // Tiered preemption (spec/epochs.md): drop read-only
                 // invocations (their buffered commands vanish unapplied),
@@ -1248,7 +1512,10 @@ impl Bowl {
                 }
             }
 
-            let first = match self.await_next_run(&mut read_runs, &mut write_runs).await {
+            let first = match self
+                .await_next_run(&mut read_runs, &mut write_runs, allow_preempt)
+                .await
+            {
                 RunEvent::Preempt => {
                     needs_plan = false;
                     continue;
@@ -1302,6 +1569,7 @@ impl Bowl {
         &self,
         read_runs: &mut FuturesUnordered<F>,
         write_runs: &mut FuturesUnordered<F>,
+        allow_preempt: bool,
     ) -> RunEvent
     where
         F: Future<Output = (SystemInvocation, SystemRun)>,
@@ -1309,13 +1577,15 @@ impl Bowl {
         futures::future::poll_fn(|context| {
             // AtomicWaker protocol: check, register, re-check — a mutator
             // registering between the checks wakes the registered waker.
-            let waiters = &self.inner.preempt_waiters;
-            if waiters.load(atomic::Ordering::SeqCst) > 0 {
-                return std::task::Poll::Ready(RunEvent::Preempt);
-            }
-            self.inner.preempt_signal.register(context.waker());
-            if waiters.load(atomic::Ordering::SeqCst) > 0 {
-                return std::task::Poll::Ready(RunEvent::Preempt);
+            if allow_preempt {
+                let waiters = &self.inner.preempt_waiters;
+                if waiters.load(atomic::Ordering::SeqCst) > 0 {
+                    return std::task::Poll::Ready(RunEvent::Preempt);
+                }
+                self.inner.preempt_signal.register(context.waker());
+                if waiters.load(atomic::Ordering::SeqCst) > 0 {
+                    return std::task::Poll::Ready(RunEvent::Preempt);
+                }
             }
 
             let read = read_runs.poll_next_unpin(context);
@@ -1428,18 +1698,24 @@ enum RunEvent {
 struct PreemptWaiter {
     bowl: Bowl,
     registered: bool,
+    /// A deferred writer never requests preemption: it waits for a natural
+    /// boundary (between generations, the epoch's end, or a window opened
+    /// by someone else's preemption).
+    deferred: bool,
 }
 
 impl PreemptWaiter {
-    fn new(bowl: &Bowl) -> Self {
+    fn new(bowl: &Bowl, deferred: bool) -> Self {
         Self {
             bowl: bowl.clone(),
             registered: false,
+            deferred,
         }
     }
 
     /// Whether the caller is at a valid boundary to apply an external
-    /// mutation; registers it as a preempt waiter otherwise.
+    /// mutation; registers it as a preempt waiter otherwise (unless
+    /// deferred).
     fn boundary_reached(&mut self, state: &mut State) -> bool {
         if state.settling == 0 && state.running_generation.is_none() {
             // Idle bowl: plain live mutation.
@@ -1453,6 +1729,11 @@ impl PreemptWaiter {
             // fresh derivations plan.
             state.preempt_restart = true;
             return true;
+        }
+
+        if self.deferred {
+            // Wait for the boundary without forcing one.
+            return false;
         }
 
         // Mid-generation: request preemption and wait for the boundary.
@@ -1526,6 +1807,27 @@ impl Drop for EpochGuard {
             promote_deferred_inputs(&mut state, u64::MAX);
         }
     }
+}
+
+/// Returns the current world snapshot under an already-held state lock,
+/// sharing the cached one when the world has not changed.
+fn snapshot_locked(state: &mut State) -> Arc<Snapshot> {
+    let key = snapshot_key(&state.world);
+    if let Some((cached_key, snapshot)) = &state.snapshot_cache {
+        if *cached_key == key {
+            return Arc::clone(snapshot);
+        }
+    }
+    let snapshot = Arc::new(state.world.clone());
+    state.snapshot_cache = Some((key, Arc::clone(&snapshot)));
+    snapshot
+}
+
+/// Retains a snapshot of the settled world for `last_settled` scoops,
+/// sharing the cached snapshot when the world has not moved.
+fn refresh_settled_snapshot(state: &mut State) {
+    let snapshot = snapshot_locked(state);
+    state.settled_snapshot = Some(snapshot);
 }
 
 /// Promotes deferred inputs whose arrival tag is covered by `watermark`.
@@ -3478,6 +3780,377 @@ mod tests {
         });
     }
 
+    static DEF_HOLD: AtomicBool = AtomicBool::new(false);
+    static DEF_STARTED: AtomicUsize = AtomicUsize::new(0);
+    static DEF_COMPLETED: AtomicUsize = AtomicUsize::new(0);
+    static DEF_ANSWERS: StdMutex<Vec<(String, bool)>> = StdMutex::new(Vec::new());
+
+    async fn def_startup_retract(
+        query: Query<Entity, With<EpochEphemeral>>,
+        mut commands: Commands,
+    ) {
+        commands.remove(query.item());
+    }
+
+    async fn def_consume(
+        _: Query<Entity, With<EpochReady>>,
+        query: Query<(Entity, &EpochAsk)>,
+        defs: View<'_, (Entity, &EpochDef)>,
+    ) {
+        let (_entity, ask) = query.item();
+        DEF_STARTED.fetch_add(1, Ordering::SeqCst);
+        while DEF_HOLD.load(Ordering::SeqCst) {
+            yield_once().await;
+        }
+        let found = defs.iter().any(|(_, def)| def.0 == ask.0);
+        DEF_ANSWERS.lock().unwrap().push((ask.0.clone(), found));
+        DEF_COMPLETED.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// `.deferred()` opts a mutation out of preemption: in-flight work is
+    /// never dropped; the write waits for a natural boundary and the
+    /// following derivations reflect it.
+    #[test]
+    fn deferred_mut_waits_for_the_natural_boundary() {
+        use std::future::IntoFuture;
+        use std::task::Context;
+
+        DEF_HOLD.store(false, Ordering::SeqCst);
+        DEF_STARTED.store(0, Ordering::SeqCst);
+        DEF_COMPLETED.store(0, Ordering::SeqCst);
+        DEF_ANSWERS.lock().unwrap().clear();
+
+        let bowl = Bowl::new();
+        let handle = block_on(async {
+            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands| {
+                commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
+            }))
+            .await;
+            bowl.add_system(def_consume).await;
+            // Boundary writes (deferred included) restart through Startup;
+            // the marker pattern registers its retraction there so gated
+            // consumers rerun against the post-write derivations.
+            bowl.add_system(def_startup_retract.run_during(Phase::Startup))
+                .await;
+            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((EpochSrc("old".to_string()),)).await;
+            bowl.insert((EpochAsk("new".to_string()),)).await;
+
+            bowl.scoop::<Query<(Entity, Mut<EpochSrc>)>>()
+                .await
+                .collect()
+                .pop()
+                .unwrap()
+                .1
+        });
+        assert_eq!(DEF_COMPLETED.load(Ordering::SeqCst), 1);
+
+        DEF_HOLD.store(true, Ordering::SeqCst);
+        block_on(bowl.insert((D(1),)).into_future());
+
+        let waker = futures::task::noop_waker();
+        let mut context = Context::from_waker(&waker);
+        let mut driver = Box::pin(bowl.scoop::<Query<(Entity, &EpochDef)>>().into_future());
+        for _ in 0..1000 {
+            if DEF_STARTED.load(Ordering::SeqCst) >= 2 {
+                break;
+            }
+            assert!(driver.as_mut().poll(&mut context).is_pending());
+        }
+        assert_eq!(DEF_STARTED.load(Ordering::SeqCst), 2);
+
+        let mutator = std::thread::spawn(move || {
+            block_on(
+                handle
+                    .deferred()
+                    .with_latest(|src| src.0 = "new".to_string()),
+            )
+        });
+
+        DEF_HOLD.store(false, Ordering::SeqCst);
+        block_on(driver);
+        mutator.join().unwrap();
+        block_on(bowl.scoop::<Query<(Entity, &EpochDef)>>().into_future());
+
+        assert_eq!(
+            DEF_STARTED.load(Ordering::SeqCst),
+            DEF_COMPLETED.load(Ordering::SeqCst),
+            "a deferred write must never drop in-flight work"
+        );
+        let last = DEF_ANSWERS.lock().unwrap().last().cloned();
+        assert_eq!(
+            last,
+            Some(("new".to_string(), true)),
+            "the write must land at a boundary and re-derive"
+        );
+    }
+
+    static PI_HOLD: AtomicBool = AtomicBool::new(false);
+    static PI_STARTED: AtomicUsize = AtomicUsize::new(0);
+    static PI_COMPLETED: AtomicUsize = AtomicUsize::new(0);
+
+    async fn pi_reader(query: Query<(Entity, &D)>, mut commands: Commands) {
+        let (entity, d) = query.item();
+        PI_STARTED.fetch_add(1, Ordering::SeqCst);
+        while PI_HOLD.load(Ordering::SeqCst) {
+            yield_once().await;
+        }
+        PI_COMPLETED.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(Count(d.0 as usize));
+    }
+
+    /// `.preempting()` on an insert forces the epoch boundary: in-flight
+    /// read-only work is dropped and the input joins the current epoch
+    /// instead of waiting for the next one.
+    #[test]
+    fn preempting_insert_forces_the_boundary() {
+        use std::future::IntoFuture;
+        use std::task::Context;
+
+        PI_HOLD.store(false, Ordering::SeqCst);
+        PI_STARTED.store(0, Ordering::SeqCst);
+        PI_COMPLETED.store(0, Ordering::SeqCst);
+
+        let bowl = Bowl::new();
+        block_on(async {
+            bowl.add_system(pi_reader).await;
+            bowl.add_system(make_b_after_yield).await;
+            bowl.insert((D(5),)).await;
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+        });
+        assert_eq!(PI_COMPLETED.load(Ordering::SeqCst), 1);
+
+        PI_HOLD.store(true, Ordering::SeqCst);
+        block_on(bowl.insert((D(6),)).into_future());
+
+        let waker = futures::task::noop_waker();
+        let mut context = Context::from_waker(&waker);
+        let mut driver = Box::pin(bowl.scoop::<Query<(Entity, &B)>>().into_future());
+        for _ in 0..1000 {
+            if PI_STARTED.load(Ordering::SeqCst) >= 2 {
+                break;
+            }
+            assert!(driver.as_mut().poll(&mut context).is_pending());
+        }
+        assert_eq!(PI_STARTED.load(Ordering::SeqCst), 2);
+
+        let inserter = std::thread::spawn({
+            let bowl = bowl.clone();
+            move || block_on(bowl.insert((A(9),)).preempting().into_future())
+        });
+
+        // The dropped reader replans in the restarted phases and suspends
+        // again; then release it and finish the epoch. Sleep between polls
+        // so the inserter thread gets scheduled and registers its
+        // preemption before the loop gives up.
+        for _ in 0..10_000 {
+            if PI_STARTED.load(Ordering::SeqCst) >= 3 {
+                break;
+            }
+            if driver.as_mut().poll(&mut context).is_ready() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_micros(100));
+        }
+        PI_HOLD.store(false, Ordering::SeqCst);
+        let rows = block_on(driver);
+        inserter.join().unwrap();
+
+        assert_eq!(
+            PI_STARTED.load(Ordering::SeqCst),
+            3,
+            "the in-flight reader must be dropped and replanned"
+        );
+        assert_eq!(
+            PI_COMPLETED.load(Ordering::SeqCst),
+            2,
+            "the dropped attempt must never complete"
+        );
+        assert!(
+            rows.collect().iter().any(|(_, b)| b.0 == 10),
+            "the preempting insert must be processed within this epoch"
+        );
+    }
+
+    static LS_HOLD: AtomicBool = AtomicBool::new(false);
+    static LS_STARTED: AtomicUsize = AtomicUsize::new(0);
+
+    async fn ls_derive(query: Query<(Entity, &D)>, mut commands: Commands) {
+        let (entity, d) = query.item();
+        LS_STARTED.fetch_add(1, Ordering::SeqCst);
+        while LS_HOLD.load(Ordering::SeqCst) {
+            yield_once().await;
+        }
+        commands.insert((DerivedFrom::new(entity), Sum(d.0)));
+    }
+
+    /// `.last_settled()` reads the retained settled view without waiting
+    /// for the in-flight epoch — the stale-read pressure valve.
+    #[test]
+    fn last_settled_scoop_reads_without_waiting() {
+        use std::future::IntoFuture;
+        use std::task::Context;
+
+        LS_HOLD.store(false, Ordering::SeqCst);
+        LS_STARTED.store(0, Ordering::SeqCst);
+
+        let bowl = Bowl::new();
+        block_on(async {
+            bowl.add_system(ls_derive).await;
+            bowl.insert((D(1),)).await;
+        });
+        assert_eq!(
+            block_on(collect_sums(&bowl)),
+            [1].into_iter().collect::<std::collections::BTreeSet<_>>()
+        );
+
+        LS_HOLD.store(true, Ordering::SeqCst);
+        block_on(bowl.insert((D(2),)).into_future());
+
+        let waker = futures::task::noop_waker();
+        let mut context = Context::from_waker(&waker);
+        let mut driver = Box::pin(bowl.scoop::<Query<(Entity, &Sum)>>().into_future());
+        for _ in 0..1000 {
+            if LS_STARTED.load(Ordering::SeqCst) >= 2 {
+                break;
+            }
+            assert!(driver.as_mut().poll(&mut context).is_pending());
+        }
+        assert_eq!(LS_STARTED.load(Ordering::SeqCst), 2);
+
+        // A regular scoop would wait for the suspended epoch forever; the
+        // stale read returns the previous settled view immediately.
+        let stale = block_on(
+            bowl.scoop::<Query<(Entity, &Sum)>>()
+                .last_settled()
+                .into_future(),
+        );
+        let values: std::collections::BTreeSet<u32> =
+            stale.collect().into_iter().map(|(_, sum)| sum.0).collect();
+        assert_eq!(values, [1].into_iter().collect());
+
+        LS_HOLD.store(false, Ordering::SeqCst);
+        block_on(driver);
+        assert_eq!(
+            block_on(collect_sums(&bowl)),
+            [1, 2].into_iter().collect::<std::collections::BTreeSet<_>>()
+        );
+    }
+
+    /// spec/daemon-client.md, revision-cursor reads: the delta source for
+    /// state-sync replication.
+    #[test]
+    fn changed_since_reads_only_rows_past_the_cursor() {
+        block_on(async {
+            let bowl = Bowl::new();
+            let first = bowl.insert((MutableA(1),)).await;
+            bowl.insert((MutableA(2),)).await;
+            bowl.scoop::<Query<(Entity, &MutableA)>>().await;
+
+            let cursor = bowl.settled_revision().await;
+
+            let handle = bowl
+                .scoop::<Query<(Entity, Mut<MutableA>)>>()
+                .await
+                .collect()
+                .into_iter()
+                .find(|(entity, _)| *entity == first.entity())
+                .unwrap()
+                .1;
+            handle.with_latest(|a| a.0 = 9).await;
+
+            let delta = bowl
+                .scoop::<Query<(Entity, &MutableA)>>()
+                .changed_since(cursor)
+                .await;
+            let rows = delta.collect();
+            assert_eq!(rows.len(), 1, "only the mutated row is past the cursor");
+            assert_eq!(rows[0].1.0, 9);
+
+            // A fresh cursor sees nothing.
+            let cursor = bowl.settled_revision().await;
+            let delta = bowl
+                .scoop::<Query<(Entity, &MutableA)>>()
+                .changed_since(cursor)
+                .await;
+            assert_eq!(delta.len(), 0);
+        });
+    }
+
+    /// spec/daemon-client.md, external targeted inserts: components land on
+    /// an entity the caller did not create in this call.
+    #[test]
+    fn entity_insert_targets_an_existing_entity() {
+        block_on(async {
+            let bowl = Bowl::new();
+            let inserted = bowl.insert((A(7),)).await;
+            bowl.entity(inserted.entity()).insert((Note,)).await;
+
+            let rows = bowl
+                .scoop::<Query<(Entity, &A), With<Note>>>()
+                .await
+                .collect()
+                .len();
+            assert_eq!(rows, 1);
+        });
+    }
+
+    /// spec/daemon-client.md, drain reads: deliver-then-delete stream
+    /// semantics — the result stays readable, the daemon keeps no backlog.
+    #[test]
+    fn drain_consumes_matched_rows() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.insert((C(1), Note)).await;
+            bowl.insert((C(2), Note)).await;
+            bowl.insert((C(3),)).await;
+
+            let drained = bowl
+                .scoop::<Query<(Entity, &C), With<Note>>>()
+                .drain()
+                .await;
+            let values: std::collections::BTreeSet<u32> =
+                drained.collect().into_iter().map(|(_, c)| c.0).collect();
+            assert_eq!(values, [1, 2].into_iter().collect());
+
+            // The drained rows are gone; the unmatched row survives.
+            assert_eq!(
+                bowl.scoop::<Query<(Entity, &C), With<Note>>>().await.len(),
+                0
+            );
+            assert_eq!(bowl.scoop::<Query<(Entity, &C)>>().await.len(), 1);
+        });
+    }
+
+    /// spec/daemon-client.md, settle notifications: a publisher wakes when
+    /// a settle that performed work completes.
+    #[test]
+    fn next_settle_fires_after_working_settles() {
+        use std::task::Context;
+
+        let bowl = Bowl::new();
+        block_on(async {
+            bowl.add_system(make_b_after_yield).await;
+        });
+
+        // Register the watcher deterministically (first poll registers),
+        // then drive a working settle and await the notification.
+        let waker = futures::task::noop_waker();
+        let mut context = Context::from_waker(&waker);
+        let mut notify = Box::pin(bowl.next_settle());
+        assert!(notify.as_mut().poll(&mut context).is_pending());
+
+        block_on(async {
+            bowl.insert((A(1),)).await;
+            bowl.scoop::<Query<(Entity, &B)>>().await;
+        });
+
+        let revision = block_on(notify);
+        assert!(revision > 0);
+    }
+
     /// A live query result shares the answer's component cell. Taking used to
     /// fail spuriously (and destroy the value) when any snapshot still pinned
     /// the cell; it must instead wait for the holder to drop.
@@ -3657,6 +4330,71 @@ mod tests {
             bowl.insert((B(3), FingerprintedRank(9))).await;
 
             assert_eq!(collect_sums(&bowl).await, [1021].into_iter().collect());
+        });
+    }
+
+    struct KeyB(u32);
+    impl Component for KeyB {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(crate::hash_component(&self.0))
+        }
+    }
+
+    async fn compound_key_join(
+        namespaces: Query<(Entity, &A, &FingerprintedRank, &KeyB)>,
+        members: Query<(Entity, &B), Where<And<Eq<FingerprintedRank>, Eq<KeyB>>>>,
+        mut commands: Commands,
+    ) {
+        let (namespace, a, _, _) = namespaces.item();
+        let (member, b) = members.item();
+        commands.insert((
+            DerivedFrom::many([namespace, member]),
+            Sum(a.0 * 100 + b.0),
+        ));
+    }
+
+    /// `Where<And<Eq<A>, Eq<B>>>` is a compound-key join: a pair forms only
+    /// when every key matches its provider (overload-resolution shape).
+    #[test]
+    fn compound_bound_join_requires_every_key_to_match() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(compound_key_join).await;
+
+            bowl.insert((A(1), FingerprintedRank(1), KeyB(1))).await;
+            bowl.insert((A(2), FingerprintedRank(1), KeyB(2))).await;
+            bowl.insert((B(10), FingerprintedRank(1), KeyB(1))).await;
+            bowl.insert((B(20), FingerprintedRank(1), KeyB(2))).await;
+            bowl.insert((B(30), FingerprintedRank(2), KeyB(1))).await;
+
+            assert_eq!(
+                collect_sums(&bowl).await,
+                [110, 220].into_iter().collect(),
+                "rows matching only one of two keys must not pair"
+            );
+        });
+    }
+
+    async fn and_filtered_derive(
+        query: Query<(Entity, &A), And<With<Note>, Without<C>>>,
+        mut commands: Commands,
+    ) {
+        let (entity, a) = query.item();
+        commands.insert((DerivedFrom::new(entity), Sum(a.0)));
+    }
+
+    /// Plain filter conjunction: `And<With<..>, Without<..>>` on one query.
+    #[test]
+    fn and_composes_plain_filters() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(and_filtered_derive).await;
+
+            bowl.insert((A(1), Note)).await;
+            bowl.insert((A(2), Note, C(0))).await;
+            bowl.insert((A(3),)).await;
+
+            assert_eq!(collect_sums(&bowl).await, [1].into_iter().collect());
         });
     }
 
@@ -3866,7 +4604,7 @@ mod tests {
         assert_eq!(FREEZE_RUNS.load(Ordering::SeqCst), 1);
 
         // External input arriving mid-epoch.
-        block_on(bowl.insert((A(2),)));
+        block_on(bowl.insert((A(2),)).into_future());
 
         FREEZE_HOLD.store(false, Ordering::SeqCst);
         let rows = block_on(driver).len();
@@ -3948,8 +4686,8 @@ mod tests {
         assert!(LIE_CONSUMER_RUNNING.load(Ordering::SeqCst));
 
         // A source and a question about it arrive together, mid-epoch.
-        block_on(bowl.insert((EpochSrc("gamma".to_string()),)));
-        block_on(bowl.insert((EpochAsk("gamma".to_string()),)));
+        block_on(bowl.insert((EpochSrc("gamma".to_string()),)).into_future());
+        block_on(bowl.insert((EpochAsk("gamma".to_string()),)).into_future());
 
         LIE_HOLD.store(false, Ordering::SeqCst);
         block_on(driver);
@@ -4045,7 +4783,7 @@ mod tests {
         // Open a second epoch and suspend its gated consumer inside the
         // marker generation.
         PREEMPT_HOLD.store(true, Ordering::SeqCst);
-        block_on(bowl.insert((C(7),)));
+        block_on(bowl.insert((C(7),)).into_future());
 
         let waker = futures::task::noop_waker();
         let mut context = Context::from_waker(&waker);
@@ -4065,15 +4803,18 @@ mod tests {
         });
 
         // The restarted epoch replans the consumer with a fresh marker; the
-        // dropped attempt never completes. (Bounded loop so the current
-        // engine fails the asserts instead of hanging.)
-        for _ in 0..2000 {
+        // dropped attempt never completes. Sleep between polls so the
+        // mutator thread gets scheduled and registers its preemption before
+        // the loop gives up (bounded so a regression fails instead of
+        // hanging).
+        for _ in 0..10_000 {
             if PREEMPT_STARTED.load(Ordering::SeqCst) >= 3 {
                 break;
             }
             if driver.as_mut().poll(&mut context).is_ready() {
                 break;
             }
+            std::thread::sleep(std::time::Duration::from_micros(100));
         }
         PREEMPT_HOLD.store(false, Ordering::SeqCst);
         block_on(driver);

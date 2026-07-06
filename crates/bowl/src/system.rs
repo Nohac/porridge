@@ -143,7 +143,8 @@ struct PlannedInvocation<State> {
 /// Tuple params form a cartesian product of their state sets. This lets `Query`
 /// drive per-row execution while ambient params like `View` and `Commands`
 /// participate in the same machinery without special role flags.
-pub(crate) trait SystemParam {
+#[doc(hidden)]
+pub trait SystemParam {
     type State: Clone + Send;
     type Item<'a>: Send;
 
@@ -166,14 +167,15 @@ pub(crate) trait SystemParam {
     fn always_run() -> bool {
         false
     }
-    /// Join key a bound `Where` filter on this param requires, with the
-    /// row's stamped key fingerprint.
-    fn bound_key(_snapshot: &Snapshot, _state: &Self::State) -> Option<(TypeId, Option<u64>)> {
-        None
+    /// Join keys a bound `Where` filter on this param requires, with the
+    /// row's stamped fingerprint per key. Compound filters return several;
+    /// every key must match its provider for the row to join.
+    fn bound_keys(_snapshot: &Snapshot, _state: &Self::State) -> Vec<(TypeId, Option<u64>)> {
+        Vec::new()
     }
-    /// Static form of [`SystemParam::bound_key`] (key type and display name).
-    fn bound_key_type() -> Option<(TypeId, &'static str)> {
-        None
+    /// Static form of [`SystemParam::bound_keys`] (key types and names).
+    fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        Vec::new()
     }
     /// Whether this param's item reads component `key` (bound join provider).
     fn provides_key(_key: TypeId) -> bool {
@@ -201,7 +203,7 @@ pub(crate) trait SystemParam {
     /// registration time.
     fn validate_bindings() -> Result<(), String> {
         Self::validate_local()?;
-        match Self::bound_key_type() {
+        match Self::bound_key_types().first() {
             Some((_, name)) => Err(format!(
                 "bound `Where<Eq<{name}>>` needs exactly one sibling query param reading `&{name}`; found none"
             )),
@@ -244,12 +246,12 @@ where
         Query::new(Q::fetch(bowl, snapshot, state, guards))
     }
 
-    fn bound_key(snapshot: &Snapshot, state: &Self::State) -> Option<(TypeId, Option<u64>)> {
-        Filter::bound_key(snapshot, state)
+    fn bound_keys(snapshot: &Snapshot, state: &Self::State) -> Vec<(TypeId, Option<u64>)> {
+        Filter::bound_keys(snapshot, state)
     }
 
-    fn bound_key_type() -> Option<(TypeId, &'static str)> {
-        Filter::bound_key_type()
+    fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        Filter::bound_key_types()
     }
 
     fn provides_key(key: TypeId) -> bool {
@@ -306,7 +308,7 @@ where
     fn validate_local() -> Result<(), String> {
         // A view has no row state to bind a join key from; accepting the
         // filter would silently degrade `Eq` to `With` semantics.
-        match Filter::bound_key_type() {
+        match Filter::bound_key_types().first() {
             Some((_, name)) => Err(format!(
                 "`View` does not support bound `Where<Eq<{name}>>` yet; bind on a `Query` and filter view rows inside the system"
             )),
@@ -413,7 +415,7 @@ macro_rules! impl_system_param_tuple {
 
                 for_each_state!(states, (); $($P),*);
 
-                let has_bound = false $(|| $P::bound_key_type().is_some())*;
+                let has_bound = false $(|| !$P::bound_key_types().is_empty())*;
                 if has_bound {
                     states.retain(|state| Self::binding_matches(snapshot, state));
                 }
@@ -428,7 +430,7 @@ macro_rules! impl_system_param_tuple {
                 let mut bound: Vec<(usize, TypeId, Option<u64>)> = Vec::new();
                 let mut index = 0usize;
                 $(
-                    if let Some((key, fingerprint)) = $P::bound_key(snapshot, $P) {
+                    for (key, fingerprint) in $P::bound_keys(snapshot, $P) {
                         bound.push((index, key, fingerprint));
                     }
                     index += 1;
@@ -474,7 +476,7 @@ macro_rules! impl_system_param_tuple {
                 let mut bound: Vec<(usize, TypeId, &'static str)> = Vec::new();
                 let mut index = 0usize;
                 $(
-                    if let Some((key, name)) = $P::bound_key_type() {
+                    for (key, name) in $P::bound_key_types() {
                         bound.push((index, key, name));
                     }
                     index += 1;

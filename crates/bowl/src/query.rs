@@ -12,7 +12,8 @@ use crate::{
     world::{ComponentMut, ComponentRef, Revision, Snapshot, World},
 };
 
-pub(crate) type GuardStore = Vec<Box<dyn Any + Send>>;
+#[doc(hidden)]
+pub type GuardStore = Vec<Box<dyn Any + Send>>;
 
 /// A tracked system input.
 ///
@@ -240,6 +241,7 @@ pub struct Mut<T> {
     bowl: Bowl,
     entity: Entity,
     revision: Option<Revision>,
+    deferred: bool,
     _marker: PhantomData<T>,
 }
 
@@ -249,6 +251,7 @@ impl<T> Mut<T> {
             bowl,
             entity,
             revision,
+            deferred: false,
             _marker: PhantomData,
         }
     }
@@ -256,6 +259,15 @@ impl<T> Mut<T> {
     /// Entity this access handle targets.
     pub fn entity(&self) -> Entity {
         self.entity
+    }
+
+    /// Opts this handle out of preemption (spec/epochs.md): the mutation
+    /// applies at the natural epoch boundary instead of cancelling in-flight
+    /// work to force one. The default is preemptive — the data being derived
+    /// just changed, so finishing derivations from the old value is waste.
+    pub fn deferred(mut self) -> Self {
+        self.deferred = true;
+        self
     }
 }
 
@@ -274,7 +286,7 @@ where
         F: FnOnce(&mut T) -> R,
     {
         self.bowl
-            .with_component_original::<T, F, R>(self.entity, self.revision, f)
+            .with_component_original::<T, F, R>(self.entity, self.revision, self.deferred, f)
             .await
     }
 
@@ -288,7 +300,7 @@ where
         F: FnOnce(&mut T) -> R,
     {
         self.bowl
-            .with_component_mut::<T, F, R>(self.entity, f)
+            .with_component_mut::<T, F, R>(self.entity, self.deferred, f)
             .await
     }
 }
@@ -539,6 +551,16 @@ where
         }
     }
 
+    /// Row states backing this result.
+    pub(crate) fn rows(&self) -> &[Q::State] {
+        &self.rows
+    }
+
+    /// Keeps only rows matching the predicate.
+    pub(crate) fn retain_rows(&mut self, f: impl FnMut(&Q::State) -> bool) {
+        self.rows.retain(f);
+    }
+
     /// Fetches all rows from the owned snapshot.
     ///
     /// This returns borrowed values. Keep the [`QueryResult`] alive while using
@@ -655,6 +677,11 @@ pub struct Dep {
 }
 
 impl Dep {
+    /// Raw revision counter of this dependency, for cursor comparisons.
+    pub(crate) fn revision_raw(&self) -> u64 {
+        self.revision.0
+    }
+
     pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
         snapshot.revision_by_type(self.type_id, self.entity) == Some(self.revision)
     }
@@ -1247,16 +1274,18 @@ pub trait QueryFilter<Q: QueryParam> {
     fn entity_candidates(_snapshot: &Snapshot) -> Option<Vec<Entity>> {
         None
     }
-    /// Join key a bound `Where` filter requires: the key component's type and
-    /// this row's stamped key fingerprint. `None` means this filter does not
-    /// bind to sibling system params.
-    fn bound_key(_snapshot: &Snapshot, _state: &Q::State) -> Option<(TypeId, Option<u64>)> {
-        None
+    /// Join keys a bound `Where` filter requires: each key component's type
+    /// and this row's stamped fingerprint for it. Empty means this filter
+    /// does not bind to sibling system params. Compound keys
+    /// (`Where<And<Eq<A>, Eq<B>>>`) return several entries; every one must
+    /// match its provider for the row to join.
+    fn bound_keys(_snapshot: &Snapshot, _state: &Q::State) -> Vec<(TypeId, Option<u64>)> {
+        Vec::new()
     }
-    /// Static form of [`QueryFilter::bound_key`] (key type and display name),
-    /// used for registration-time binding validation.
-    fn bound_key_type() -> Option<(TypeId, &'static str)> {
-        None
+    /// Static form of [`QueryFilter::bound_keys`] (key types and display
+    /// names), used for registration-time binding validation.
+    fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        Vec::new()
     }
 }
 
@@ -1338,12 +1367,110 @@ where
         Some(snapshot.entities_with::<T>())
     }
 
-    fn bound_key(snapshot: &Snapshot, state: &Q::State) -> Option<(TypeId, Option<u64>)> {
-        Some((TypeId::of::<T>(), snapshot.fingerprint::<T>(state.entity())))
+    fn bound_keys(snapshot: &Snapshot, state: &Q::State) -> Vec<(TypeId, Option<u64>)> {
+        vec![(TypeId::of::<T>(), snapshot.fingerprint::<T>(state.entity()))]
     }
 
-    fn bound_key_type() -> Option<(TypeId, &'static str)> {
-        Some((TypeId::of::<T>(), std::any::type_name::<T>()))
+    fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        vec![(TypeId::of::<T>(), std::any::type_name::<T>())]
+    }
+}
+
+/// Conjunction of two system-side filters.
+///
+/// Composes any two filters (`And<With<A>, Without<B>>`) including bound
+/// joins: `Where<And<Eq<A>, Eq<B>>>` is a compound-key join — the row pairs
+/// with the sibling only when every key matches its provider.
+impl<Q, L, R> QueryFilter<Q> for And<L, R>
+where
+    Q: QueryParam,
+    L: QueryFilter<Q>,
+    R: QueryFilter<Q>,
+{
+    fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+        L::matches(snapshot, state) && R::matches(snapshot, state)
+    }
+
+    fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
+        let mut deps = L::deps(snapshot, state);
+        deps.extend(R::deps(snapshot, state));
+        deps
+    }
+
+    fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
+        let mut access = L::access(snapshot, state);
+        access.extend(R::access(snapshot, state));
+        access
+    }
+
+    fn access_all() -> Vec<Access> {
+        let mut access = L::access_all();
+        access.extend(R::access_all());
+        access
+    }
+
+    fn entity_candidates(snapshot: &Snapshot) -> Option<Vec<Entity>> {
+        match (L::entity_candidates(snapshot), R::entity_candidates(snapshot)) {
+            (Some(left), Some(right)) => {
+                let right: std::collections::HashSet<Entity> = right.into_iter().collect();
+                Some(
+                    left.into_iter()
+                        .filter(|entity| right.contains(entity))
+                        .collect(),
+                )
+            }
+            (Some(left), None) => Some(left),
+            (None, right) => right,
+        }
+    }
+
+    fn bound_keys(snapshot: &Snapshot, state: &Q::State) -> Vec<(TypeId, Option<u64>)> {
+        let mut keys = L::bound_keys(snapshot, state);
+        keys.extend(R::bound_keys(snapshot, state));
+        keys
+    }
+
+    fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        let mut keys = L::bound_key_types();
+        keys.extend(R::bound_key_types());
+        keys
+    }
+}
+
+/// `Where<And<L, R>>` distributes into the conjunction of `Where<L>` and
+/// `Where<R>`, so compound bound joins read as one filter expression.
+impl<Q, L, R> QueryFilter<Q> for Where<And<L, R>>
+where
+    Q: QueryParam,
+    Where<L>: QueryFilter<Q>,
+    Where<R>: QueryFilter<Q>,
+{
+    fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::matches(snapshot, state)
+    }
+
+    fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::deps(snapshot, state)
+    }
+
+    fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::access(snapshot, state)
+    }
+
+    fn access_all() -> Vec<Access> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::access_all()
+    }
+
+    fn entity_candidates(snapshot: &Snapshot) -> Option<Vec<Entity>> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::entity_candidates(snapshot)
+    }
+
+    fn bound_keys(snapshot: &Snapshot, state: &Q::State) -> Vec<(TypeId, Option<u64>)> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::bound_keys(snapshot, state)
+    }
+
+    fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::bound_key_types()
     }
 }
 

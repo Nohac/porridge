@@ -487,7 +487,8 @@ impl Clone for World {
 ///
 /// A snapshot is a structural clone of `World`; component cells are shared and
 /// reads are protected by component read guards.
-pub(crate) type Snapshot = World;
+#[doc(hidden)]
+pub type Snapshot = World;
 
 /// Outcome of a non-blocking component mutation attempt.
 pub(crate) enum TryUpdate<R, F> {

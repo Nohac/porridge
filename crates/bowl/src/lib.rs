@@ -97,8 +97,8 @@ mod system;
 mod world;
 
 pub use bowl::{
-    BoundEntity, Bowl, Bundle, CommitLimit, ExternalScoop, InsertedEntity, ScoopBuilder,
-    TakeBundle, TakeError,
+    BoundEntity, Bowl, BowlEntity, Bundle, CommitLimit, ExternalScoop, InsertBuilder,
+    InsertedEntity, ScoopBuilder, TakeBundle, TakeError,
 };
 pub use commands::Commands;
 pub use component::{Component, ComponentHookContext, DerivedFrom, Singleton, hash_component};
