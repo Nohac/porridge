@@ -169,12 +169,11 @@ meaning is obvious and cheap get support. The escape hatch is always the
 same: filter inside the system against a `View`.
 
 - `Eq<T>` — supported (the equality join above).
-- `And` — **planned next.** Two payoffs: system-side filter composition in
-  general (today `With<A>` + `Without<B>` cannot combine on one query), and
-  compound join keys — `And<Eq<Name>, Eq<Arity>>` is overload resolution,
-  `And<Eq<Name>, Eq<NamespacePath>>` is scoped name resolution.
-  Mechanically: `bound_key` becomes plural; validation and pruning loop
-  over the keys.
+- `And` — **supported.** Both payoffs landed: general system-side filter
+  composition (`And<With<A>, Without<B>>` on one query) and compound join
+  keys — `Where<And<Eq<A>, Eq<B>>>` pairs a row only when *every* key
+  matches its provider (`compound_bound_join_requires_every_key_to_match`).
+  Bound keys are plural throughout; validation and pruning loop per key.
 - `Gte`/`Gt`/`Lt`/`Lte` — deferred until a concrete need. A bound ordered
   comparison is a theta/band join: fingerprints cannot order, so pruning
   needs value reads and `PartialOrd` at plan time, and the pair set churns

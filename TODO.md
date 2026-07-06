@@ -20,22 +20,25 @@ important.
   need present-tense consistency — they are recorded claims that go stale
   when new inputs land in their generation, and marker-gated work is
   invisible to settledness checks while the marker is absent.
-- Done (core): epoch-scoped input batching + preemptive external muts
+- Done: epoch-scoped input batching + preemptive external muts
   (`spec/epochs.md`): settles run against frozen input sets with watermark
-  promotion (markers are sound as cross-settle state machines), and
-  external `Mut` preempts by default — tiered drop, boundary window,
-  Startup-slot restart. Still open: `.deferred()`/`.preempting()`
-  modifiers, preemption budget, stale-read scoop, `Cow` `for_each` epoch
-  gating.
+  promotion (markers are sound as cross-settle state machines), external
+  `Mut` preempts by default — tiered drop, boundary window, Startup-slot
+  restart — with `.deferred()`/`.preempting()` modifiers, a per-generation
+  preemption budget, and the `.last_settled()` stale-read scoop. Still
+  open: `Cow` `for_each` epoch gating, budget configurability.
 - Treat `DerivedFrom` as the standard pattern for revision-scoped derived facts
   such as diagnostics, hover results, indexes, and summaries.
 - Explore Porridge as a long-running daemon/client runtime.
 - Keep a Replicon-like replication/change-stream layer as a future plugin
-  track. The engine capabilities it needs (revision-cursor reads, external
-  targeted inserts, drain reads, settle notifications) are specified in
+  track. The engine capabilities it needs are implemented
+  (`settled_revision` + `changed_since` cursor reads,
+  `bowl.entity(e).insert(..)` targeted inserts, `drain` reads,
+  `next_settle` notifications) — see
   `spec/daemon-client.md`, "Engine Support for Out-of-Core Replication and
-  Streaming" — including the state-sync vs consumed-stream distinction and
-  subscriptions-as-facts scoping.
+  Streaming", including the state-sync vs consumed-stream distinction,
+  subscriptions-as-facts scoping, and the remaining tombstone gap for
+  removal replication.
 
 See:
 - `spec/streaming-evaluation.md`

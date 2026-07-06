@@ -147,7 +147,7 @@ This composes from existing primitives — gate marker, fingerprint cutoff,
 query product — with no engine support, which is the property the playground
 is meant to demonstrate.
 
-## Pattern: demand markers (planned)
+## Pattern: demand markers
 
 Not everything should compute on every settle: a hover request does not
 need diagnostics. Demand-driven evaluation dissolves into facts — a system
@@ -165,6 +165,16 @@ No demand fact → the rows are never planned. The LSP adapter owns the
 demand lifecycle as ordinary inserts (`didOpen` inserts per-file demand,
 `didClose` removes it), and debouncing becomes data: drop the demand while
 the user types, re-insert on idle.
+
+Implemented in the playground: `check_imports`, `check_duplicate_defs`,
+and `index_defs` gate on the `DiagnosticsDemand` singleton; a hover-only
+bowl computes zero diagnostics (pinned by
+`diagnostics_compute_only_on_demand` in `crates/playground/src/tests.rs`).
+`index_defs` also moved off the `AstAvailable` gate to `Phase::Complete`,
+driven by file rows: any text change recomputes the index with settled
+defs. Residual: deleting a whole file with no other change leaves a ghost
+index until the next change — the clean fix is engine set-deps
+(relationships, `spec/joins.md`).
 
 Demand facts are the *safe* kind of marker: unlike ordering gates (which
 are claims about derivation state and go stale when inputs move — see

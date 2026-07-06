@@ -225,28 +225,31 @@ bound entities             request/response across the transport
 executor-agnostic async    transport adapters are plain tokio tasks
 ```
 
-### Missing engine capabilities
+### Engine capabilities (implemented)
 
-These are the concrete asks, in rough dependency order:
+The four concrete asks, all implemented in bowl:
 
-1. **Revision-cursor reads.** Enumerate `(entity, component)` pairs whose
-   revision exceeds a cursor, per store or world-wide, from a settled
-   snapshot. This is the delta source for state sync; revisions exist but
-   are not exposed to external readers.
-2. **External targeted inserts.** Add or update components on an *existing*
-   entity from outside a system. Needed by clients applying replicated
-   deltas, and independently by long-running task adapters reporting
-   completion facts. `insert()` today only creates new entities.
-3. **External targeted removal / drain reads.** A destructive external read
-   over query results (`take`-by-query): deliver-then-delete is the stream
-   contract, and the delete must be atomic with the read so redelivery
-   after a crash is at-least-once rather than duplicated-forever. Also
-   needed by clients applying replicated removals.
-4. **Settle notifications.** An async signal — "settled, revision moved
-   past R" — so a push-based publisher wakes exactly when there is
-   something to publish instead of polling. This also answers the "watch
-   current facts" open question below for live UIs, together with the
-   stale-read scoop planned in `spec/epochs.md`.
+1. **Revision-cursor reads** — `bowl.settled_revision()` as the cursor
+   source plus `scoop::<Query<..>>().changed_since(cursor)`: rows whose
+   tracked components moved past the cursor, read from a settled snapshot.
+   The delta source for state sync. (Removal replication still needs a
+   tombstone story; until then, deletions require a full resync path.)
+2. **External targeted inserts** — `bowl.entity(e).insert(bundle)`
+   (mirroring `commands.entity(e).insert(..)` inside systems) queues
+   components onto an *existing* entity with the same epoch semantics as
+   `insert` (including `.preempting()`). Used by clients applying
+   replicated deltas and by long-running task adapters reporting
+   completion facts.
+3. **Drain reads** — `scoop::<Query<..>>().drain()`: materializes matched
+   rows and removes their entities under the same state lock; the result
+   stays readable from its snapshot. Deliver-then-delete for stream facts.
+   (Crash-safe at-least-once needs an ack step on top; the drain itself is
+   read+delete-atomic.)
+4. **Settle notifications** — `bowl.next_settle()` resolves with the
+   settled revision after the next settle that performed work; no-op reads
+   do not fire it. Together with the `.last_settled()` stale-read scoop
+   (spec/epochs.md) this also answers the "watch current facts" open
+   question for live UIs.
 
 Cross-process entity identity (daemon entity ↔ client entity mapping) is a
 plugin concern: entity ids are stable within a bowl, and the plugin owns

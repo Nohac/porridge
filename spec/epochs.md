@@ -5,14 +5,25 @@ write-triggered preemption, and the analysis that motivated it: why gate
 markers failed as an ordering tool, what they remain good for, and the
 hierarchy of ordering mechanisms.
 
-Status: core implemented (input freezing with watermark promotion,
+Status: implemented — input freezing with watermark promotion,
 default-preemptive external `Mut` with tiered drop, the preemption window,
-and Startup-slot restarts). Still pending: the `.deferred()`/`.preempting()`
-API modifiers, the preemption budget, the stale-read scoop, and epoch
-gating for `Cow` `for_each`. Regression tests:
+Startup-slot restarts, the `.deferred()` opt-out on mut handles, the
+`.preempting()` opt-in on inserts (including `bowl.entity(e).insert(..)`
+targeted inserts), the preemption
+budget (`PREEMPTION_BUDGET` per generation; past it, preemptive writes
+degrade to deferred), and the `.last_settled()` stale-read scoop backed by
+a retained settled snapshot (invalidated by destructive takes). Still
+pending: epoch gating for `Cow` `for_each`, budget configurability.
+Regression tests in bowl:
 `external_insert_mid_epoch_defers_to_the_next_epoch`,
-`gated_consumers_never_observe_mid_derivation_state`, and
-`preemptive_mut_restarts_the_epoch_and_retracts_markers` in bowl.
+`gated_consumers_never_observe_mid_derivation_state`,
+`preemptive_mut_restarts_the_epoch_and_retracts_markers`,
+`deferred_mut_waits_for_the_natural_boundary`,
+`preempting_insert_forces_the_boundary`,
+`last_settled_scoop_reads_without_waiting`. Pattern note surfaced by the
+deferred test: *any* boundary write (deferred included) restarts through
+Startup, so the marker pattern's retraction registration is required for
+deferred writers too, not only preemptive ones.
 
 Implementation refinements the design pass missed:
 
