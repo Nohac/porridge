@@ -229,6 +229,15 @@ let rows = diagnostics.collect();
   - `Gt<T>`
   - `Lt<T>`
   - `Lte<T>`
+- Support bound `Where` filters in system queries (relational joins): the
+  `Eq<T>` argument binds to the sibling param providing `&T`, pruning the
+  cartesian product to matching pairs. Covers per-namespace membership and
+  per-use-site name resolution with per-pair memoization. Design in
+  `spec/joins.md`.
+- Follow-up: engine-maintained relationships (Bevy-style inverse components,
+  tracked and fingerprinted) to make membership sets a memoizable dependency,
+  unlocking `Where<In<T>>` and retiring the hand-rolled set-fingerprint
+  pattern. See the companion-design section of `spec/joins.md`.
 
 Current shortcut:
 - Queries iterate component stores (smallest participating store for tuples).
