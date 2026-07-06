@@ -430,9 +430,15 @@ impl BoundEntity {
                 continue;
             }
 
+            let was_settled = bowl_is_settled(&state);
             let result = T::take(&mut state.world, entity);
             cleanup_bound_entity(&mut state, entity);
-            state.settled_revision = state.world.revision_raw();
+            // Only extend an actually-settled state over this removal; see
+            // `drain_deferred_bound_cleanup` for why an unconditional sync
+            // here starves other callers' pending settles.
+            if was_settled {
+                state.settled_revision = state.world.revision_raw();
+            }
             break result;
         };
 
@@ -759,10 +765,18 @@ impl Bowl {
         }
 
         let mut state = self.inner.state.lock().await;
+        let was_settled = bowl_is_settled(&state);
         for entity in cleanup {
             cleanup_bound_entity(&mut state, entity);
         }
-        state.settled_revision = state.world.revision_raw();
+        // Removing bound entities does not unsettle a settled bowl, but it
+        // must not *declare* an unsettled bowl settled: another caller's
+        // pending work may still need a settle (including the settled-hook
+        // pass that re-materializes gate markers), and syncing here would
+        // let that caller's `settle()` exit through the revision fast path.
+        if was_settled {
+            state.settled_revision = state.world.revision_raw();
+        }
     }
 
     /// Runs generations until the bowl has no pending work and the last
@@ -1364,6 +1378,14 @@ async fn commit_system_run(
 
 fn remove_memo_touched_by(memo: &mut HashMap<SystemInvocation, MemoEntry>, keys: &HashSet<Entity>) {
     memo.retain(|owner, _| !owner.keys.iter().any(|key| keys.contains(key)));
+}
+
+/// Whether the bowl is fully settled: no pending or running generation and
+/// no tracked change since the last settle completed.
+fn bowl_is_settled(state: &State) -> bool {
+    state.pending_generation.is_none()
+        && state.running_generation.is_none()
+        && state.world.revision_raw() == state.settled_revision
 }
 
 fn cleanup_bound_entity(state: &mut State, entity: Entity) {
