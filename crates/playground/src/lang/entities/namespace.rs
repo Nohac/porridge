@@ -1,17 +1,21 @@
 //! Namespace entity: `namespace a.b { ... }` declarations, the namespace
 //! membership key, and the join-driven qualified names of member definitions.
 
-use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Eq, Query, Where};
+use bowl::{
+    Bowl, Commands, Component, DerivedFrom, Entity, Eq, Phase, Query, SystemExt, View, Where,
+    With,
+};
 use tracing::info;
 
 use crate::lang::{
     entities::{definition::AstDef, node_span, token_texts},
-    entity::{HoverCtx, HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{BelongsToFile, Span},
     grammar::{
         lexer::Token,
         parser::{CstData, NodeRef, Rule},
     },
+    service::{HoverCandidate, HoverRequest, HoverWord, priority},
 };
 
 #[derive(Component, Hash)]
@@ -66,24 +70,48 @@ impl LowerStage for Namespace {
 }
 
 impl HoverStage for Namespace {
-    // Namespaces answer for their members: a definition with a qualified
-    // name is described by that name, shadowing the definition entity's own
-    // plainer answer further down the arbitration chain.
-    fn hover(ctx: &HoverCtx<'_>) -> Option<String> {
-        let word = ctx.word?;
-        let (definition, def) = ctx.defs.iter().find(|(_, def)| def.name() == word)?;
-        let qualified = ctx
-            .qualified
-            .iter()
-            .find(|(_, qualified)| qualified.definition == *definition)?;
-
-        Some(format!(
-            "`{word}` is a {} definition on entity {}, known as `{}`",
-            def.kind(),
-            definition.raw(),
-            qualified.1.name
-        ))
+    async fn register_hover(db: &Bowl) {
+        db.add_system(hover_qualified_definitions.run_during(Phase::Complete))
+            .await;
     }
+}
+
+/// Answers hover requests whose word names a namespace member: the
+/// qualified-name candidate outranks the definition entity's plain one.
+async fn hover_qualified_definitions(
+    query: Query<(Entity, &HoverWord), With<HoverRequest>>,
+    defs: View<'_, (Entity, &AstDef)>,
+    qualified: View<'_, (Entity, &QualifiedName)>,
+    mut commands: Commands,
+) {
+    crate::short_sleep().await;
+
+    let (request, word) = query.item();
+
+    let Some((definition, def)) = defs.iter().find(|(_, def)| def.name() == word.0) else {
+        return;
+    };
+    let Some((_, qualified)) = qualified
+        .iter()
+        .find(|(_, qualified)| qualified.definition == definition)
+    else {
+        return;
+    };
+
+    commands.insert((
+        DerivedFrom::new(request),
+        HoverCandidate {
+            request,
+            priority: priority::QUALIFIED_NAME,
+            text: format!(
+                "`{}` is a {} definition on entity {}, known as `{}`",
+                word.0,
+                def.kind(),
+                definition.raw(),
+                qualified.name
+            ),
+        },
+    ));
 }
 
 /// The fully qualified path a `namespace_decl` node declares, honoring the

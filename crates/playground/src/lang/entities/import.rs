@@ -6,14 +6,15 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Query, View};
+use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Phase, Query, SystemExt, View, With};
 use tracing::info;
 
 use crate::lang::{
     entities::{node_span, token_texts},
-    entity::{HoverCtx, HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{BelongsToFile, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef},
+    service::{HoverCandidate, HoverFile, HoverRequest, Position, priority},
 };
 
 #[derive(Component, Hash)]
@@ -74,20 +75,49 @@ impl LowerStage for Import {
 }
 
 impl HoverStage for Import {
-    fn hover(ctx: &HoverCtx<'_>) -> Option<String> {
-        let (_, _, import) = ctx.imports.iter().find(|(_, belongs, import)| {
-            belongs.0 == ctx.file && import.span.start <= ctx.offset && ctx.offset < import.span.end
-        })?;
-
-        let known = ctx
-            .known_imports
-            .is_some_and(|imports| imports.0.contains(&import.path));
-        Some(if known {
-            format!("`{}` is a known import", import.path)
-        } else {
-            format!("`{}` is an unknown import", import.path)
-        })
+    async fn register_hover(db: &Bowl) {
+        db.add_system(hover_imports.run_during(Phase::Complete)).await;
     }
+}
+
+/// Answers hover requests whose position falls inside an import declaration
+/// of the request's file.
+async fn hover_imports(
+    query: Query<(Entity, &HoverFile, &Position), With<HoverRequest>>,
+    imports: View<'_, (Entity, &BelongsToFile, &ImportDecl)>,
+    import_db: View<'_, (Entity, &SystemImportDb)>,
+    mut commands: Commands,
+) {
+    crate::short_sleep().await;
+
+    let (request, file, position) = query.item();
+
+    let Some((_, _, import)) = imports.iter().find(|(_, belongs, import)| {
+        belongs.0 == file.0
+            && import.span.start <= position.offset
+            && position.offset < import.span.end
+    }) else {
+        return;
+    };
+
+    let known = import_db
+        .iter()
+        .next()
+        .is_some_and(|(_, imports)| imports.0.contains(&import.path));
+    let text = if known {
+        format!("`{}` is a known import", import.path)
+    } else {
+        format!("`{}` is an unknown import", import.path)
+    };
+
+    commands.insert((
+        DerivedFrom::new(request),
+        HoverCandidate {
+            request,
+            priority: priority::POSITION,
+            text,
+        },
+    ));
 }
 
 pub(crate) async fn check_imports(

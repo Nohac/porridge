@@ -11,23 +11,16 @@
 //!
 //! Dispatch is hand-written and exhaustive instead of registry-driven:
 //! grammar rules are claimed in `entities::lower_rule` (a `match` on `Rule`,
-//! so a new grammar rule fails to compile until an entity claims it) and
-//! hover arbitration asks each entity in turn in `service::hover`. The trade
-//! for skipping registries is that the shared contexts below name concrete
-//! entity facts; an entity that grows new service behavior may extend them.
+//! so a new grammar rule fails to compile until an entity claims it).
+//! Service answers flow through the candidate-fact pipeline instead of an
+//! aggregating system: each entity registers its own request-answering
+//! systems (see [`HoverStage`]) and a service finalizer picks the winning
+//! candidate by priority (`service::hover`).
 
 use bowl::{Bowl, Commands, Entity};
 use tracing::info;
 
-use crate::lang::{
-    entities::{
-        definition::AstDef,
-        import::{ImportDecl, SystemImportDb},
-        namespace::QualifiedName,
-    },
-    facts::BelongsToFile,
-    grammar::parser::{CstData, NodeRef},
-};
+use crate::lang::grammar::parser::{CstData, NodeRef};
 
 pub(crate) trait LanguageEntity {
     const NAME: &'static str;
@@ -52,21 +45,13 @@ pub(crate) trait LowerStage: LanguageEntity {
     fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands);
 }
 
-/// Context handed to [`HoverStage::hover`] for one hover request.
-pub(crate) struct HoverCtx<'a> {
-    pub(crate) file: Entity,
-    pub(crate) offset: usize,
-    pub(crate) word: Option<&'a str>,
-    pub(crate) defs: &'a [(Entity, &'a AstDef)],
-    pub(crate) imports: &'a [(Entity, &'a BelongsToFile, &'a ImportDecl)],
-    pub(crate) known_imports: Option<&'a SystemImportDb>,
-    pub(crate) qualified: &'a [(Entity, &'a QualifiedName)],
-}
-
-/// Service stage: contribute hover content for a position. Return `None`
-/// when the entity has nothing to say; the service supplies the fallback.
+/// Service stage: register systems that answer hover requests by inserting
+/// `HoverCandidate` facts (see `service::hover` for the pipeline). Each
+/// entity's systems read only the enriched request plus the entity's own
+/// facts, so param lists stay small no matter how many entities exist.
+/// Entities without hover behavior register nothing (explicit empty impl).
 pub(crate) trait HoverStage: LanguageEntity {
-    fn hover(ctx: &HoverCtx<'_>) -> Option<String>;
+    async fn register_hover(db: &Bowl);
 }
 
 /// The compile-time coverage contract: an entity only registers once it has
@@ -77,4 +62,5 @@ where
 {
     info!(entity = E::NAME, "register language entity");
     E::register(db).await;
+    E::register_hover(db).await;
 }

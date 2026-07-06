@@ -51,21 +51,64 @@ infrastructure.
 
 ## Dispatch is exhaustive, not registered
 
-Two places route work to entities, both plain `match`/call chains:
+Rule ownership routes syntax to entities through a plain `match`:
+`lang/entities/mod.rs::lower_rule` matches on the lelwel-generated `Rule`
+enum. `generate_ast` is the single generic CST walk; it visits every rule
+node once and hands it to the owning entity. Adding a rule to `syntax.llw`
+fails to compile until an entity claims it or it is explicitly listed as
+structural.
 
-1. **Rule ownership** — `lang/entities/mod.rs::lower_rule` matches on the
-   lelwel-generated `Rule` enum. `generate_ast` is the single generic CST
-   walk; it visits every rule node once and hands it to the owning entity.
-   Adding a rule to `syntax.llw` fails to compile until an entity claims it
-   or it is explicitly listed as structural.
-2. **Hover arbitration** — `lang/service/hover.rs` asks each entity in
-   order, most specific first (`Import` answers by span, `Definition` by
-   word). The first `Some` wins; the service supplies fallbacks.
+The trade for skipping registries: `LowerCtx` is shared, so an entity that
+needs new lowering context may extend it. The edit is compile-checked and
+local.
 
-The trade for skipping registries: the shared contexts (`LowerCtx`,
-`HoverCtx`) name concrete entity facts, so an entity that grows new service
-behavior may extend a context and the arbitration chain. Both edits are
-compile-checked and local.
+## Services: the candidate-fact pipeline
+
+Service answers are *not* aggregated into one system — an aggregator
+accretes one view per contributing entity (and hits the 8-param ceiling).
+Instead, requests flow through a phase-ordered pipeline (see
+`lang/service/hover.rs`):
+
+1. **Enrichment** (`Phase::Complete`, service-owned): resolve what every
+   contributor needs once — the request's file, the word under the cursor —
+   and stamp it onto the request entity (`HoverEnriched`, `HoverFile`,
+   `HoverWord`). File resolution is a bound join: the request's `FilePath`
+   pairs with the file carrying the equal path, so the lookup is a planned
+   pair with tracked deps rather than a view scan.
+2. **Candidates** (`Phase::Complete`, entity-owned): each entity registers
+   its own request-answering system through `HoverStage::register_hover`,
+   reading only the enriched request plus its own facts, and inserts
+   prioritized `HoverCandidate` facts anchored to the request. In-phase
+   streaming plans them as soon as enrichment commits. Param lists stay
+   O(own facts) no matter how many entities exist.
+3. **Finalization** (`Phase::Cleanup`, service-owned): by settle time every
+   Complete wave has run, so every candidate exists; the finalizer picks the
+   highest priority and writes the response onto the request. Arbitration is
+   data (a priority band), not call order, and the service supplies
+   fallbacks.
+
+Phase boundaries carry the whole ordering story. `Phase::Complete` runs
+after Evaluate has converged *in every generation*, so the pipeline's
+ambient reads (defs, imports, qualified names) are always consistent with
+the generation's inputs — including a request batched together with the
+source it asks about (pinned by `crates/playground/src/tests.rs`).
+
+An earlier version gated the pipeline on the ephemeral `AstAvailable`
+marker instead. That is racy by construction: work gated on a marker is
+invisible to every settledness check while the marker is absent, so a
+concurrent settle can declare the bowl settled between the marker's cleanup
+and its next re-emission, starving requests that arrived in that window —
+and a marker is a recorded claim that goes stale when new inputs land in
+its generation. `spec/epochs.md` records the full analysis, the ordering
+hierarchy (tracked joins > phases > markers), and the epoch/preemption
+design that would make markers sound for cross-settle signaling again.
+Until then: prefer phase ordering whenever the requirement is "run after
+this generation's derivations"; markers remain for genuinely settle-scoped
+signals (the `DefIndex` aggregation still uses one).
+
+Priorities live in one place (`service::hover::priority`), so shadowing (a
+namespace-qualified answer outranking the plain definition answer) needs no
+coordination between entities.
 
 ## How the engine replaces atom infrastructure
 

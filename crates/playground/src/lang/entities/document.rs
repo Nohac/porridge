@@ -5,7 +5,7 @@ use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Query, Singleton, Sys
 use tracing::info;
 
 use crate::lang::{
-    entity::{HoverCtx, HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{CstAvailable, Diagnostic, Ephemeral},
     grammar::parser::{CstData, NodeRef, Parser},
 };
@@ -44,9 +44,7 @@ impl LowerStage for Document {
 
 impl HoverStage for Document {
     // Documents carry no hover content; the service supplies the fallback.
-    fn hover(_ctx: &HoverCtx<'_>) -> Option<String> {
-        None
-    }
+    async fn register_hover(_db: &Bowl) {}
 }
 
 pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands) {

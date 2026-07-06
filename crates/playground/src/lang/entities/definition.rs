@@ -4,15 +4,17 @@
 use std::fmt;
 
 use bowl::{
-    Bowl, Commands, Component, DerivedFrom, Entity, Query, Singleton, View, With,
+    Bowl, Commands, Component, DerivedFrom, Entity, Phase, Query, Singleton, SystemExt, View,
+    With,
 };
 use tracing::info;
 
 use crate::lang::{
     entities::{first_token_text, namespace::NamespacePath, node_span},
-    entity::{HoverCtx, HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{AstAvailable, BelongsToFile, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef, parser::Rule},
+    service::{HoverCandidate, HoverRequest, HoverWord, priority},
 };
 
 #[derive(Debug, Component, Hash)]
@@ -119,16 +121,39 @@ impl LowerStage for Definition {
 }
 
 impl HoverStage for Definition {
-    fn hover(ctx: &HoverCtx<'_>) -> Option<String> {
-        let word = ctx.word?;
-        let (definition, def) = ctx.defs.iter().find(|(_, def)| def.name() == word)?;
-
-        Some(format!(
-            "`{word}` is a {} definition on entity {}",
-            def.kind(),
-            definition.raw()
-        ))
+    async fn register_hover(db: &Bowl) {
+        db.add_system(hover_definitions.run_during(Phase::Complete))
+            .await;
     }
+}
+
+/// Answers hover requests whose word names a definition.
+async fn hover_definitions(
+    query: Query<(Entity, &HoverWord), With<HoverRequest>>,
+    defs: View<'_, (Entity, &AstDef)>,
+    mut commands: Commands,
+) {
+    crate::short_sleep().await;
+
+    let (request, word) = query.item();
+
+    let Some((definition, def)) = defs.iter().find(|(_, def)| def.name() == word.0) else {
+        return;
+    };
+
+    commands.insert((
+        DerivedFrom::new(request),
+        HoverCandidate {
+            request,
+            priority: priority::NAME,
+            text: format!(
+                "`{}` is a {} definition on entity {}",
+                word.0,
+                def.kind(),
+                definition.raw()
+            ),
+        },
+    ));
 }
 
 /// Aggregate the definition set into the `DefIndex` singleton after each

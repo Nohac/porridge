@@ -1,4 +1,6 @@
 mod lang;
+#[cfg(test)]
+mod tests;
 
 use std::collections::HashSet;
 
