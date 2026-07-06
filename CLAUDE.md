@@ -32,7 +32,7 @@ The playground has a `build.rs` that generates parser code from `crates/playgrou
 - `crates/bowl` — the engine (async runtime, storage, queries, systems, scheduling). No test directory; unit tests are inline.
 - `crates/benches` — criterion benchmarks for engine slow paths (settle cost, replanning, dense scans, `Where<Eq>` filters, view amplification); fixtures in `src/lib.rs`, benches in `benches/engine.rs`. See `spec/performance-plan.md`.
 - `crates/macros` — `#[derive(Component)]` proc macro. Attributes: `#[component(hash)]` (implements `fingerprint()` via hashing, enabling revision reuse for equal values), `#[component(untracked)]` (`tracked() == false`, writes don't bump revisions or invalidate memos). The macro emits `::bowl::...` paths directly (no rename support).
-- `crates/playground` — toy language (lexer/parser/AST → diagnostics → hover service) built on bowl; serves as the main integration test and usage reference.
+- `crates/playground` — toy language built on bowl; serves as the main integration test and usage reference. Structured around **language entities** (see `spec/language-entities.md`): `lang/grammar/` is syntax only, `lang/entities/{document,import,definition}.rs` are vertical slices implementing the stage traits in `lang/entity.rs`, `lang/entities/mod.rs` owns the exhaustive rule→entity lowering dispatch, and `lang/service/` owns request/response facts (hover) with arbitration across entities.
 
 ## Engine architecture (crates/bowl)
 

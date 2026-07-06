@@ -3,20 +3,21 @@ mod lang;
 use std::collections::HashSet;
 
 use bowl::{
-    Bowl, Commands, Component, Entity, Eq, Gte, Mut, MutRef, Named, Phase, Query, Singleton,
-    SystemExt, Where, With, Without, cleanup_stale_derived,
+    Bowl, Commands, Component, Entity, Eq, Gte, Mut, MutRef, Named, Query, Singleton, Where,
+    Without,
 };
 use futures::{StreamExt, stream::FuturesUnordered};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::lang::{
-    analysis::{check_duplicate_defs, check_imports, generate_ast, parse_file},
-    grammar::{
-        AstAvailable, AstDef, CstAvailable, Diagnostic, Ephemeral, FilePath, FileText, HoverInfo,
-        HoverRequest, Position, Severity, SystemImportDb,
+    entities::{
+        definition::AstDef,
+        document::{FilePath, FileText},
+        import::SystemImportDb,
     },
-    service::hover_info,
+    facts::{AstAvailable, Diagnostic, Severity},
+    service::{HoverInfo, HoverRequest, Position},
 };
 
 struct StressTouched;
@@ -31,23 +32,9 @@ async fn main() {
 
     let db = Bowl::new();
 
-    db.add_system(parse_file.on_settled(|mut commands: Commands| {
-        commands.insert((Singleton::<CstAvailable>::new(), CstAvailable, Ephemeral));
-    }))
-    .await;
-    db.add_system(generate_ast.on_settled(|mut commands: Commands| {
-        commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
-    }))
-    .await;
-    db.add_system(check_imports).await;
-    db.add_system(check_duplicate_defs).await;
-    db.add_system(hover_info).await;
+    lang::register_language(&db).await;
     db.add_system(touch_file_text_once).await;
     db.add_system(seed_extra_imports_once).await;
-    db.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
-        .await;
-    db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup))
-        .await;
 
     db.insert((
         Singleton::<SystemImportDb>::new(),
@@ -388,13 +375,6 @@ async fn mutate_file_by_path(db: Bowl, path: String) {
             "external file mut"
         );
     }
-}
-
-async fn cleanup_ephemeral(query: Query<Entity, With<Ephemeral>>, mut commands: Commands) {
-    short_sleep().await;
-
-    let entity = query.item();
-    commands.remove(entity);
 }
 
 pub(crate) async fn short_sleep() {

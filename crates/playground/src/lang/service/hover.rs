@@ -1,14 +1,39 @@
-use crate::lang::grammar::{
-    AstAvailable, AstDef, FilePath, FileText, HoverInfo, HoverRequest, Position,
-};
-use bowl::{Commands, Entity, Query, View, With};
+//! Hover service: request components plus arbitration across the entities.
+
+use bowl::{Commands, Component, Entity, Query, View, With};
 use tracing::info;
+
+use crate::lang::{
+    entities::{
+        definition::{AstDef, Definition},
+        document::{Document, FilePath, FileText},
+        import::{Import, ImportDecl, SystemImportDb},
+    },
+    entity::{HoverCtx, HoverStage},
+    facts::{AstAvailable, BelongsToFile},
+};
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub(crate) struct HoverRequest;
+
+#[derive(Debug, Component, Hash)]
+#[component(hash)]
+pub(crate) struct Position {
+    pub(crate) offset: usize,
+}
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub(crate) struct HoverInfo(pub(crate) String);
 
 pub(crate) async fn hover_info(
     _: Query<Entity, With<AstAvailable>>,
     query: Query<(Entity, &FilePath, &Position), With<HoverRequest>>,
     files: View<'_, (Entity, &FilePath, &FileText)>,
     defs: View<'_, (Entity, &AstDef)>,
+    imports: View<'_, (Entity, &BelongsToFile, &ImportDecl)>,
+    import_db: View<'_, (Entity, &SystemImportDb)>,
     mut commands: Commands,
 ) {
     crate::short_sleep().await;
@@ -16,7 +41,7 @@ pub(crate) async fn hover_info(
     info!("hover_info");
     let (request, path, position) = query.item();
 
-    let Some((_file, _path, text)) = files.iter().find(|(_, file_path, _)| *file_path == path)
+    let Some((file, _path, text)) = files.iter().find(|(_, file_path, _)| *file_path == path)
     else {
         commands
             .entity(request)
@@ -24,25 +49,28 @@ pub(crate) async fn hover_info(
         return;
     };
 
-    let Some(word) = word_at(&text.0, position.offset) else {
-        commands
-            .entity(request)
-            .insert(HoverInfo("no symbol at position".to_string()));
-        return;
+    let defs = defs.iter().collect::<Vec<_>>();
+    let imports = imports.iter().collect::<Vec<_>>();
+    let ctx = HoverCtx {
+        file,
+        offset: position.offset,
+        word: word_at(&text.0, position.offset),
+        defs: &defs,
+        imports: &imports,
+        known_imports: import_db.iter().next().map(|(_, imports)| imports),
     };
 
-    let Some((definition, def)) = defs.iter().find(|(_, def)| def.name() == word) else {
-        commands
-            .entity(request)
-            .insert(HoverInfo(format!("unresolved symbol `{word}`")));
-        return;
-    };
+    // Exhaustive arbitration: ask every entity, most specific first. An
+    // entity that grows hover behavior gets added here.
+    let answer = Import::hover(&ctx)
+        .or_else(|| Definition::hover(&ctx))
+        .or_else(|| Document::hover(&ctx));
 
-    commands.entity(request).insert(HoverInfo(format!(
-        "`{word}` is a {} definition on entity {}",
-        def.kind(),
-        definition.raw()
-    )));
+    let message = answer.unwrap_or_else(|| match ctx.word {
+        Some(word) => format!("unresolved symbol `{word}`"),
+        None => "no symbol at position".to_string(),
+    });
+    commands.entity(request).insert(HoverInfo(message));
 }
 
 fn word_at(text: &str, offset: usize) -> Option<&str> {
