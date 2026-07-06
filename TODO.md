@@ -14,8 +14,18 @@ important.
   - re-plan after each commit
   - treat `on_settled` as the global external boundary
 - Keep `on_start` and `on_complete` local to a system's planned work batch.
-- Use ephemeral singleton markers emitted from `on_settled` as phase-transition
-  gates instead of reintroducing fixed stages.
+- Ordering hierarchy for consumers (see `spec/epochs.md`): tracked reads
+  (joins) dissolve ordering entirely; phases order within a generation;
+  ephemeral markers signal across settles. Markers must not guard reads that
+  need present-tense consistency — they are recorded claims that go stale
+  when new inputs land in their generation, and marker-gated work is
+  invisible to settledness checks while the marker is absent.
+- Adopt epoch-scoped input batching + preemptive input classes
+  (`spec/epochs.md`): settles run against frozen input sets (making markers
+  sound as cross-settle state machines and `settled_revision` accounting
+  exact), and file-edit-class inputs may preempt an in-flight epoch — safe
+  because streaming commits keep all finished work; only stale-derived work
+  reruns.
 - Treat `DerivedFrom` as the standard pattern for revision-scoped derived facts
   such as diagnostics, hover results, indexes, and summaries.
 - Explore Porridge as a long-running daemon/client runtime.
@@ -28,6 +38,7 @@ See:
 - `spec/derived-from.md`
 - `spec/daemon-client.md`
 - `spec/access-scheduling.md`
+- `spec/epochs.md`
 - `spec/ideas/replication.md`
 
 ## 1. Public API Polish Before Larger Migration
@@ -47,6 +58,16 @@ See:
   - `Phase`
   - `scoop`
 - Remove playground/debug prints such as `AstAvailable insert/remove`.
+- Add `#[derive(SystemParam)]` param bundles: named structs of system params
+  so aggregating systems escape the 8-arity ceiling and signature noise.
+  Must support nesting (a bundle member may be another bundle) so recurring
+  view clusters get named once. Guidance to document: bundles stay minimal
+  and per-system; share via small nested bundles, never a kitchen-sink one —
+  over-borrowing widens declared access and creates false scheduler
+  conflicts with `MutRef` systems.
+- Add optional query parts (`Option<&T>` in a row tuple) so systems stop
+  carrying side-`View`s solely to look up a maybe-present component by
+  entity (see `index_defs`/`check_duplicate_defs` and their `paths` view).
 - Keep the README aligned with the final mental model:
   - components-only storage
   - immutable snapshots for reads
@@ -427,6 +448,19 @@ Current shortcut:
   - hover/goto/completion requests while background analysis is running
   - external `SystemImportDb` updates invalidating import diagnostics through
     `DerivedFrom::many`
+- Done: hover restructured into the candidate-fact pipeline (the scaling
+  remedy for aggregator services): service enrichment stamps
+  `HoverFile`/`HoverWord` on the request (file resolution is a `FilePath`
+  join), each entity's own system inserts `HoverCandidate { priority, .. }`
+  facts from only its own data, and a `Phase::Cleanup` finalizer picks the
+  winner. Ordering comes from phases, not gate markers — dissolved
+  `HoverCtx`, the arbitration chain, and the `AstAvailable` gate on hover.
+  Apply the same pipeline to future services (goto, completions).
+- Migrate `index_defs` off the `AstAvailable` gate marker (to
+  `Phase::Complete`, like the hover pipeline): marker-gated work is
+  invisible to settledness checks while the marker is absent, which is the
+  race that starved hover requests before the phase migration. Markers
+  should be reserved for signals that truly need settle scope.
 
 Current shortcut:
 - The toy language is intentionally small.
