@@ -147,6 +147,47 @@ This composes from existing primitives — gate marker, fingerprint cutoff,
 query product — with no engine support, which is the property the playground
 is meant to demonstrate.
 
+## Pattern: demand markers (planned)
+
+Not everything should compute on every settle: a hover request does not
+need diagnostics. Demand-driven evaluation dissolves into facts — a system
+gates on a *demand fact*:
+
+```rust
+async fn check_imports(
+    _: Query<Entity, With<DiagnosticsDemand>>,   // demand gate
+    query: Query<(Entity, &ImportDecl)>,
+    ...
+)
+```
+
+No demand fact → the rows are never planned. The LSP adapter owns the
+demand lifecycle as ordinary inserts (`didOpen` inserts per-file demand,
+`didClose` removes it), and debouncing becomes data: drop the demand while
+the user types, re-insert on idle.
+
+Demand facts are the *safe* kind of marker: unlike ordering gates (which
+are claims about derivation state and go stale when inputs move — see
+`spec/epochs.md`), a demand fact is a preference, an input in its own
+right. Nothing derived can make it lie; only its owner changes it.
+
+Composition points:
+
+- **Scoped demand** — a demand fact carrying a hashed key joins to matching
+  facts via `Where<Eq<..>>`: per-file demand with per-pair memoization.
+- **Demand-scoped cleanup** — anchor emitted outputs with
+  `DerivedFrom::many([source, demand_entity])`; removing the demand reaps
+  the outputs automatically.
+- **Demand propagation** — demand facts can be derived by systems (a hover
+  on a symbol emits resolve-demand for its defining file), reconstructing
+  pull-model evaluation as data flow: a request seeds demand for exactly
+  its dependency cone.
+
+Trade: cost moves to when it is wanted (re-demanding pays accumulated
+invalidation then), the settle barrier stays global (a hover settling
+alongside demanded diagnostics waits for both), and the demand vocabulary
+is designed by hand per stage rather than derived per-query.
+
 ## Pattern: bound join
 
 For *pair*-granular relations the engine now has direct support: a system

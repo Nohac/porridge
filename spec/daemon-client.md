@@ -166,6 +166,110 @@ bowl.scoop::<Query<(Entity, Cow<FileText>), Where<Eq<FilePath>>>>()
     .await;
 ```
 
+## Engine Support for Out-of-Core Replication and Streaming
+
+Replication between a daemon bowl and client bowls stays a plugin — it is
+not core (`TODO` §19 keeps a Replicon-like layer as a plugin track). This
+section lists what the *engine* must provide so such a plugin is buildable
+outside the core. The requirements are generalized from porting experience
+with bevy/ecsdk-based isomorphic tools; no single tool's shape is assumed.
+
+### Two distribution semantics
+
+A replication plugin must distinguish two kinds of facts, because their
+delivery rules are opposites:
+
+```text
+state sync
+  idempotent, latest-wins
+  source of truth stays on the daemon
+  delivered from a revision cursor; a missed update is healed by the next
+  clients converge to the same view
+
+streams
+  ordered, consumed
+  addressed to specific subscribers, never broadcast
+  removed from the daemon once delivered (the daemon is a queue, not a copy)
+  examples: log lines, progress events, provisioning output
+```
+
+Replicating everything to every client — the replicon default — conflates
+the two: stream facts get broadcast and retained, and per-client gating has
+to be bolted on afterwards. In porridge both the scoping and the semantics
+should be *data*:
+
+```text
+subscriptions are facts
+  Subscription { client, topic }        inserted by the transport adapter
+  the plugin's delivery queries join facts to subscriptions
+  (Where<Eq<Topic>> / demand markers) — gating is a query, not registry
+  configuration
+
+stream facts are consumed
+  delivered to the matching subscribers, then removed from the daemon
+  anchored with DerivedFrom to the subscription, so unsubscribing reaps
+  the undelivered backlog automatically
+```
+
+### Already available (the substrate)
+
+```text
+revisions + fingerprints   change detection is built into storage; a
+                           replication layer reads it instead of bolting
+                           on Changed<> machinery
+epochs                     consistent boundaries to cut packets at; deltas
+                           arriving at a client are ordinary external
+                           inputs, batched and frozen per epoch
+joins / demand markers     per-client and per-topic scoping as data
+bound entities             request/response across the transport
+executor-agnostic async    transport adapters are plain tokio tasks
+```
+
+### Missing engine capabilities
+
+These are the concrete asks, in rough dependency order:
+
+1. **Revision-cursor reads.** Enumerate `(entity, component)` pairs whose
+   revision exceeds a cursor, per store or world-wide, from a settled
+   snapshot. This is the delta source for state sync; revisions exist but
+   are not exposed to external readers.
+2. **External targeted inserts.** Add or update components on an *existing*
+   entity from outside a system. Needed by clients applying replicated
+   deltas, and independently by long-running task adapters reporting
+   completion facts. `insert()` today only creates new entities.
+3. **External targeted removal / drain reads.** A destructive external read
+   over query results (`take`-by-query): deliver-then-delete is the stream
+   contract, and the delete must be atomic with the read so redelivery
+   after a crash is at-least-once rather than duplicated-forever. Also
+   needed by clients applying replicated removals.
+4. **Settle notifications.** An async signal — "settled, revision moved
+   past R" — so a push-based publisher wakes exactly when there is
+   something to publish instead of polling. This also answers the "watch
+   current facts" open question below for live UIs, together with the
+   stale-read scoop planned in `spec/epochs.md`.
+
+Cross-process entity identity (daemon entity ↔ client entity mapping) is a
+plugin concern: entity ids are stable within a bowl, and the plugin owns
+the translation table. Serialization is opt-in per component via ordinary
+derives and a plugin-side registry; the engine needs no reflection.
+
+### Sketch: log streaming done right
+
+With 1–4 in place, the failure mode "logs broadcast to every client and
+retained forever" is unrepresentable:
+
+```text
+daemon
+  provisioning task appends LogEntry { seq, line } facts (targeted inserts)
+  client subscribes: transport inserts Subscription { client, topic: Logs }
+  publisher plugin, woken by settle notification:
+    drain-read LogEntry joined to Subscription   (scoped, ordered by seq)
+    send to that client's transport
+    entries removed by the drain — the daemon keeps no backlog
+  unsubscribe removes the Subscription; DerivedFrom cleanup reaps
+  undelivered entries
+```
+
 ## Observability Needs
 
 Daemon usage needs better introspection than a short-lived CLI:

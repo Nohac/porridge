@@ -20,17 +20,22 @@ important.
   need present-tense consistency — they are recorded claims that go stale
   when new inputs land in their generation, and marker-gated work is
   invisible to settledness checks while the marker is absent.
-- Adopt epoch-scoped input batching + preemptive input classes
-  (`spec/epochs.md`): settles run against frozen input sets (making markers
-  sound as cross-settle state machines and `settled_revision` accounting
-  exact), and file-edit-class inputs may preempt an in-flight epoch — safe
-  because streaming commits keep all finished work; only stale-derived work
-  reruns.
+- Done (core): epoch-scoped input batching + preemptive external muts
+  (`spec/epochs.md`): settles run against frozen input sets with watermark
+  promotion (markers are sound as cross-settle state machines), and
+  external `Mut` preempts by default — tiered drop, boundary window,
+  Startup-slot restart. Still open: `.deferred()`/`.preempting()`
+  modifiers, preemption budget, stale-read scoop, `Cow` `for_each` epoch
+  gating.
 - Treat `DerivedFrom` as the standard pattern for revision-scoped derived facts
   such as diagnostics, hover results, indexes, and summaries.
 - Explore Porridge as a long-running daemon/client runtime.
 - Keep a Replicon-like replication/change-stream layer as a future plugin
-  track.
+  track. The engine capabilities it needs (revision-cursor reads, external
+  targeted inserts, drain reads, settle notifications) are specified in
+  `spec/daemon-client.md`, "Engine Support for Out-of-Core Replication and
+  Streaming" — including the state-sync vs consumed-stream distinction and
+  subscriptions-as-facts scoping.
 
 See:
 - `spec/streaming-evaluation.md`
@@ -448,6 +453,10 @@ Current shortcut:
   - hover/goto/completion requests while background analysis is running
   - external `SystemImportDb` updates invalidating import diagnostics through
     `DerivedFrom::many`
+- Add demand markers (see "Pattern: demand markers" in
+  `spec/language-entities.md`): gate `check_imports`/`check_duplicate_defs`/
+  `index_defs` on a `DiagnosticsDemand` fact so hover-only settles skip
+  diagnostics entirely; demonstrate demand toggling as LSP debounce.
 - Done: hover restructured into the candidate-fact pipeline (the scaling
   remedy for aggregator services): service enrichment stamps
   `HoverFile`/`HoverWord` on the request (file resolution is a `FilePath`
