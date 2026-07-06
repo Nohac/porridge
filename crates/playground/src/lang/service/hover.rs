@@ -28,7 +28,7 @@
 //! window. Phase boundaries give the same ordering per generation with no
 //! window at all.
 
-use bowl::{Commands, Component, Entity, Eq, Query, View, Where, With};
+use bowl::{Commands, Component, Entity, Eq, Query, SystemParam, View, Where, With};
 use tracing::info;
 
 use crate::lang::entities::document::{FilePath, FileText};
@@ -119,18 +119,33 @@ pub(crate) async fn resolve_hover_requests(
     }
 }
 
+/// Everything the finalizer reads, grouped as a param bundle so the
+/// signature stays flat as entities grow (spec/language-entities.md).
+#[derive(SystemParam)]
+pub(crate) struct HoverOutcome<'a> {
+    candidates: View<'a, (Entity, &'a HoverCandidate)>,
+    resolution: HoverResolution<'a>,
+}
+
+/// Nested bundle: the enrichment outputs.
+#[derive(SystemParam)]
+pub(crate) struct HoverResolution<'a> {
+    files: View<'a, (Entity, &'a HoverFile)>,
+    words: View<'a, (Entity, &'a HoverWord)>,
+}
+
 pub(crate) async fn finalize_hover(
     query: Query<(Entity, &HoverEnriched), With<HoverRequest>>,
-    candidates: View<'_, (Entity, &HoverCandidate)>,
-    resolved_files: View<'_, (Entity, &HoverFile)>,
-    resolved_words: View<'_, (Entity, &HoverWord)>,
+    outcome: HoverOutcome<'_>,
     mut commands: Commands,
 ) {
     crate::short_sleep().await;
 
     let (request, _enriched) = query.item();
 
-    if !resolved_files
+    if !outcome
+        .resolution
+        .files
         .iter()
         .any(|(entity, _)| entity == request)
     {
@@ -140,14 +155,17 @@ pub(crate) async fn finalize_hover(
         return;
     }
 
-    let best = candidates
+    let best = outcome
+        .candidates
         .iter()
         .filter(|(_, candidate)| candidate.request == request)
         .max_by_key(|(_, candidate)| candidate.priority)
         .map(|(_, candidate)| candidate.text.clone());
 
     let message = best.unwrap_or_else(|| {
-        match resolved_words
+        match outcome
+            .resolution
+            .words
             .iter()
             .find(|(entity, _)| *entity == request)
         {

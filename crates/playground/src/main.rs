@@ -19,7 +19,7 @@ use crate::lang::{
         import::SystemImportDb,
         namespace::QualifiedName,
     },
-    facts::{AstAvailable, Diagnostic, Severity},
+    facts::{AstAvailable, Diagnostic, DiagnosticsDemand, Severity},
     service::{HoverInfo, HoverRequest, Position},
 };
 
@@ -98,6 +98,16 @@ async fn main() {
         lib = lib_source.len(),
         "source matches"
     );
+
+    // Diagnostics are demand-driven (spec/language-entities.md): nothing
+    // above planned a single check system. Demanding them here makes the
+    // next settle compute them.
+    info!("demand diagnostics");
+    db.insert((
+        Singleton::<DiagnosticsDemand>::new(),
+        DiagnosticsDemand,
+    ))
+    .await;
 
     info!("query diagnostics");
     let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;

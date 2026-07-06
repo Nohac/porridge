@@ -29,6 +29,14 @@ pub(crate) struct BelongsToFile(pub(crate) Entity);
 #[component(untracked)]
 pub(crate) struct Ephemeral;
 
+/// Demand marker (spec/language-entities.md): diagnostics systems gate on
+/// this fact, so settles that nobody asked diagnostics from (a hover-only
+/// request) never plan them. A preference, not a claim — only its owner
+/// changes it, so it cannot go stale the way ordering markers can.
+#[derive(Component, Hash)]
+#[component(hash)]
+pub(crate) struct DiagnosticsDemand;
+
 #[derive(Clone, Copy)]
 pub(crate) struct CstAvailable;
 

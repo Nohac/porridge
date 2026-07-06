@@ -10,9 +10,9 @@ use bowl::{
 use tracing::info;
 
 use crate::lang::{
-    entities::{first_token_text, namespace::NamespacePath, node_span},
+    entities::{document::FileText, first_token_text, namespace::NamespacePath, node_span},
     entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
-    facts::{AstAvailable, BelongsToFile, Severity, Span, emit_diagnostic},
+    facts::{BelongsToFile, DiagnosticsDemand, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef, parser::Rule},
     service::{HoverCandidate, HoverRequest, HoverWord, priority},
 };
@@ -88,7 +88,7 @@ impl LanguageEntity for Definition {
     const NAME: &'static str = "definition";
 
     async fn register(db: &Bowl) {
-        db.add_system(index_defs).await;
+        db.add_system(index_defs.run_during(Phase::Complete)).await;
         db.add_system(check_duplicate_defs).await;
     }
 }
@@ -156,16 +156,21 @@ async fn hover_definitions(
     ));
 }
 
-/// Aggregate the definition set into the `DefIndex` singleton after each
-/// wave where the AST regenerated (the `AstAvailable` gate marker). Entries
-/// carry the namespace so definitions moving between namespaces change the
-/// fingerprint too.
+/// Aggregate the definition set into the `DefIndex` singleton. Runs in
+/// `Phase::Complete` (defs settled for this generation's inputs) driven by
+/// file rows, so any text change recomputes it — no `AstAvailable` gate.
+/// Entries carry the namespace so definitions moving between namespaces
+/// change the fingerprint too. Residual: deleting a whole file without any
+/// other change leaves a ghost index until the next file change; the clean
+/// fix is engine set-deps (relationships, spec/joins.md).
 async fn index_defs(
-    _: Query<Entity, With<AstAvailable>>,
+    _: Query<Entity, With<DiagnosticsDemand>>,
+    query: Query<(Entity, &FileText)>,
     defs: View<'_, (Entity, &AstDef)>,
     paths: View<'_, (Entity, &NamespacePath)>,
     mut commands: Commands,
 ) {
+    let _ = query.item();
     crate::short_sleep().await;
 
     let namespaces = paths.iter().collect::<Vec<_>>();
@@ -190,6 +195,7 @@ async fn index_defs(
 /// definition *set*, a row would never rerun when an unrelated definition is
 /// added or removed — a surviving duplicate could go unreported.
 pub(crate) async fn check_duplicate_defs(
+    _: Query<Entity, With<DiagnosticsDemand>>,
     query: Query<(Entity, &AstDef)>,
     _index: Query<(Entity, &DefIndex)>,
     defs: View<'_, (Entity, &AstDef)>,

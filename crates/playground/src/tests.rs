@@ -2,7 +2,7 @@
 //! integration surface for bowl, so pipeline-shaped guarantees are pinned
 //! here against the actual systems rather than synthetic ones.
 
-use bowl::{Bowl, Singleton};
+use bowl::{Bowl, Entity, Query, Singleton};
 use futures::executor::block_on;
 
 use crate::lang::{
@@ -11,6 +11,7 @@ use crate::lang::{
         document::{FilePath, FileText},
         import::SystemImportDb,
     },
+    facts::{Diagnostic, DiagnosticsDemand},
     service::{HoverInfo, HoverRequest, Position},
 };
 
@@ -94,5 +95,43 @@ fn hover_batched_with_namespaced_source_sees_qualified_name() {
             "hover answered from a stale snapshot: {}",
             info.0
         );
+    });
+}
+
+/// Diagnostics are demand-driven: a hover-only bowl computes none, and
+/// inserting the demand fact makes the next settle produce them.
+#[test]
+fn diagnostics_compute_only_on_demand() {
+    block_on(async {
+        let db = language_bowl().await;
+
+        db.insert((
+            FilePath("demand.porridge".to_string()),
+            FileText("import unknown.lib\nfn alpha() { return 1; }".to_string()),
+        ))
+        .await;
+
+        let info = db
+            .insert((
+                HoverRequest,
+                FilePath("demand.porridge".to_string()),
+                Position { offset: "import unknown.lib\nfn ".len() },
+            ))
+            .await
+            .bind()
+            .take::<HoverInfo>()
+            .await
+            .expect("hover works without diagnostics demand");
+        assert!(info.0.contains("`alpha`"), "{}", info.0);
+
+        // No demand: the unknown import produced no diagnostic.
+        let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await.len();
+        assert_eq!(diagnostics, 0, "undemanded diagnostics must not compute");
+
+        db.insert((Singleton::<DiagnosticsDemand>::new(), DiagnosticsDemand))
+            .await;
+
+        let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await.len();
+        assert!(diagnostics > 0, "demanded diagnostics must compute");
     });
 }
