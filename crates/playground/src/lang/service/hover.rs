@@ -8,6 +8,7 @@ use crate::lang::{
         definition::{AstDef, Definition},
         document::{Document, FilePath, FileText},
         import::{Import, ImportDecl, SystemImportDb},
+        namespace::{Namespace, QualifiedName},
     },
     entity::{HoverCtx, HoverStage},
     facts::{AstAvailable, BelongsToFile},
@@ -34,6 +35,7 @@ pub(crate) async fn hover_info(
     defs: View<'_, (Entity, &AstDef)>,
     imports: View<'_, (Entity, &BelongsToFile, &ImportDecl)>,
     import_db: View<'_, (Entity, &SystemImportDb)>,
+    qualified: View<'_, (Entity, &QualifiedName)>,
     mut commands: Commands,
 ) {
     crate::short_sleep().await;
@@ -51,6 +53,7 @@ pub(crate) async fn hover_info(
 
     let defs = defs.iter().collect::<Vec<_>>();
     let imports = imports.iter().collect::<Vec<_>>();
+    let qualified = qualified.iter().collect::<Vec<_>>();
     let ctx = HoverCtx {
         file,
         offset: position.offset,
@@ -58,11 +61,13 @@ pub(crate) async fn hover_info(
         defs: &defs,
         imports: &imports,
         known_imports: import_db.iter().next().map(|(_, imports)| imports),
+        qualified: &qualified,
     };
 
     // Exhaustive arbitration: ask every entity, most specific first. An
     // entity that grows hover behavior gets added here.
     let answer = Import::hover(&ctx)
+        .or_else(|| Namespace::hover(&ctx))
         .or_else(|| Definition::hover(&ctx))
         .or_else(|| Document::hover(&ctx));
 

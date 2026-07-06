@@ -9,6 +9,7 @@
 pub(crate) mod definition;
 pub(crate) mod document;
 pub(crate) mod import;
+pub(crate) mod namespace;
 
 use bowl::{Commands, Entity, Query};
 use tracing::info;
@@ -24,11 +25,13 @@ use crate::lang::{
 use definition::Definition;
 use document::{Document, FileText, ParsedFile};
 use import::Import;
+use namespace::Namespace;
 
 fn lower_rule(ctx: &LowerCtx<'_>, rule: Rule, node: NodeRef, commands: &mut Commands) {
     match rule {
         Rule::File => Document::lower(ctx, node, commands),
         Rule::ImportDecl => Import::lower(ctx, node, commands),
+        Rule::NamespaceDecl => Namespace::lower(ctx, node, commands),
         Rule::FunctionDef | Rule::TypeDef | Rule::StructDef => {
             Definition::lower(ctx, node, commands)
         }
@@ -64,6 +67,7 @@ pub(crate) async fn generate_ast(
         cst: &parsed.cst,
         source: &text.0,
         file,
+        namespace: None,
     };
     walk(&ctx, NodeRef::ROOT, &mut commands);
 }
@@ -71,6 +75,24 @@ pub(crate) async fn generate_ast(
 fn walk(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands) {
     if let Node::Rule(rule, _) = ctx.cst.get(node) {
         lower_rule(ctx, rule, node, commands);
+
+        // Namespace bodies scope everything beneath them: descend with the
+        // fully qualified path in context so member entities pick it up as
+        // their join key.
+        if matches!(rule, Rule::NamespaceDecl) {
+            if let Some((path, _)) = namespace::declared_path(ctx, node) {
+                let scoped = LowerCtx {
+                    cst: ctx.cst,
+                    source: ctx.source,
+                    file: ctx.file,
+                    namespace: Some(path),
+                };
+                for child in ctx.cst.children(node) {
+                    walk(&scoped, child, commands);
+                }
+                return;
+            }
+        }
     }
 
     for child in ctx.cst.children(node) {

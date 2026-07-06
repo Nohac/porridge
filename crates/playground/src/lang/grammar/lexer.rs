@@ -26,6 +26,8 @@ pub enum Token {
     Error,
     #[token("import")]
     Import,
+    #[token("namespace")]
+    Namespace,
     #[token("fn")]
     Fn,
     #[token("type")]

@@ -15,6 +15,7 @@ use crate::lang::{
         definition::AstDef,
         document::{FilePath, FileText},
         import::SystemImportDb,
+        namespace::QualifiedName,
     },
     facts::{AstAvailable, Diagnostic, Severity},
     service::{HoverInfo, HoverRequest, Position},
@@ -68,6 +69,14 @@ async fn main() {
     db.insert((
         FilePath("lib.porridge".to_string()),
         FileText("import std.fs\nstruct Widget {}\nfn main() { return 2; }".to_string()),
+    ))
+    .await;
+
+    db.insert((
+        FilePath("core.porridge".to_string()),
+        FileText(
+            "namespace app.core {\nfn boot() { return 1; }\ntype Config\n}".to_string(),
+        ),
     ))
     .await;
 
@@ -142,6 +151,33 @@ async fn main() {
         .await
     {
         info!(hover = %info.0);
+    }
+
+    info!("hover request in a namespace");
+    if let Ok(info) = db
+        .insert((
+            HoverRequest,
+            FilePath("core.porridge".to_string()),
+            Position {
+                offset: "namespace app.core {\nfn ".len(),
+            },
+        ))
+        .await
+        .bind()
+        .take::<HoverInfo>()
+        .await
+    {
+        info!(hover = %info.0);
+    }
+
+    info!("qualified names derived by the namespace join");
+    let qualified = db.scoop::<Query<(Entity, &QualifiedName)>>().await;
+    for (entity, name) in qualified.collect() {
+        info!(
+            entity = entity.raw(),
+            definition = name.definition.raw(),
+            qualified = %name.name,
+        );
     }
 
     db.insert((

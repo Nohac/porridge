@@ -1,4 +1,4 @@
-token Import='import' Fn='fn' Type='type' Struct='struct' Return='return';
+token Import='import' Fn='fn' Type='type' Struct='struct' Return='return' Namespace='namespace';
 token Arrow='->' Dot='.' LPar='(' RPar=')' Comma=',' Colon=':' LBrace='{' RBrace='}' Semi=';';
 token Name='<name>' String='<string>' Int='<int>';
 token Whitespace;
@@ -13,8 +13,10 @@ item^:
 | type_def
 | struct_def
 | function_def
+| namespace_decl
 ;
 import_decl: 'import' path;
+namespace_decl: 'namespace' path '{' item* '}';
 path: Name ('.' Name)*;
 type_def: 'type' Name;
 struct_def: 'struct' Name ['{' field* '}'];

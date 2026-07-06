@@ -16,10 +16,11 @@ co-locates everything the concept owns:
 - the checks that validate them,
 - how they present to services (hover, and later goto, completion, ...).
 
-The playground has three: `document` (source files and the parse),
-`import` (import declarations and the known-import database), and
-`definition` (named definitions and the duplicate check). Each lives in
-`crates/playground/src/lang/entities/`.
+The playground has four: `document` (source files and the parse),
+`import` (import declarations and the known-import database), `definition`
+(named definitions and the duplicate check), and `namespace` (`namespace
+a.b { ... }` declarations and the join-derived qualified names of their
+members). Each lives in `crates/playground/src/lang/entities/`.
 
 Cross-cutting facts that every entity shares — `Diagnostic`, `Severity`,
 `Span`, `BelongsToFile`, the ephemeral settle markers — live in
@@ -102,6 +103,25 @@ is a tracked input over the set:
 This composes from existing primitives — gate marker, fingerprint cutoff,
 query product — with no engine support, which is the property the playground
 is meant to demonstrate.
+
+## Pattern: bound join
+
+For *pair*-granular relations the engine now has direct support: a system
+query with a bound `Where<Eq<K>>` filter pairs each driving row with the
+rows whose `K` equals it (see `spec/joins.md`). The namespace entity uses it
+to derive qualified names — one memoized invocation per (namespace, member
+definition) pair:
+
+```rust
+async fn qualify_members(
+    namespaces: Query<(Entity, &NamespaceDecl, &NamespacePath)>,
+    members: Query<(Entity, &AstDef), Where<Eq<NamespacePath>>>,
+    mut commands: Commands,
+) { ... }
+```
+
+Rule of thumb: react to *individual related rows* with a bound join; react
+to *the set as a whole* with the tracked set fingerprint above.
 
 ## Services and the LSP shape
 

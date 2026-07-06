@@ -23,6 +23,7 @@ use crate::lang::{
     entities::{
         definition::AstDef,
         import::{ImportDecl, SystemImportDb},
+        namespace::QualifiedName,
     },
     facts::BelongsToFile,
     grammar::parser::{CstData, NodeRef},
@@ -40,6 +41,9 @@ pub(crate) struct LowerCtx<'a> {
     pub(crate) cst: &'a CstData,
     pub(crate) source: &'a str,
     pub(crate) file: Entity,
+    /// Fully qualified path of the enclosing namespace, if any. The walk in
+    /// `entities` scopes it when descending into a namespace body.
+    pub(crate) namespace: Option<String>,
 }
 
 /// Syntax stage: lower an owned CST rule node into fact components.
@@ -56,6 +60,7 @@ pub(crate) struct HoverCtx<'a> {
     pub(crate) defs: &'a [(Entity, &'a AstDef)],
     pub(crate) imports: &'a [(Entity, &'a BelongsToFile, &'a ImportDecl)],
     pub(crate) known_imports: Option<&'a SystemImportDb>,
+    pub(crate) qualified: &'a [(Entity, &'a QualifiedName)],
 }
 
 /// Service stage: contribute hover content for a position. Return `None`

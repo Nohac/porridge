@@ -9,7 +9,7 @@ use bowl::{
 use tracing::info;
 
 use crate::lang::{
-    entities::{first_token_text, node_span},
+    entities::{first_token_text, namespace::NamespacePath, node_span},
     entity::{HoverCtx, HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{AstAvailable, BelongsToFile, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef, parser::Rule},
@@ -78,7 +78,7 @@ pub(crate) struct TypeDef {
 /// set actually changes, so idempotent reruns invalidate nothing.
 #[derive(Component, Hash)]
 #[component(hash)]
-pub(crate) struct DefIndex(Vec<(String, u64)>);
+pub(crate) struct DefIndex(Vec<(String, Option<String>, u64)>);
 
 pub(crate) struct Definition;
 
@@ -104,7 +104,17 @@ impl LowerStage for Definition {
             AstDef::Type(TypeDef { name, span })
         };
 
-        commands.insert((DerivedFrom::new(ctx.file), BelongsToFile(ctx.file), def));
+        // Definitions inside a namespace carry its path as their membership
+        // join key (see `namespace::qualify_members`).
+        match &ctx.namespace {
+            Some(path) => commands.insert((
+                DerivedFrom::new(ctx.file),
+                BelongsToFile(ctx.file),
+                def,
+                NamespacePath(path.clone()),
+            )),
+            None => commands.insert((DerivedFrom::new(ctx.file), BelongsToFile(ctx.file), def)),
+        };
     }
 }
 
@@ -122,17 +132,27 @@ impl HoverStage for Definition {
 }
 
 /// Aggregate the definition set into the `DefIndex` singleton after each
-/// wave where the AST regenerated (the `AstAvailable` gate marker).
+/// wave where the AST regenerated (the `AstAvailable` gate marker). Entries
+/// carry the namespace so definitions moving between namespaces change the
+/// fingerprint too.
 async fn index_defs(
     _: Query<Entity, With<AstAvailable>>,
     defs: View<'_, (Entity, &AstDef)>,
+    paths: View<'_, (Entity, &NamespacePath)>,
     mut commands: Commands,
 ) {
     crate::short_sleep().await;
 
+    let namespaces = paths.iter().collect::<Vec<_>>();
     let mut entries = defs
         .iter()
-        .map(|(entity, def)| (def.name().to_string(), entity.raw()))
+        .map(|(entity, def)| {
+            let namespace = namespaces
+                .iter()
+                .find(|(owner, _)| *owner == entity)
+                .map(|(_, path)| path.0.clone());
+            (def.name().to_string(), namespace, entity.raw())
+        })
         .collect::<Vec<_>>();
     entries.sort();
 
@@ -148,6 +168,7 @@ pub(crate) async fn check_duplicate_defs(
     query: Query<(Entity, &AstDef)>,
     _index: Query<(Entity, &DefIndex)>,
     defs: View<'_, (Entity, &AstDef)>,
+    paths: View<'_, (Entity, &NamespacePath)>,
     mut commands: Commands,
 ) {
     let (entity, def) = query.item();
@@ -156,10 +177,20 @@ pub(crate) async fn check_duplicate_defs(
 
     info!(entity = entity.raw(), "check_duplicate_defs");
 
-    let Some((previous, previous_def)) = defs
-        .iter()
-        .find(|(other, other_def)| *other < entity && other_def.name() == def.name())
-    else {
+    // Duplicates are scoped: two definitions collide only within the same
+    // namespace (or both at the top level).
+    let namespaces = paths.iter().collect::<Vec<_>>();
+    let namespace_of = |target: Entity| {
+        namespaces
+            .iter()
+            .find(|(owner, _)| *owner == target)
+            .map(|(_, path)| path.0.as_str())
+    };
+
+    let scope = namespace_of(entity);
+    let Some((previous, previous_def)) = defs.iter().find(|(other, other_def)| {
+        *other < entity && other_def.name() == def.name() && namespace_of(*other) == scope
+    }) else {
         return;
     };
 

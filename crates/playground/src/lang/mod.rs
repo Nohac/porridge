@@ -17,7 +17,9 @@ use bowl::{
 };
 
 use crate::lang::{
-    entities::{definition::Definition, document::Document, import::Import},
+    entities::{
+        definition::Definition, document::Document, import::Import, namespace::Namespace,
+    },
     entity::register_entity,
     facts::{AstAvailable, Ephemeral},
 };
@@ -28,6 +30,7 @@ pub(crate) async fn register_language(db: &Bowl) {
     register_entity::<Document>(db).await;
     register_entity::<Import>(db).await;
     register_entity::<Definition>(db).await;
+    register_entity::<Namespace>(db).await;
 
     db.add_system(entities::generate_ast.on_settled(|mut commands: Commands| {
         commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
