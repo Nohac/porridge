@@ -262,6 +262,8 @@ trait StoreDyn: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision>;
+    /// Whether this store's component type participates in revision tracking.
+    fn tracked(&self) -> bool;
     /// Removes one derived entry if it is still owned by `owner`.
     ///
     /// Returns whether the component type is tracked.
@@ -352,6 +354,10 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision> {
         self.entries.get(&entity).map(|entry| entry.revision)
+    }
+
+    fn tracked(&self) -> bool {
+        T::tracked()
     }
 
     fn reconcile_entry(&mut self, entity: Entity, revision: &mut Revision) {
@@ -741,6 +747,17 @@ impl World {
             .map(|entry| entry.revision)
     }
 
+    /// Returns the stamped fingerprint for a component on an entity.
+    ///
+    /// `None` when the entity lacks the component or the component type has
+    /// no fingerprint (not `#[component(hash)]`).
+    pub(crate) fn fingerprint<T: Component>(&self, entity: Entity) -> Option<u64> {
+        self.store::<T>()?
+            .entries
+            .get(&entity)
+            .and_then(|entry| entry.fingerprint)
+    }
+
     /// Returns the tracked revision for a component type id on an entity.
     pub(crate) fn revision_by_type(&self, type_id: TypeId, entity: Entity) -> Option<Revision> {
         self.stores
@@ -754,8 +771,13 @@ impl World {
     /// attached to the entity. This keeps the storage model simple while giving
     /// revision-scoped relations a stable "owner changed" signal.
     pub(crate) fn entity_revision(&self, entity: Entity) -> Option<Revision> {
+        // Untracked components re-stamp their entry with the current global
+        // revision on every write; including them would lift entity revisions
+        // (and so retire `DerivedFrom`-anchored facts) without any tracked
+        // change having happened.
         self.stores
             .values()
+            .filter(|store| store.tracked())
             .filter_map(|store| store.revision_for_entity(entity))
             .max()
     }
