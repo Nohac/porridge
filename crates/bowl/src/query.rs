@@ -722,6 +722,21 @@ pub trait QueryParam {
     /// Returns component-level access covering every possible row, used by
     /// ambient params that read whole stores.
     fn access_all() -> Vec<Access>;
+    /// Whether this param's item reads component `key`, making it a bound
+    /// join provider (see [`QueryFilter::bound_key`]).
+    fn provides_key(_key: TypeId) -> bool {
+        false
+    }
+    /// Stamped fingerprint of component `key` on this row when the param's
+    /// item reads `key`. Outer `None` = not a provider; inner `None` = the
+    /// component has no fingerprint.
+    fn provided_key(
+        _snapshot: &Snapshot,
+        _state: &Self::State,
+        _key: TypeId,
+    ) -> Option<Option<u64>> {
+        None
+    }
     /// Fetches the user-facing item for a previously enumerated row.
     fn fetch<'a>(
         bowl: &Bowl,
@@ -878,6 +893,14 @@ impl<T: Component> QueryParam for &T {
         vec![Access::read_all::<T>()]
     }
 
+    fn provides_key(key: TypeId) -> bool {
+        key == TypeId::of::<T>()
+    }
+
+    fn provided_key(snapshot: &Snapshot, state: &Self::State, key: TypeId) -> Option<Option<u64>> {
+        (key == TypeId::of::<T>()).then(|| snapshot.fingerprint::<T>(*state))
+    }
+
     fn fetch<'a>(
         _bowl: &Bowl,
         snapshot: &'a Snapshot,
@@ -963,6 +986,18 @@ pub trait QueryPart {
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
     fn access_all() -> Access;
+    /// Whether this part reads component `key` (bound join provider).
+    ///
+    /// Only read parts provide; `MutRef` deliberately does not, so a join
+    /// key cannot be mutated by the invocation it binds.
+    fn provides_key(_key: TypeId) -> bool {
+        false
+    }
+    /// Stamped fingerprint of component `key` on `entity` when this part
+    /// reads `key`.
+    fn provided_key(_snapshot: &Snapshot, _entity: Entity, _key: TypeId) -> Option<Option<u64>> {
+        None
+    }
     fn fetch<'a>(
         bowl: &Bowl,
         snapshot: &'a Snapshot,
@@ -1002,6 +1037,14 @@ impl<T: Component> QueryPart for &T {
 
     fn access_all() -> Access {
         Access::read_all::<T>()
+    }
+
+    fn provides_key(key: TypeId) -> bool {
+        key == TypeId::of::<T>()
+    }
+
+    fn provided_key(snapshot: &Snapshot, entity: Entity, key: TypeId) -> Option<Option<u64>> {
+        (key == TypeId::of::<T>()).then(|| snapshot.fingerprint::<T>(entity))
     }
 
     fn fetch<'a>(
@@ -1139,6 +1182,23 @@ macro_rules! impl_entity_query_param {
                 vec![$($P::access_all(),)*]
             }
 
+            fn provides_key(key: TypeId) -> bool {
+                false $(|| $P::provides_key(key))*
+            }
+
+            fn provided_key(
+                snapshot: &Snapshot,
+                state: &Self::State,
+                key: TypeId,
+            ) -> Option<Option<u64>> {
+                $(
+                    if let Some(found) = $P::provided_key(snapshot, *state, key) {
+                        return Some(found);
+                    }
+                )*
+                None
+            }
+
             fn fetch<'a>(
                 bowl: &Bowl,
                 snapshot: &'a Snapshot,
@@ -1187,6 +1247,17 @@ pub trait QueryFilter<Q: QueryParam> {
     fn entity_candidates(_snapshot: &Snapshot) -> Option<Vec<Entity>> {
         None
     }
+    /// Join key a bound `Where` filter requires: the key component's type and
+    /// this row's stamped key fingerprint. `None` means this filter does not
+    /// bind to sibling system params.
+    fn bound_key(_snapshot: &Snapshot, _state: &Q::State) -> Option<(TypeId, Option<u64>)> {
+        None
+    }
+    /// Static form of [`QueryFilter::bound_key`] (key type and display name),
+    /// used for registration-time binding validation.
+    fn bound_key_type() -> Option<(TypeId, &'static str)> {
+        None
+    }
 }
 
 impl<Q: QueryParam> QueryFilter<Q> for () {
@@ -1229,6 +1300,50 @@ where
 
     fn entity_candidates(snapshot: &Snapshot) -> Option<Vec<Entity>> {
         Some(snapshot.entities_with::<T>())
+    }
+}
+
+/// Bound join filter for system queries.
+///
+/// A row matches when its `T` component equals the `T` on the driving row of
+/// the unique sibling system param whose item reads `&T`. Equality is stamped
+/// fingerprint equality, so `T` must be `#[component(hash)]`. Like `With<T>`,
+/// the filter contributes `T`'s revision to the row's memo deps, so a row
+/// whose key changes goes stale.
+impl<Q, T> QueryFilter<Q> for Where<Eq<T>>
+where
+    Q: QueryParam,
+    Q::State: EntityQueryState,
+    T: Component,
+{
+    fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+        snapshot.has::<T>(state.entity())
+    }
+
+    fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
+        component_dep_if_tracked::<T>(snapshot, state.entity())
+            .into_iter()
+            .collect()
+    }
+
+    fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
+        vec![Access::read::<T>(state.entity())]
+    }
+
+    fn access_all() -> Vec<Access> {
+        vec![Access::read_all::<T>()]
+    }
+
+    fn entity_candidates(snapshot: &Snapshot) -> Option<Vec<Entity>> {
+        Some(snapshot.entities_with::<T>())
+    }
+
+    fn bound_key(snapshot: &Snapshot, state: &Q::State) -> Option<(TypeId, Option<u64>)> {
+        Some((TypeId::of::<T>(), snapshot.fingerprint::<T>(state.entity())))
+    }
+
+    fn bound_key_type() -> Option<(TypeId, &'static str)> {
+        Some((TypeId::of::<T>(), std::any::type_name::<T>()))
     }
 }
 

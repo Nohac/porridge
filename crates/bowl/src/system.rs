@@ -166,6 +166,48 @@ pub(crate) trait SystemParam {
     fn always_run() -> bool {
         false
     }
+    /// Join key a bound `Where` filter on this param requires, with the
+    /// row's stamped key fingerprint.
+    fn bound_key(_snapshot: &Snapshot, _state: &Self::State) -> Option<(TypeId, Option<u64>)> {
+        None
+    }
+    /// Static form of [`SystemParam::bound_key`] (key type and display name).
+    fn bound_key_type() -> Option<(TypeId, &'static str)> {
+        None
+    }
+    /// Whether this param's item reads component `key` (bound join provider).
+    fn provides_key(_key: TypeId) -> bool {
+        false
+    }
+    /// Stamped fingerprint of component `key` on this param's row when the
+    /// param's item reads `key`.
+    fn provided_key(
+        _snapshot: &Snapshot,
+        _state: &Self::State,
+        _key: TypeId,
+    ) -> Option<Option<u64>> {
+        None
+    }
+    /// Whether a tuple state satisfies every bound `Where` filter binding.
+    fn binding_matches(_snapshot: &Snapshot, _state: &Self::State) -> bool {
+        true
+    }
+    /// Param-local rejection of unsupported filter shapes, checked before
+    /// tuple-level binding validation.
+    fn validate_local() -> Result<(), String> {
+        Ok(())
+    }
+    /// Validates bound `Where` filters against sibling params at
+    /// registration time.
+    fn validate_bindings() -> Result<(), String> {
+        Self::validate_local()?;
+        match Self::bound_key_type() {
+            Some((_, name)) => Err(format!(
+                "bound `Where<Eq<{name}>>` needs exactly one sibling query param reading `&{name}`; found none"
+            )),
+            None => Ok(()),
+        }
+    }
 }
 
 impl<Q, Filter> SystemParam for Query<Q, Filter>
@@ -200,6 +242,26 @@ where
         guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         Query::new(Q::fetch(bowl, snapshot, state, guards))
+    }
+
+    fn bound_key(snapshot: &Snapshot, state: &Self::State) -> Option<(TypeId, Option<u64>)> {
+        Filter::bound_key(snapshot, state)
+    }
+
+    fn bound_key_type() -> Option<(TypeId, &'static str)> {
+        Filter::bound_key_type()
+    }
+
+    fn provides_key(key: TypeId) -> bool {
+        Q::provides_key(key)
+    }
+
+    fn provided_key(
+        snapshot: &Snapshot,
+        state: &Self::State,
+        key: TypeId,
+    ) -> Option<Option<u64>> {
+        Q::provided_key(snapshot, state, key)
     }
 }
 
@@ -239,6 +301,17 @@ where
         _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         View::new(bowl.clone(), snapshot)
+    }
+
+    fn validate_local() -> Result<(), String> {
+        // A view has no row state to bind a join key from; accepting the
+        // filter would silently degrade `Eq` to `With` semantics.
+        match Filter::bound_key_type() {
+            Some((_, name)) => Err(format!(
+                "`View` does not support bound `Where<Eq<{name}>>` yet; bind on a `Query` and filter view rows inside the system"
+            )),
+            None => Ok(()),
+        }
     }
 }
 
@@ -340,7 +413,94 @@ macro_rules! impl_system_param_tuple {
 
                 for_each_state!(states, (); $($P),*);
 
+                let has_bound = false $(|| $P::bound_key_type().is_some())*;
+                if has_bound {
+                    states.retain(|state| Self::binding_matches(snapshot, state));
+                }
+
                 states
+            }
+
+            fn binding_matches(snapshot: &Snapshot, state: &Self::State) -> bool {
+                #[allow(non_snake_case)]
+                let ($($P,)*) = state;
+
+                let mut bound: Vec<(usize, TypeId, Option<u64>)> = Vec::new();
+                let mut index = 0usize;
+                $(
+                    if let Some((key, fingerprint)) = $P::bound_key(snapshot, $P) {
+                        bound.push((index, key, fingerprint));
+                    }
+                    index += 1;
+                )*
+                let _ = index;
+
+                for (bound_index, key, fingerprint) in bound {
+                    let Some(fingerprint) = fingerprint else {
+                        panic!(
+                            "bound `Where<Eq<..>>` key component must be \
+                             `#[component(hash)]` so rows can join on fingerprints"
+                        );
+                    };
+
+                    let mut provided: Option<Option<u64>> = None;
+                    let mut index = 0usize;
+                    $(
+                        if index != bound_index && provided.is_none() {
+                            provided = $P::provided_key(snapshot, $P, key);
+                        }
+                        index += 1;
+                    )*
+                    let _ = index;
+
+                    match provided {
+                        Some(Some(provider)) if provider == fingerprint => {}
+                        Some(Some(_)) => return false,
+                        Some(None) => panic!(
+                            "bound `Where<Eq<..>>` provider component must be \
+                             `#[component(hash)]` so rows can join on fingerprints"
+                        ),
+                        // Unreachable: providers are validated at registration.
+                        None => return false,
+                    }
+                }
+
+                true
+            }
+
+            fn validate_bindings() -> Result<(), String> {
+                $( $P::validate_local()?; )*
+
+                let mut bound: Vec<(usize, TypeId, &'static str)> = Vec::new();
+                let mut index = 0usize;
+                $(
+                    if let Some((key, name)) = $P::bound_key_type() {
+                        bound.push((index, key, name));
+                    }
+                    index += 1;
+                )*
+                let _ = index;
+
+                for (bound_index, key, name) in bound {
+                    let mut providers = 0usize;
+                    let mut index = 0usize;
+                    $(
+                        if index != bound_index && $P::provides_key(key) {
+                            providers += 1;
+                        }
+                        index += 1;
+                    )*
+                    let _ = index;
+
+                    if providers != 1 {
+                        return Err(format!(
+                            "bound `Where<Eq<{name}>>` needs exactly one sibling query \
+                             param reading `&{name}`; found {providers}"
+                        ));
+                    }
+                }
+
+                Ok(())
             }
 
             fn keys(state: &Self::State) -> Vec<Entity> {
@@ -1133,6 +1293,13 @@ where
     F::Param: Send + Sync + 'static,
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
+        if let Err(message) = F::Param::validate_bindings() {
+            panic!(
+                "cannot register system `{}`: {message}",
+                std::any::type_name::<F>()
+            );
+        }
+
         BoxedSystem::new(Arc::new(FunctionSystem {
             id,
             function: self,

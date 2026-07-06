@@ -229,11 +229,16 @@ let rows = diagnostics.collect();
   - `Gt<T>`
   - `Lt<T>`
   - `Lte<T>`
-- Support bound `Where` filters in system queries (relational joins): the
-  `Eq<T>` argument binds to the sibling param providing `&T`, pruning the
-  cartesian product to matching pairs. Covers per-namespace membership and
-  per-use-site name resolution with per-pair memoization. Design in
-  `spec/joins.md`.
+- Done: bound `Where<Eq<T>>` filters in system queries (relational joins) —
+  the argument binds to the sibling param providing `&T`, pruning the
+  cartesian product to matching pairs with per-pair memoization. Design and
+  current shortcuts in `spec/joins.md`; exercised by the playground's
+  namespace entity. Still open: scoped views, `Named`-qualified binds,
+  index-probe planning.
+- Support `And` for system-side filters: plain conjunction (`With` +
+  `Without` cannot combine on one query today) and compound join keys
+  (`And<Eq<Name>, Eq<Arity>>` for overload resolution). See the operator
+  matrix in `spec/joins.md`.
 - Follow-up: engine-maintained relationships (Bevy-style inverse components,
   tracked and fingerprinted) to make membership sets a memoizable dependency,
   unlocking `Where<In<T>>` and retiring the hand-rolled set-fingerprint

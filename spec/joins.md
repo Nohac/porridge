@@ -3,8 +3,25 @@
 This document records the design for bound `Where` filters in system queries:
 relational joins between system params without introducing a new concept.
 
-Status: design sketch, not implemented. External `Where` filters and the
-fingerprint index exist; system-side binding does not.
+Status: implemented for system-side `Query` params (bound `Where<Eq<T>>`
+with registration-time validation and product pruning). Open: scoped views,
+`Named`-qualified binds, and the relationships companion below.
+
+Implementation shortcuts (current):
+
+- The product is formed first and then pruned per combination by comparing
+  stamped key fingerprints (`SystemParam::binding_matches`), instead of the
+  ordered per-driving-row index probe described below. Semantically
+  identical; the probe is a planning optimization to revisit if wide joins
+  show up in profiles.
+- Equality is fingerprint equality only (64-bit); values are not confirmed
+  with `PartialEq` the way external `Eq` filters do after index resolution.
+  A hash collision would join two unrelated rows.
+- `MutRef` parts do not provide join keys, so a join key cannot be mutated
+  by an invocation it binds.
+- The playground exercises the join end to end: `namespace a.b { ... }`
+  declarations pair with their member definitions to derive qualified names
+  (`crates/playground/src/lang/entities/namespace.rs`).
 
 ## Motivation
 
@@ -144,6 +161,32 @@ reruns or `DerivedFrom` cleanup removes them. This is the existing semantics
 for rows that stop matching `Without<T>` filters — the join introduces no
 new lifecycle. Diagnostics and similar facts emitted by join systems should
 anchor to both sides with `DerivedFrom::many([left, right])` as usual.
+
+## Operator support
+
+Bound semantics are decided per operator; only operators whose bound
+meaning is obvious and cheap get support. The escape hatch is always the
+same: filter inside the system against a `View`.
+
+- `Eq<T>` — supported (the equality join above).
+- `And` — **planned next.** Two payoffs: system-side filter composition in
+  general (today `With<A>` + `Without<B>` cannot combine on one query), and
+  compound join keys — `And<Eq<Name>, Eq<Arity>>` is overload resolution,
+  `And<Eq<Name>, Eq<NamespacePath>>` is scoped name resolution.
+  Mechanically: `bound_key` becomes plural; validation and pruning loop
+  over the keys.
+- `Gte`/`Gt`/`Lt`/`Lte` — deferred until a concrete need. A bound ordered
+  comparison is a theta/band join: fingerprints cannot order, so pruning
+  needs value reads and `PartialOrd` at plan time, and the pair set churns
+  under small value changes, eroding per-pair memoization.
+- `Not<Eq<K>>` — punt. An anti-join pairs nearly the full product; the
+  useful absence questions ("defs not in any namespace") are set-shaped and
+  belong to the set-fingerprint pattern or future relationships.
+- `Or` — punt; cheap to prune but no motivating case.
+- `With`/`Without` — nothing to bind; they already work system-side.
+
+External `.args(...)` filters are unaffected: the full expression set
+remains available on scoops.
 
 ## Companion design: relationships and `Where<In<T>>`
 

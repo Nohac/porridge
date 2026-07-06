@@ -3040,4 +3040,254 @@ mod tests {
             assert_eq!(bowl.scoop::<Query<(Entity, &Request)>>().await.len(), 0);
         });
     }
+
+    static JOIN_PAIR_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    async fn join_pairs(
+        namespaces: Query<(Entity, &A, &FingerprintedRank)>,
+        members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
+        mut commands: Commands,
+    ) {
+        JOIN_PAIR_RUNS.fetch_add(1, Ordering::SeqCst);
+        let (namespace, a, _rank) = namespaces.item();
+        let (member, b) = members.item();
+        commands.insert((
+            DerivedFrom::many([namespace, member]),
+            Sum(a.0 * 100 + b.0),
+        ));
+    }
+
+    async fn collect_sums(bowl: &Bowl) -> std::collections::BTreeSet<u32> {
+        bowl.scoop::<Query<(Entity, &Sum)>>()
+            .await
+            .collect()
+            .into_iter()
+            .map(|(_, sum)| sum.0)
+            .collect()
+    }
+
+    #[test]
+    fn bound_eq_join_runs_only_matching_pairs() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(join_pairs).await;
+
+            bowl.insert((A(1), FingerprintedRank(1))).await;
+            bowl.insert((A(2), FingerprintedRank(2))).await;
+            bowl.insert((B(10), FingerprintedRank(1))).await;
+            bowl.insert((B(20), FingerprintedRank(1))).await;
+            bowl.insert((B(30), FingerprintedRank(2), Note)).await;
+
+            JOIN_PAIR_RUNS.store(0, Ordering::SeqCst);
+            let sums = collect_sums(&bowl).await;
+            assert_eq!(
+                sums,
+                [110, 120, 230].into_iter().collect(),
+                "only key-matching pairs should run"
+            );
+            assert_eq!(JOIN_PAIR_RUNS.load(Ordering::SeqCst), 3);
+
+            // Settling again replans nothing: every pair is memoized.
+            collect_sums(&bowl).await;
+            assert_eq!(JOIN_PAIR_RUNS.load(Ordering::SeqCst), 3);
+
+            // A new member is a new pair row for its namespace only.
+            bowl.insert((B(40), FingerprintedRank(1))).await;
+            let sums = collect_sums(&bowl).await;
+            assert_eq!(sums, [110, 120, 230, 140].into_iter().collect());
+            assert_eq!(JOIN_PAIR_RUNS.load(Ordering::SeqCst), 4);
+
+            // Touching one member's data reruns only that member's pair.
+            for (_, member) in bowl
+                .scoop::<Query<(Entity, Mut<B>), With<Note>>>()
+                .await
+                .collect()
+            {
+                member.with_latest(|b| b.0 = 31).await;
+            }
+            let sums = collect_sums(&bowl).await;
+            assert_eq!(sums, [110, 120, 231, 140].into_iter().collect());
+            assert_eq!(JOIN_PAIR_RUNS.load(Ordering::SeqCst), 5);
+        });
+    }
+
+    async fn join_pairs_uncounted(
+        namespaces: Query<(Entity, &A, &FingerprintedRank)>,
+        members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
+        mut commands: Commands,
+    ) {
+        let (namespace, a, _rank) = namespaces.item();
+        let (member, b) = members.item();
+        commands.insert((
+            DerivedFrom::many([namespace, member]),
+            Sum(a.0 * 100 + b.0),
+        ));
+    }
+
+    #[test]
+    fn bound_eq_join_key_change_moves_the_pair() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(join_pairs_uncounted).await;
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((A(1), FingerprintedRank(1))).await;
+            bowl.insert((A(2), FingerprintedRank(2))).await;
+            bowl.insert((B(10), FingerprintedRank(1))).await;
+
+            assert_eq!(collect_sums(&bowl).await, [110].into_iter().collect());
+
+            // Moving the member to the other key retires the old pair (its
+            // derived output leaves through DerivedFrom cleanup) and forms a
+            // new pair with the other namespace.
+            for (_, rank) in bowl
+                .scoop::<Query<(Entity, Mut<FingerprintedRank>), With<B>>>()
+                .await
+                .collect()
+            {
+                rank.with_latest(|rank| rank.0 = 2).await;
+            }
+
+            assert_eq!(collect_sums(&bowl).await, [210].into_iter().collect());
+        });
+    }
+
+    async fn self_keyed_join(
+        namespaces: Query<(Entity, &A, &FingerprintedRank)>,
+        members: Query<(Entity, &B, &FingerprintedRank), Where<Eq<FingerprintedRank>>>,
+        mut commands: Commands,
+    ) {
+        let (namespace, a, _) = namespaces.item();
+        let (member, b, rank) = members.item();
+        commands.insert((
+            DerivedFrom::many([namespace, member]),
+            Sum(a.0 * 1000 + b.0 * 10 + rank.0),
+        ));
+    }
+
+    #[test]
+    fn bound_eq_join_allows_bound_query_reading_its_own_key() {
+        block_on(async {
+            let bowl = Bowl::new();
+            // The bound query reads the key itself; provider resolution must
+            // skip the bound param and bind to the namespace query.
+            bowl.add_system(self_keyed_join).await;
+
+            bowl.insert((A(1), FingerprintedRank(1))).await;
+            bowl.insert((B(2), FingerprintedRank(1))).await;
+            bowl.insert((B(3), FingerprintedRank(9))).await;
+
+            assert_eq!(collect_sums(&bowl).await, [1021].into_iter().collect());
+        });
+    }
+
+    async fn missing_provider_join(
+        members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
+        mut _commands: Commands,
+    ) {
+        let _ = members.item();
+    }
+
+    #[test]
+    #[should_panic(expected = "needs exactly one sibling query param")]
+    fn bound_eq_without_provider_panics_at_registration() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(missing_provider_join).await;
+        });
+    }
+
+    async fn ambiguous_provider_join(
+        _a_rows: Query<(Entity, &A, &FingerprintedRank)>,
+        _c_rows: Query<(Entity, &C, &FingerprintedRank)>,
+        members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
+    ) {
+        let _ = members.item();
+    }
+
+    #[test]
+    #[should_panic(expected = "needs exactly one sibling query param")]
+    fn bound_eq_with_ambiguous_providers_panics_at_registration() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(ambiguous_provider_join).await;
+        });
+    }
+
+    async fn view_bound_join(
+        _namespaces: Query<(Entity, &A, &FingerprintedRank)>,
+        _members: View<'_, (Entity, &B), Where<Eq<FingerprintedRank>>>,
+    ) {
+    }
+
+    #[test]
+    #[should_panic(expected = "does not support bound")]
+    fn bound_eq_on_view_panics_at_registration() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(view_bound_join).await;
+        });
+    }
+
+    async fn derive_ranked_from_a(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (source, _a) = query.item();
+        commands.insert((DerivedFrom::new(source), FingerprintedRank(5)));
+    }
+
+    async fn derive_sum_from_ranked(
+        query: Query<(Entity, &FingerprintedRank)>,
+        mut commands: Commands,
+    ) {
+        let (ranked, rank) = query.item();
+        commands.insert((DerivedFrom::new(ranked), Sum(rank.0 + 1)));
+    }
+
+    /// An upstream rerun that re-derives identical content must not retire
+    /// second-order derived facts: the re-stamped untracked `DerivedFrom` on
+    /// the intermediate entity may not lift its entity revision, or the
+    /// downstream fact goes stale without its producer ever replanning.
+    #[test]
+    fn derived_fact_survives_upstream_rerun_with_unchanged_content() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(derive_ranked_from_a).await;
+            bowl.add_system(derive_sum_from_ranked).await;
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((A(1),)).await;
+            assert_eq!(collect_sums(&bowl).await, [6].into_iter().collect());
+
+            // Bump the source: the first derivation reruns but re-emits an
+            // identical fingerprinted fact, so the second derivation has no
+            // reason to rerun — and its output must survive cleanup.
+            for (_, a) in bowl.scoop::<Query<(Entity, Mut<A>)>>().await.collect() {
+                a.with_latest(|a| a.0 = 2).await;
+            }
+
+            assert_eq!(collect_sums(&bowl).await, [6].into_iter().collect());
+        });
+    }
+
+    async fn unhashed_key_join(
+        _labels: Query<(Entity, &Label)>,
+        members: Query<(Entity, &B), Where<Eq<Label>>>,
+    ) {
+        let _ = members.item();
+    }
+
+    #[test]
+    #[should_panic(expected = "component(hash)")]
+    fn bound_eq_join_requires_hashed_key() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(unhashed_key_join).await;
+
+            bowl.insert((Label("namespace"),)).await;
+            bowl.insert((B(1), Label("namespace"))).await;
+
+            bowl.scoop::<Query<(Entity, &B)>>().await;
+        });
+    }
 }
