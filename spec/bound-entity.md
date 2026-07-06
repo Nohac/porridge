@@ -79,6 +79,14 @@ It does all of this:
 4. removes remaining outputs scoped to the bound entity
 5. removes the bound entity itself
 
+Taking unwraps the component cell, which requires that no live snapshot or
+query result still shares it. Transient holders (in-flight evaluation
+waves, concurrent scoops) are waited out: `take` checks pin state under the
+state lock and yields until holders drop, so concurrent load cannot make a
+take fail spuriously or lose the value. A caller holding its own query
+result over the same component type across the `take` await deadlocks
+itself — drop the result first (the same rule as external `Mut` closures).
+
 Tuple bundles take everything at once:
 
 ```rust

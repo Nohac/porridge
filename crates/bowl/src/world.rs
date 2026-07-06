@@ -929,12 +929,24 @@ impl World {
         owners
     }
 
+    /// Whether taking `T` from `entity` would currently fail because a live
+    /// snapshot or query result still shares the component cell.
+    ///
+    /// Callers hold the state lock while checking, and snapshot creation also
+    /// requires that lock, so a `false` answer cannot be invalidated before
+    /// the caller's matching `remove_component`.
+    pub(crate) fn component_pinned<T: Component>(&self, entity: Entity) -> bool {
+        self.store::<T>()
+            .and_then(|store| store.entries.get(&entity))
+            .is_some_and(|entry| Arc::strong_count(&entry.value) > 1)
+    }
+
     /// Removes one typed component and returns the stored value behind `Arc`.
     ///
-    /// Taking still avoids `T: Clone`, but it now requires that no structural
-    /// snapshot keeps the removed component cell alive. Normal bound request
-    /// lifetimes satisfy that; a caller holding an old query result for the same
-    /// component can make this return `None`.
+    /// Taking still avoids `T: Clone`, but it requires that no structural
+    /// snapshot keeps the removed component cell alive; check
+    /// [`World::component_pinned`] first, because a pinned removal loses the
+    /// value.
     pub(crate) fn remove_component<T>(&mut self, entity: Entity) -> Option<Arc<T>>
     where
         T: Component,

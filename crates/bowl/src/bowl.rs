@@ -412,15 +412,28 @@ impl BoundEntity {
             .await;
         self.bowl.settle().await;
 
-        let result = {
+        let result = loop {
             let mut state = self.bowl.inner.state.lock().await;
             // Taking unwraps component cells, which must not be kept alive by
             // the shared snapshot cache.
             state.snapshot_cache = None;
+
+            // In-flight snapshots and live query results can still share the
+            // cells this take needs; removing a shared cell would lose the
+            // value. Holders are transient (evaluation waves, concurrent
+            // scoops), so yield until they drop. Snapshot creation requires
+            // the state lock held here, so an unblocked check cannot be
+            // invalidated before the take below.
+            if T::blocked(&state.world, entity) {
+                drop(state);
+                yield_once().await;
+                continue;
+            }
+
             let result = T::take(&mut state.world, entity);
             cleanup_bound_entity(&mut state, entity);
             state.settled_revision = state.world.revision_raw();
-            result
+            break result;
         };
 
         self.bowl.drain_deferred_bound_cleanup().await;
@@ -485,6 +498,12 @@ pub trait TakeBundle {
 
     #[doc(hidden)]
     fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError>;
+
+    /// Whether any component this bundle would take is still shared with a
+    /// live snapshot or query result, making the take momentarily
+    /// impossible without losing the value.
+    #[doc(hidden)]
+    fn blocked(world: &World, entity: Entity) -> bool;
 }
 
 impl<T> TakeBundle for T
@@ -499,6 +518,10 @@ where
             component: type_name::<T>(),
         })
     }
+
+    fn blocked(world: &World, entity: Entity) -> bool {
+        world.component_pinned::<T>(entity)
+    }
 }
 
 impl<T> TakeBundle for Option<T>
@@ -509,6 +532,10 @@ where
 
     fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
         Ok(world.remove_component::<T>(entity))
+    }
+
+    fn blocked(world: &World, entity: Entity) -> bool {
+        world.component_pinned::<T>(entity)
     }
 }
 
@@ -1377,6 +1404,10 @@ macro_rules! impl_take_bundle_tuple {
             #[allow(non_snake_case)]
             fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
                 Ok(($($T::take(world, entity)?,)*))
+            }
+
+            fn blocked(world: &World, entity: Entity) -> bool {
+                false $(|| $T::blocked(world, entity))*
             }
         }
     };
@@ -3023,6 +3054,32 @@ mod tests {
 
             assert_eq!(answer.0, 42);
             assert_eq!(bowl.scoop::<Query<(Entity, &Note)>>().await.len(), 0);
+        });
+    }
+
+    /// A live query result shares the answer's component cell. Taking used to
+    /// fail spuriously (and destroy the value) when any snapshot still pinned
+    /// the cell; it must instead wait for the holder to drop.
+    #[test]
+    fn take_waits_for_pinning_query_results_to_release() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(answer_request).await;
+
+            let request = bowl.insert((Request,)).await.bind();
+
+            // Settle and pin the Answer cell with a held query result.
+            let pinned = bowl.scoop::<Query<(Entity, &Answer)>>().await;
+            assert_eq!(pinned.len(), 1);
+
+            let handle = std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                drop(pinned);
+            });
+
+            let answer = request.take::<Answer>().await.unwrap();
+            assert_eq!(answer.0, 42);
+            handle.join().unwrap();
         });
     }
 
