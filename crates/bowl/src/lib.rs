@@ -114,3 +114,14 @@ pub use system::{
 };
 #[doc(hidden)]
 pub use world::ComponentRef;
+
+pub use macros::SystemParam;
+
+/// Support surface for the `#[derive(SystemParam)]` macro. Not public API.
+#[doc(hidden)]
+pub mod __derive {
+    pub use crate::query::{Access, Dep, GuardStore};
+    pub use crate::system::SystemParam;
+    pub use crate::world::Snapshot;
+    pub use crate::{Bowl, Commands, Entity};
+}
