@@ -29,6 +29,12 @@ important.
   open: `Cow` `for_each` epoch gating, budget configurability.
 - Treat `DerivedFrom` as the standard pattern for revision-scoped derived facts
   such as diagnostics, hover results, indexes, and summaries.
+- A ~10k-line compiler port (dsql: picante → porridge) validated the model —
+  source management, memoization, and orchestration layers dissolved into
+  components and systems, and the frontend crate disappeared. Its seven
+  friction reports are folded into the sections below (anchor-ordering trap
+  §2, external remove + spawn ids + revision fingerprints §1, View footgun
+  §10, intra-phase ordering §12, explain facility §14).
 - Explore Porridge as a long-running daemon/client runtime.
 - Keep a Replicon-like replication/change-stream layer as a future plugin
   track. The engine capabilities it needs are implemented
@@ -76,6 +82,22 @@ See:
 - Add optional query parts (`Option<&T>` in a row tuple) so systems stop
   carrying side-`View`s solely to look up a maybe-present component by
   entity (see `index_defs`/`check_duplicate_defs` and their `paths` view).
+- Add external component removal: `bowl.entity(e).remove::<T>()` mirroring
+  targeted inserts, with the same epoch semantics. The external write API is
+  currently insert-only — an LSP `didClose` cannot retract an `OpenBuffer`
+  fact (dsql port, friction 2).
+- Make `Commands::insert` return the reserved `Entity` so a system can link
+  parent/child facts by entity id within one command buffer. Reservation
+  must preserve rerun id stability: thread the shared id allocator plus the
+  invocation's previous spawn-slot ids into `Commands`, so slot N reuses
+  its previous id and only new slots allocate. The dsql port worked around
+  the gap with stable `NodeKey`/`ParentKey` join keys — often the better
+  design, but the handle unlocks others (friction 3).
+- Add `#[component(revision)]`: a first-class fingerprint mode for large
+  components (source text, catalog snapshots) where hashing the payload is
+  wasteful — an internal counter bumped per mutation stands in for the
+  hash. Codifies the global-revision-counter-as-`Hash` trick every big
+  component in the dsql port hand-rolled (friction 6).
 - Keep the README aligned with the final mental model:
   - components-only storage
   - immutable snapshots for reads
@@ -106,6 +128,14 @@ Current shortcut:
 
 ## 2. Stabilize Output Ownership And Invalidation
 
+- Fix the `DerivedFrom` anchor-ordering trap (dsql port, worst friction —
+  will bite every new user): anchor revisions are captured in
+  command-application order, so a derived entity emitted *before* a
+  same-buffer write to its anchor (e.g. a diagnostic inserted before
+  `ParsedFile` lands on the same file entity) is born stale and silently
+  reaped by `cleanup_stale_derived`. Resolve anchor revisions at buffer
+  end, after all commands in the batch have applied; at minimum,
+  debug-assert when a derived entity is born already-stale.
 - Define stronger ownership semantics for derived outputs.
 - Decide how `DerivedFrom` and invocation-owned outputs compose:
   - invocation ownership replaces outputs from a rerun
@@ -358,6 +388,14 @@ Current shortcut:
   - `View<T>`: ambient snapshot read, no memo deps
   - `TrackedView<T>` or similar: ambient read that contributes deps
 - Document common patterns for checks that need project-wide context.
+- Defuse the silent-staleness footgun (dsql port, friction 4): a system
+  whose `View`ed data changes while its `Query` deps do not simply stops
+  reacting, and nothing warns. Document the fingerprinted-index-as-tracked-
+  input pattern (`DefIndex`) as the standard remedy; detection folds into
+  the explain facility (§14) as `ExplainReport::stale_views`. A separate
+  `TrackedView` read type was considered and rejected — an invalidating
+  view contradicts `View`'s deliberate ambient semantics and is just a
+  worse query.
 
 Current shortcut:
 - `View` never contributes dependencies.
@@ -385,6 +423,11 @@ Current shortcut:
   pushed further.
 - Prefer query/output availability over explicit ordering where possible.
 - If ordering returns, make it system-level and cycle-checked.
+- Document "never produce and consume in the same phase" as a hard rule:
+  intra-phase ordering is undefined, and the dsql port hit it (a
+  Cleanup-phase candidate producer raced the Cleanup finalizer; friction
+  5). Consider registration-time or debug-time detection when one system's
+  output type is a same-phase system's tracked input.
 
 Current shortcut:
 - Systems and invalid rows are polled concurrently, but there is still no
@@ -423,6 +466,13 @@ See:
 
 ## 14. Add Dependency Graph Introspection
 
+- Add a "why didn't X run" explain facility — the single biggest DX ask
+  from the dsql port (friction 7): given a system (and optionally an
+  entity), report whether any rows matched, whether a join/demand filter
+  pruned them, whether the memoized deps were unchanged (and which
+  revisions were compared), which phase the system runs in, and whether
+  viewed stores changed since its last run (`stale_views`, the §10
+  ambient-staleness detection).
 - Expose enough internal data to inspect:
   - system invocation keys
   - query dependencies

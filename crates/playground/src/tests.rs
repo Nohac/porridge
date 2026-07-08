@@ -2,7 +2,9 @@
 //! integration surface for bowl, so pipeline-shaped guarantees are pinned
 //! here against the actual systems rather than synthetic ones.
 
-use bowl::{Bowl, Entity, Query, Singleton};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use bowl::{Bowl, Component, Entity, Query, Singleton};
 use futures::executor::block_on;
 
 use crate::lang::{
@@ -133,5 +135,71 @@ fn diagnostics_compute_only_on_demand() {
 
         let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await.len();
         assert!(diagnostics > 0, "demanded diagnostics must compute");
+    });
+}
+
+/// A large component whose change detection runs off an explicit revision
+/// counter instead of hashing the payload — the payload is deliberately not
+/// `Hash` (an `f64`). Rewriting with an unchanged revision must be a
+/// fingerprint hit (no rerun); bumping the revision must invalidate.
+#[derive(Component)]
+#[component(revision)]
+struct Blob {
+    revision: u64,
+    payload: f64,
+}
+
+static BLOB_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+async fn observe_blob(query: Query<(Entity, &Blob)>) {
+    let (_entity, _blob) = query.item();
+    BLOB_RUNS.fetch_add(1, Ordering::SeqCst);
+}
+
+/// dsql-port friction 6 (TODO §1): every big component hand-rolls a
+/// revision-counter-as-`Hash` fingerprint. `#[component(revision)]` must
+/// stamp the fingerprint from the `revision` field without hashing (or even
+/// being able to hash) the payload.
+#[test]
+fn revision_fingerprints_cut_off_reruns_without_hashing_payloads() {
+    block_on(async {
+        let db = Bowl::new();
+        db.add_system(observe_blob).await;
+
+        let inserted = db
+            .insert((Blob {
+                revision: 1,
+                payload: 1.0,
+            },))
+            .await;
+        db.scoop::<Query<(Entity, &Blob)>>().await;
+        assert_eq!(BLOB_RUNS.load(Ordering::SeqCst), 1);
+
+        // Same revision: the rewrite is a fingerprint hit, nothing reruns.
+        db.entity(inserted.entity())
+            .insert((Blob {
+                revision: 1,
+                payload: 1.0,
+            },))
+            .await;
+        db.scoop::<Query<(Entity, &Blob)>>().await;
+        assert_eq!(
+            BLOB_RUNS.load(Ordering::SeqCst),
+            1,
+            "an unchanged revision must not invalidate"
+        );
+
+        // Bumped revision: the fingerprint moves, the observer reruns.
+        db.entity(inserted.entity())
+            .insert((Blob {
+                revision: 2,
+                payload: 2.0,
+            },))
+            .await;
+        let blobs = db.scoop::<Query<(Entity, &Blob)>>().await;
+        assert_eq!(BLOB_RUNS.load(Ordering::SeqCst), 2, "a bumped revision must invalidate");
+        let rows = blobs.collect();
+        assert_eq!(rows[0].1.revision, 2);
+        assert_eq!(rows[0].1.payload, 2.0);
     });
 }

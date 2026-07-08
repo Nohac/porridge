@@ -439,6 +439,7 @@ all_tuples!(impl_arg_bundle_tuple, 1, 8, T);
 /// ```text
 /// Query<T, F = ()>
 ///   tracked dependency
+///   drives invocation identity and memo invalidation
 ///
 /// View<T, F = ()>
 ///   current snapshot context
@@ -447,6 +448,40 @@ all_tuples!(impl_arg_bundle_tuple, 1, 8, T);
 ///
 /// This is useful for checks that need to inspect surrounding facts but should
 /// only rerun when their driving row changes.
+///
+/// # Views never invalidate — by design
+///
+/// Viewed data changing does **not** rerun the system. That is the point of
+/// a view: a shader-like per-row system can read project-wide context
+/// without every context change fanning out into reruns of every row. The
+/// flip side is a silent-staleness footgun: an aggregating system whose
+/// views move while its tracked deps stay put simply stops reacting, and
+/// nothing warns. If the system must react to the data, the data belongs in
+/// a tracked input — either directly in the driving [`Query`], or as a
+/// fingerprinted index component when the interesting change is set
+/// membership (a `#[component(hash)]` summary fact rebuilt by an upstream
+/// system; its fingerprint only moves when the set actually changes, so it
+/// is a cheap tracked stand-in for "any of these rows changed").
+///
+/// # Guaranteeing viewed data is available: phases
+///
+/// Because a view contributes no deps, a system that runs *before* its
+/// viewed data is produced is never rerun once that data lands — within one
+/// phase, whether a producer's commit is visible to an ambient consumer is
+/// scheduling order, which is undefined. Never produce and ambiently
+/// consume in the same phase. A phase boundary is the barrier that makes
+/// ambient reads deterministic: every commit from earlier phases is visible
+/// to every view in later phases.
+///
+/// ```text
+/// Phase::Complete   per-entity systems insert HoverCandidate facts
+///        --------- phase boundary: all candidate commits are visible ---------
+/// Phase::Cleanup    finalizer Views all HoverCandidates, picks the winner
+/// ```
+///
+/// Tracked consumers do not need this: a [`Query`] on the produced type
+/// replans when the producer commits, even mid-phase. The phase-gate
+/// pattern is specifically the ambient-consumption discipline.
 pub struct View<'a, T, F = ()>
 where
     T: QueryParam,

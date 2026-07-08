@@ -4,9 +4,33 @@ use proc_macro::{Delimiter, TokenStream, TokenTree};
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let use_hash = has_hash_attribute(input.clone());
     let untracked = has_untracked_attribute(input.clone());
+    let use_revision = has_revision_attribute(input.clone());
     let Some(name) = type_name(input) else {
         return compile_error("Component can only be derived for structs and enums");
     };
+
+    if use_revision {
+        if use_hash {
+            return compile_error(
+                "#[component(hash)] and #[component(revision)] are mutually exclusive",
+            );
+        }
+        let tracked = if untracked {
+            "fn tracked() -> bool { false }"
+        } else {
+            ""
+        };
+        return format!(
+            "impl ::bowl::Component for {name} {{
+                {tracked}
+                fn fingerprint(&self) -> ::core::option::Option<u64> {{
+                    ::core::todo!(\"component revision fingerprints: stamp from the revision field without hashing the payload\")
+                }}
+            }}"
+        )
+        .parse()
+        .expect("generated component impl should parse");
+    }
 
     match (use_hash, untracked) {
         (true, true) => format!(
@@ -52,6 +76,10 @@ fn has_hash_attribute(input: TokenStream) -> bool {
 
 fn has_untracked_attribute(input: TokenStream) -> bool {
     component_attribute_contains(input, "untracked")
+}
+
+fn has_revision_attribute(input: TokenStream) -> bool {
+    component_attribute_contains(input, "revision")
 }
 
 fn component_attribute_contains(input: TokenStream, needle: &str) -> bool {

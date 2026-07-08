@@ -39,12 +39,21 @@ impl Commands {
         }
     }
 
-    /// Buffers spawning a new derived entity with `bundle`.
-    pub fn insert<B: Bundle>(&mut self, bundle: B) {
+    /// Buffers spawning a new derived entity with `bundle` and returns its
+    /// reserved id, so sibling commands in the same buffer can link to it
+    /// (parent/child facts during lowering).
+    ///
+    /// The id is guaranteed only for fresh spawns: a `Singleton<T>` bundle
+    /// may resolve to the already-existing singleton entity when the buffer
+    /// applies.
+    pub fn insert<B: Bundle>(&mut self, bundle: B) -> Entity {
         self.inner
             .lock()
             .expect("command buffer lock poisoned")
             .push(Box::new(SpawnCommand { bundle }));
+        // Stub: id reservation at buffer time is pending; the regression
+        // test `spawned_entities_link_by_id_within_one_buffer` pins it.
+        Entity(u64::MAX)
     }
 
     /// Buffers removing an entity and all attached components.

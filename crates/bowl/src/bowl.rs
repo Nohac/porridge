@@ -202,10 +202,6 @@ pub struct BoundEntity {
     generation: u64,
 }
 
-/// Builder for an external bowl scoop.
-///
-/// `ScoopBuilder` can be awaited directly to produce the requested result, or
-/// it can first receive runtime filter arguments with [`ScoopBuilder::args`].
 /// External handle to one existing entity, from [`Bowl::entity`].
 pub struct BowlEntity {
     bowl: Bowl,
@@ -226,6 +222,70 @@ impl BowlEntity {
             target: Some(self.entity),
         }
     }
+
+    /// Queues removal of component `T` from this entity, mirroring
+    /// `commands.entity(..).remove::<T>()` inside systems. Same epoch
+    /// semantics as [`Bowl::insert`], including `.preempting()`.
+    ///
+    /// External writers need retraction as well as insertion: an LSP
+    /// `didClose` must be able to retract an `OpenBuffer` fact it inserted.
+    pub fn remove<T: Component>(&self) -> RemoveBuilder<T> {
+        RemoveBuilder {
+            bowl: self.bowl.clone(),
+            entity: self.entity,
+            preempting: false,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+/// Builder for [`BowlEntity::remove`]; awaiting it queues the removal.
+pub struct RemoveBuilder<T> {
+    bowl: Bowl,
+    entity: Entity,
+    preempting: bool,
+    _marker: std::marker::PhantomData<fn() -> T>,
+}
+
+impl<T> RemoveBuilder<T> {
+    /// Forces an epoch boundary instead of deferring to the next epoch (see
+    /// [`InsertBuilder::preempting`]).
+    pub fn preempting(mut self) -> Self {
+        self.preempting = true;
+        self
+    }
+}
+
+impl<T: Component> IntoFuture for RemoveBuilder<T> {
+    type Output = ();
+    type IntoFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        let _ = (self.bowl, self.entity, self.preempting);
+        todo!("external component removal: retract T as a base write with epoch semantics")
+    }
+}
+
+/// Report from [`Bowl::explain`]: why a system did or did not run.
+#[derive(Debug)]
+pub struct ExplainReport {
+    /// Whether any registered system matched the queried name.
+    pub registered: bool,
+    /// The phase the system runs during, if registered.
+    pub phase: Option<Phase>,
+    /// Invocations the system's queries currently match, after joins and
+    /// filters. Zero explains "nothing to run" — e.g. a demand join starved
+    /// the tuple product.
+    pub matched_rows: usize,
+    /// Matched invocations skipped because their memoized deps are
+    /// unchanged. Equal to `matched_rows` explains "already up to date".
+    pub memoized_rows: usize,
+    /// Viewed component stores that changed since the system's last run.
+    /// Nonzero while everything is memoized is the ambient-staleness
+    /// footgun signature: the system's `View`s moved but nothing reran.
+    /// That is deliberate `View` semantics — if the system must react,
+    /// the data belongs in a tracked input (fingerprinted-index pattern).
+    pub stale_views: usize,
 }
 
 /// Builder for [`Bowl::insert`]; awaiting it queues the bundle.
@@ -264,6 +324,10 @@ where
     }
 }
 
+/// Builder for an external bowl scoop.
+///
+/// `ScoopBuilder` can be awaited directly to produce the requested result, or
+/// it can first receive runtime filter arguments with [`ScoopBuilder::args`].
 pub struct ScoopBuilder<S> {
     bowl: Bowl,
     args: QueryArgs,
@@ -939,6 +1003,21 @@ impl Bowl {
             bowl: self.clone(),
             entity,
         }
+    }
+
+    /// Explains why `system` (matched by function-name suffix) did or did
+    /// not run: whether it is registered at all, which phase it runs in, how
+    /// many invocations its queries currently match after joins and filters,
+    /// and how many of those are memo-current (skipped as up to date).
+    ///
+    /// Distinguishes the silent no-run causes that are otherwise guesswork:
+    /// no matching rows (e.g. a demand join starved the tuple product), all
+    /// rows memoized, the wrong phase, the wrong system name entirely — or
+    /// ambient staleness, where the system's `View`s moved but its tracked
+    /// deps did not ([`ExplainReport::stale_views`]).
+    pub async fn explain(&self, system: &str) -> ExplainReport {
+        let _ = system;
+        todo!("explain facility: report registration, phase, matched and memoized rows")
     }
 
     async fn insert_inner<B>(
@@ -4841,5 +4920,203 @@ mod tests {
             Some(("new".to_string(), true)),
             "the restarted epoch must answer from the post-write world"
         );
+    }
+
+    // --- dsql-port regression tests (TODO §1, §2, §10, §12, §14) ---
+    //
+    // Each test pins one failure point reported from the ~10k-line dsql
+    // port. They are expected to FAIL until the corresponding fix lands.
+
+    async fn diagnose_then_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (file, _source) = query.item();
+        // The natural writing order: emit the diagnostic first...
+        commands.insert((Note, DerivedFrom::new(file)));
+        // ...then stamp the parse result onto the same source entity.
+        commands.entity(file).insert(B(1));
+    }
+
+    /// Friction 1 (TODO §2): `DerivedFrom` anchors capture revisions in
+    /// command-application order. The diagnostic above applies before `B`
+    /// lands on the file entity, so its captured anchor revision is already
+    /// stale when the same buffer finishes — and cleanup silently reaps it.
+    /// Anchors must be resolved at buffer end.
+    #[test]
+    fn derived_facts_emitted_before_same_buffer_anchor_writes_survive_cleanup() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(diagnose_then_stamp).await;
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((A(1),)).await;
+
+            let notes = bowl.scoop::<Query<(Entity, &Note)>>().await;
+            assert_eq!(
+                notes.collect().len(),
+                1,
+                "the diagnostic was born stale and silently reaped"
+            );
+        });
+    }
+
+    /// Friction 2 (TODO §1): the external write API is insert-only. An LSP
+    /// `didClose` must be able to retract a fact it inserted.
+    #[test]
+    fn external_remove_retracts_a_component() {
+        block_on(async {
+            let bowl = Bowl::new();
+            let inserted = bowl.insert((A(1), B(2))).await;
+
+            bowl.entity(inserted.entity()).remove::<B>().await;
+
+            let bs = bowl.scoop::<Query<(Entity, &B)>>().await;
+            assert_eq!(bs.collect().len(), 0, "the retracted component must be gone");
+            let survivors = bowl.scoop::<Query<(Entity, &A)>>().await;
+            assert_eq!(survivors.collect().len(), 1, "siblings must survive the removal");
+        });
+    }
+
+    struct ParentLink(Entity);
+    impl Component for ParentLink {}
+
+    async fn lower_linked_pair(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (_source, _a) = query.item();
+        let parent = commands.insert((B(7),));
+        commands.insert((C(1), ParentLink(parent)));
+    }
+
+    /// Friction 3 (TODO §1): `Commands::insert` returned nothing, so lowering
+    /// could not link parent/child facts by entity id within one buffer. It
+    /// must hand back the reserved id before the buffer applies — reusing the
+    /// previous run's slot ids so reruns stay id-stable.
+    #[test]
+    fn spawned_entities_link_by_id_within_one_buffer() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(lower_linked_pair).await;
+
+            bowl.insert((A(1),)).await;
+
+            let links = bowl.scoop::<Query<(Entity, &ParentLink)>>().await;
+            let rows = links.collect();
+            assert_eq!(rows.len(), 1);
+            let linked_parent = rows[0].1.0;
+
+            let parents = bowl.scoop::<Query<(Entity, &B)>>().await;
+            let parent_rows = parents.collect();
+            assert_eq!(parent_rows.len(), 1);
+            assert_eq!(
+                parent_rows[0].0, linked_parent,
+                "the link must resolve to the spawned parent entity"
+            );
+        });
+    }
+
+    /// Friction 4 (TODO §10): plain `View`s never invalidate — deliberately —
+    /// but nothing surfaces that a system's ambient reads went stale; the
+    /// system just quietly stops reacting. Detection folds into `explain`:
+    /// everything memoized while `stale_views` is nonzero is the footgun
+    /// signature (the remedy is making the data a tracked input, e.g. the
+    /// fingerprinted-index pattern).
+    #[test]
+    fn explain_surfaces_stale_ambient_views() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(count_bs).await;
+
+            bowl.insert((A(1),)).await;
+            bowl.insert((B(1),)).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(counts.collect()[0].1.0, 1);
+            let report = bowl.explain("count_bs").await;
+            assert_eq!(report.stale_views, 0, "the system just ran against current views");
+
+            bowl.insert((B(2),)).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            // Documented View semantics: the count deliberately does not react.
+            assert_eq!(counts.collect()[0].1.0, 1);
+
+            let report = bowl.explain("count_bs").await;
+            assert_eq!(report.memoized_rows, 1);
+            assert_eq!(
+                report.stale_views, 1,
+                "one viewed store changed since the system's last run"
+            );
+        });
+    }
+
+    async fn produce_in_cleanup(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (_entity, _a) = query.item();
+        commands.insert((C(9),));
+    }
+
+    async fn finalize_in_cleanup(
+        query: Query<(Entity, &B)>,
+        candidates: View<'_, (Entity, &C)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _b) = query.item();
+        commands.entity(entity).insert(Count(candidates.len()));
+    }
+
+    /// Friction 5 (TODO §12): intra-phase ordering is undefined, so a system
+    /// that ambiently consumes (`View`) what a same-phase sibling produces
+    /// races it — tracked consumers replan on commit, ambient ones do not.
+    /// The engine should flag the combination instead of racing silently.
+    #[test]
+    #[should_panic(expected = "consumed in the same phase")]
+    fn same_phase_ambient_consumption_is_flagged() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(produce_in_cleanup.run_during(Phase::Cleanup))
+                .await;
+            bowl.add_system(finalize_in_cleanup.run_during(Phase::Cleanup))
+                .await;
+
+            bowl.insert((A(1),)).await;
+            bowl.insert((B(1),)).await;
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+        });
+    }
+
+    async fn demand_gated_check(
+        query: Query<(Entity, &A)>,
+        _demand: Query<Entity, With<Note>>,
+        mut commands: Commands,
+    ) {
+        let (entity, _a) = query.item();
+        commands.entity(entity).insert(Count(1));
+    }
+
+    /// Friction 7 (TODO §14): when a system silently does not run, the cause
+    /// (starved join product, memo hit, wrong phase, wrong name) is
+    /// guesswork. `explain` must report it.
+    #[test]
+    fn explain_reports_why_a_system_did_not_run() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(demand_gated_check).await;
+
+            bowl.insert((A(1),)).await;
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+
+            let report = bowl.explain("demand_gated_check").await;
+            assert!(report.registered);
+            assert_eq!(report.phase, Some(Phase::Evaluate));
+            assert_eq!(
+                report.matched_rows, 0,
+                "the demand join starves the tuple product"
+            );
+
+            bowl.insert((Note,)).await;
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+
+            let report = bowl.explain("demand_gated_check").await;
+            assert_eq!(report.matched_rows, 1);
+            assert_eq!(
+                report.memoized_rows, 1,
+                "the row ran and is now memo-current"
+            );
+        });
     }
 }
