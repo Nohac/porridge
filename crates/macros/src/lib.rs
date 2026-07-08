@@ -20,11 +20,15 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         } else {
             ""
         };
+        // The fingerprint is the `revision: u64` field, verbatim: change
+        // detection for large components whose payload is expensive (or
+        // impossible) to hash. The owner bumps the counter on real
+        // mutation; equal counters mean equal values.
         return format!(
             "impl ::bowl::Component for {name} {{
                 {tracked}
                 fn fingerprint(&self) -> ::core::option::Option<u64> {{
-                    ::core::todo!(\"component revision fingerprints: stamp from the revision field without hashing the payload\")
+                    ::core::option::Option::Some(self.revision)
                 }}
             }}"
         )
@@ -197,6 +201,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     let mut fetch_fields = String::new();
     let mut always_run_body = String::from("false");
     let mut validate_body = String::new();
+    let mut view_types_body = String::new();
 
     for (index, field) in bundle.fields.iter().enumerate() {
         let static_ty = field.ty_with_lifetime(&bundle.lifetime, "'static");
@@ -233,6 +238,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
         ));
         validate_body.push_str(&format!(
             "<{static_ty} as ::bowl::__derive::SystemParam>::validate_local()?;"
+        ));
+        view_types_body.push_str(&format!(
+            "<{static_ty} as ::bowl::__derive::SystemParam>::view_types(out);"
         ));
     }
 
@@ -289,6 +297,10 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
             fn validate_local() -> ::std::result::Result<(), ::std::string::String> {{
                 {validate_body}
                 ::std::result::Result::Ok(())
+            }}
+
+            fn view_types(out: &mut ::std::vec::Vec<::std::any::TypeId>) {{
+                {view_types_body}
             }}
         }}"
     )

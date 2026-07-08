@@ -1,8 +1,7 @@
 //! Cross-cutting facts shared by every language entity: diagnostics, spans,
-//! file anchoring, and the ephemeral settle markers.
+//! file anchoring, and the demand marker.
 
-use bowl::{Commands, Component, ComponentHookContext, DerivedFrom, Entity};
-use tracing::info;
+use bowl::{Commands, Component, DerivedFrom, Entity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Span {
@@ -25,51 +24,17 @@ pub(crate) enum Severity {
 #[component(hash)]
 pub(crate) struct BelongsToFile(pub(crate) Entity);
 
-#[derive(Component)]
-#[component(untracked)]
-pub(crate) struct Ephemeral;
-
 /// Demand marker (spec/language-entities.md): diagnostics systems gate on
 /// this fact, so settles that nobody asked diagnostics from (a hover-only
 /// request) never plan them. A preference, not a claim — only its owner
-/// changes it, so it cannot go stale the way ordering markers can.
+/// changes it, so it cannot go stale the way ordering markers can. (The
+/// `AstAvailable`/`CstAvailable` *ordering* markers that used to live here
+/// are gone: phases and tracked joins carry ordering now, and an emit-only
+/// marker cycled off→on by its settled hook costs the whole bowl an extra
+/// generation per settle.)
 #[derive(Component, Hash)]
 #[component(hash)]
 pub(crate) struct DiagnosticsDemand;
-
-#[derive(Clone, Copy)]
-pub(crate) struct CstAvailable;
-
-impl Component for CstAvailable {
-    fn tracked() -> bool {
-        false
-    }
-
-    fn on_insert(context: ComponentHookContext) {
-        info!(entity = context.entity().raw(), "CstAvailable insert");
-    }
-
-    fn on_remove(context: ComponentHookContext) {
-        info!(entity = context.entity().raw(), "CstAvailable remove");
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct AstAvailable;
-
-impl Component for AstAvailable {
-    fn tracked() -> bool {
-        false
-    }
-
-    fn on_insert(context: ComponentHookContext) {
-        info!(entity = context.entity().raw(), "AstAvailable insert");
-    }
-
-    fn on_remove(context: ComponentHookContext) {
-        info!(entity = context.entity().raw(), "AstAvailable remove");
-    }
-}
 
 pub(crate) fn emit_diagnostic(
     commands: &mut Commands,

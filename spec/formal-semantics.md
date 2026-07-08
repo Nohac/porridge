@@ -322,7 +322,7 @@ old world or the world after the full invocation commit.
 Phases impose coarse ordering:
 
 ```text
-Startup -> Evaluate -> Complete -> on_settled -> Cleanup
+Startup -> Evaluate -> Complete -> on_settled -> Settle
 ```
 
 Within a normal phase, streaming evaluation runs until the phase is quiescent.
@@ -336,9 +336,11 @@ Evaluate
 Complete
 ```
 
-Cleanup is terminal for the current external evaluation boundary. Cleanup
-commands are applied before callers observe results, but cleanup writes do not
-by themselves push normal phases forward again.
+Settle is terminal for the current external evaluation boundary, and it
+cannot drive its own settle forward: its removal commands are applied before
+callers observe results (stale facts are reaped from the settled view),
+while its insert/spawn commands are queued as inputs for the start of the
+next run.
 
 ## Settled Boundary
 
@@ -383,7 +385,7 @@ An ephemeral fact is an ordinary component with a conventional lifetime:
 
 ```text
 exists during one evaluation boundary
-removed during Cleanup
+removed during Settle
 ```
 
 Ephemeral facts are useful as phase-transition gates:
@@ -413,7 +415,7 @@ At insertion time, it captures entity revisions:
 [(e_1, rev_1), (e_2, rev_2), ...]
 ```
 
-Cleanup removes the derived entity when:
+The settle-phase cleanup removes the derived entity when:
 
 ```text
 any source entity is missing
@@ -498,8 +500,9 @@ plan(W, M) = empty
 running = empty
 ```
 
-and settled hooks do not introduce further normal work. Cleanup runs after that
-boundary and does not advance normal phases.
+and settled hooks do not introduce further normal work. The Settle phase runs
+after that boundary and cannot advance normal phases: only its removals land
+inside the boundary, and its inserts wait for the next run.
 
 This fixed point is the semantic definition. The runtime guardrail is separate:
 

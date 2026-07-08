@@ -165,7 +165,7 @@ on_rest / on_idle
 The minimum needed hook is:
 
 ```rust
-bowl.add_system(cleanup_ephemeral.run_during(Phase::Cleanup));
+bowl.add_system(cleanup_ephemeral.run_during(Phase::Settle));
 ```
 
 Lifecycle hooks should be expressed using the same command buffer model as
@@ -188,14 +188,15 @@ This uses normal buffered remove commands.
 
 ```rust
 db.add_system(parse_file); // default: Phase::Evaluate
-db.add_system(cleanup_ephemeral.run_during(Phase::Cleanup));
+db.add_system(cleanup_ephemeral.run_during(Phase::Settle));
 ```
 
 Current phases:
 
 ```text
 Startup
-  runs once before the first evaluate phase
+  runs once before the first evaluate phase, and again after a
+  preemption restart (the retraction slot)
 
 Evaluate
   default phase for ordinary systems
@@ -203,20 +204,19 @@ Evaluate
 Complete
   runs after evaluate systems in the same generation
 
-Cleanup
-  runs after evaluate/complete have settled
+Settle
+  runs once per settle, after evaluate/complete have converged
 ```
 
 Commands are applied between startup/evaluate/complete phases, so later normal
 phases can observe facts produced by earlier normal phases in the same
-generation. Cleanup uses the same command buffer model, but it is held until
-normal phases stop producing tracked changes. Cleanup is committed before
-outside callers observe query results.
-
-Cleanup writes are terminal for the current evaluation. They may bump component
-revisions, but that revision movement is folded into the settled baseline after
-normal systems are already clean, instead of forcing another normal evaluation
-tick by itself.
+generation. Settle uses the same command buffer model, but it is held until
+normal phases stop producing tracked changes, and it cannot drive its own
+settle forward: removal commands are committed before outside callers observe
+query results (stale facts are reaped from the settled view), while insert and
+spawn commands are queued as inputs for the start of the next run — a settle
+system can seed the next state-machine step, but never re-open the current
+settle.
 
 ## Plugins
 
@@ -252,7 +252,7 @@ Helpers are only sugar:
 commands.insert((Singleton::<AstAvailable>::new(), AstAvailable { data }, Ephemeral));
 ```
 
-`Ephemeral` should initially mean entity lifetime. Cleanup removes entities
+`Ephemeral` should initially mean entity lifetime. The settle phase removes entities
 marked with `Ephemeral`, including ephemeral singleton entities, and updates any
 internal indexes such as singleton caches. Component-scoped ephemeral cleanup can
 be added later if a real use case needs it.

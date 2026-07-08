@@ -260,14 +260,14 @@ Semantic details:
   epoch ("this generation begins with possibly-stale residue"). What is
   ephemeral and what to retract stays entirely in userland: the existing
   `Ephemeral` marker and cleanup system, registered for both boundaries —
-  `run_during(Phase::Cleanup)` (settle end: re-arm) and
+  `run_during(Phase::Settle)` (settle end: re-arm) and
   `run_during(Phase::Startup)` (restart: retract). Atomicity falls out of
   phase sequencing: Startup converges before Evaluate plans, so markers
   are gone before any gated consumer can race the fresh derivations.
   Removal purges gated rows' memo entries (entity-keyed) and re-arms the
   emitting hooks (`!has_derived_owned`). Registration granularity replaces
   type attributes for every edge case: `cleanup_stale_derived` registers
-  for Cleanup only — running it at restart would not be *wrong* (same
+  for Settle only — running it at restart would not be *wrong* (same
   fixpoint), but it severs the continuity that makes preemption cheap:
   removal deletes the entries, so re-derived identical facts get fresh
   revisions (no previous entry to fingerprint-match), entity removal
@@ -276,13 +276,13 @@ Semantic details:
   of diff-replacing in place. The deeper principle: at restart time,
   "stale" is indistinguishable from "about to be diff-replaced by a
   rerunning producer"; orphanhood only becomes decidable at convergence,
-  which is why Cleanup's home is the settle boundary — the restarted
+  which is why the reaper's home is the settle boundary — the restarted
   epoch's own settle reaps true orphans a moment later, invisibly
   (mid-epoch state is not externally observable under epochs). A hook's
   durable outputs have no cleanup registered and survive preemption. The "which claims retract" decision is visible in
   the registration function, not hidden in provenance. Discipline cost:
   forgetting the Startup registration lets a marker lie under preemption —
-  the same class of pattern discipline as forgetting the Cleanup
+  the same class of pattern discipline as forgetting the Settle
   registration today, and a candidate for a `run_during_any` ergonomic
   helper.
 - **Cost of dropping.** Read-only invocations whose deps the edit did not
@@ -319,7 +319,7 @@ anything else in this document:
 > producer gets there, and let settle collect what no producer wants.
 
 - **Ephemeral facts (claims, markers)** are cleaned at both boundaries —
-  `Phase::Cleanup` at settle (re-arm) and `Phase::Startup` on
+  `Phase::Settle` at settle (re-arm) and `Phase::Startup` on
   preempt-restart (retract). This is correctness, not a trade: a stale
   claim causes wrong reads through the systems gated on it. It is also
   nearly free: markers are few, and their removal only invalidates gate
@@ -330,8 +330,7 @@ anything else in this document:
   rerunning producers, preserving revisions, entity ids, and memo keys
   (the fingerprint cutoff keeps working; that is where preemption's
   cheapness comes from). True orphans are reaped by the epoch's own
-  settle-time Cleanup, the earliest point at which orphanhood is
-  decidable.
+  settle phase, the earliest point at which orphanhood is decidable.
 
 ## Implementation order
 

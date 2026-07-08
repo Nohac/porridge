@@ -82,22 +82,23 @@ See:
 - Add optional query parts (`Option<&T>` in a row tuple) so systems stop
   carrying side-`View`s solely to look up a maybe-present component by
   entity (see `index_defs`/`check_duplicate_defs` and their `paths` view).
-- Add external component removal: `bowl.entity(e).remove::<T>()` mirroring
-  targeted inserts, with the same epoch semantics. The external write API is
-  currently insert-only — an LSP `didClose` cannot retract an `OpenBuffer`
-  fact (dsql port, friction 2).
-- Make `Commands::insert` return the reserved `Entity` so a system can link
-  parent/child facts by entity id within one command buffer. Reservation
-  must preserve rerun id stability: thread the shared id allocator plus the
-  invocation's previous spawn-slot ids into `Commands`, so slot N reuses
-  its previous id and only new slots allocate. The dsql port worked around
-  the gap with stable `NodeKey`/`ParentKey` join keys — often the better
-  design, but the handle unlocks others (friction 3).
-- Add `#[component(revision)]`: a first-class fingerprint mode for large
-  components (source text, catalog snapshots) where hashing the payload is
-  wasteful — an internal counter bumped per mutation stands in for the
-  hash. Codifies the global-revision-counter-as-`Hash` trick every big
-  component in the dsql port hand-rolled (friction 6).
+  **Next up after the qol batch**, together with the outer-join form in §7:
+  both are the same missing shape — absence as a plannable row state — and
+  the hover service showed the cost (a separate else-branch system per
+  inner join).
+- Done: external component removal — `bowl.entity(e).remove::<T>()`
+  mirrors targeted inserts with the same epoch semantics (deferred
+  mid-epoch, `.preempting()` to force a boundary); friction 2.
+- Done: `Commands::insert` returns the reserved `Entity` so a system can
+  link parent/child facts by entity id within one buffer. Ids reserve at
+  buffer time against the invocation's previous spawn slots (shared atomic
+  allocator for new slots), so idempotent reruns keep entity identity;
+  singleton bundles supersede the reservation with the existing singleton
+  entity. Friction 3.
+- Done: `#[component(revision)]` — the fingerprint is the `revision: u64`
+  field verbatim, so large components change-detect without hashing (or
+  being able to hash) their payload; mutually exclusive with
+  `#[component(hash)]`. Friction 6.
 - Keep the README aligned with the final mental model:
   - components-only storage
   - immutable snapshots for reads
@@ -106,7 +107,8 @@ See:
   - systems as memoized per-row functions
   - `View` as ambient/non-invalidating context
   - `on_settled` for readiness gates
-  - `Cleanup` for ephemeral facts
+  - `Settle` for reaping ephemeral facts (removals apply within the
+    settle; inserts defer to the next run)
 - Add one realistic integration test for:
   - file changed
   - parse
@@ -128,14 +130,12 @@ Current shortcut:
 
 ## 2. Stabilize Output Ownership And Invalidation
 
-- Fix the `DerivedFrom` anchor-ordering trap (dsql port, worst friction —
-  will bite every new user): anchor revisions are captured in
-  command-application order, so a derived entity emitted *before* a
-  same-buffer write to its anchor (e.g. a diagnostic inserted before
-  `ParsedFile` lands on the same file entity) is born stale and silently
-  reaped by `cleanup_stale_derived`. Resolve anchor revisions at buffer
-  end, after all commands in the batch have applied; at minimum,
-  debug-assert when a derived entity is born already-stale.
+- Done: the `DerivedFrom` anchor-ordering trap (dsql port, worst friction)
+  is fixed — anchor revisions resolve at buffer end (`DerivedFrom` inserts
+  defer through `World::pending_derived_from` until the command buffer has
+  fully applied), so a derived entity emitted before a same-buffer write
+  to its anchor is no longer born stale. A `debug_assert` in the snapshot
+  path catches any apply site that forgets to flush.
 - Define stronger ownership semantics for derived outputs.
 - Decide how `DerivedFrom` and invocation-owned outputs compose:
   - invocation ownership replaces outputs from a rerun
@@ -180,7 +180,8 @@ See:
 
 Current shortcut:
 - `Phase` and `SystemExt::run_during` exist for `Startup`, `Evaluate`,
-  `Complete`, and `Cleanup`.
+  `Complete`, and `Settle` (formerly `Cleanup`; renamed when its inserts
+  became next-run inputs).
 - `Component` has lifecycle hooks for insert, remove, and entity removal.
 - `on_start`, `on_complete`, and `on_settled` exist.
 - `on_complete` is local to planned/invalid work.
@@ -298,10 +299,23 @@ let rows = diagnostics.collect();
   `Without` cannot combine on one query today) and compound join keys
   (`And<Eq<Name>, Eq<Arity>>` for overload resolution). See the operator
   matrix in `spec/joins.md`.
+- Add optional/outer join forms: a bound join only runs when a pair
+  *exists*, so every "and if nothing matched" branch today needs a
+  separate system driven by the bare row (the hover service's `stamp` seeds
+  the unknown-file fallback only because `resolve`'s inner join cannot).
+  A `Where<Eq<K>>` variant yielding `Option<(..)>` for the bound side
+  would collapse those else-branch systems into their joins.
+- Add ordered/range predicates as join keys (position-in-span is the
+  playground's blocker): with them, the hover candidates become tracked
+  joins, move to `Evaluate`, and the finalizer flattens back to a plain
+  ambient aggregator behind the `Complete` barrier — retiring the monotone
+  pair-fold workaround.
 - Follow-up: engine-maintained relationships (Bevy-style inverse components,
   tracked and fingerprinted) to make membership sets a memoizable dependency,
   unlocking `Where<In<T>>` and retiring the hand-rolled set-fingerprint
-  pattern. See the companion-design section of `spec/joins.md`.
+  pattern. See the companion-design section of `spec/joins.md`. Combined
+  with outer joins, the hover service's three request-shaped rules
+  (request / request⋈file / request⋈candidates) could collapse toward one.
 
 Current shortcut:
 - Queries iterate component stores (smallest participating store for tuples).
@@ -388,14 +402,13 @@ Current shortcut:
   - `View<T>`: ambient snapshot read, no memo deps
   - `TrackedView<T>` or similar: ambient read that contributes deps
 - Document common patterns for checks that need project-wide context.
-- Defuse the silent-staleness footgun (dsql port, friction 4): a system
-  whose `View`ed data changes while its `Query` deps do not simply stops
-  reacting, and nothing warns. Document the fingerprinted-index-as-tracked-
-  input pattern (`DefIndex`) as the standard remedy; detection folds into
-  the explain facility (§14) as `ExplainReport::stale_views`. A separate
-  `TrackedView` read type was considered and rejected — an invalidating
-  view contradicts `View`'s deliberate ambient semantics and is just a
-  worse query.
+- Done (detection): `ExplainReport::stale_views` reports viewed stores
+  that moved past an invocation's planned revision — the footgun signature
+  is everything-memoized with nonzero stale views (dsql port, friction 4).
+  The fingerprinted-index-as-tracked-input pattern (`DefIndex`) remains
+  the standard remedy. A separate `TrackedView` read type was considered
+  and rejected — an invalidating view contradicts `View`'s deliberate
+  ambient semantics and is just a worse query.
 
 Current shortcut:
 - `View` never contributes dependencies.
@@ -423,11 +436,14 @@ Current shortcut:
   pushed further.
 - Prefer query/output availability over explicit ordering where possible.
 - If ordering returns, make it system-level and cycle-checked.
-- Document "never produce and consume in the same phase" as a hard rule:
-  intra-phase ordering is undefined, and the dsql port hit it (a
-  Cleanup-phase candidate producer raced the Cleanup finalizer; friction
-  5). Consider registration-time or debug-time detection when one system's
-  output type is a same-phase system's tracked input.
+- Done: "never produce and ambiently consume in the same phase" is now
+  engine-enforced in debug builds (dsql port, friction 5): a commit whose
+  derived write is `View`ed by a same-phase system with matched rows
+  panics with a fix hint. Marker-gated consumers (no rows in the
+  producing generation) and tracked consumers are exempt; the settle phase
+  is immune by construction since its inserts defer to the next run. The
+  flag immediately caught `check_duplicate_defs` viewing lowering output
+  from Evaluate — moved to Complete.
 
 Current shortcut:
 - Systems and invalid rows are polled concurrently, but there is still no
@@ -466,13 +482,12 @@ See:
 
 ## 14. Add Dependency Graph Introspection
 
-- Add a "why didn't X run" explain facility — the single biggest DX ask
-  from the dsql port (friction 7): given a system (and optionally an
-  entity), report whether any rows matched, whether a join/demand filter
-  pruned them, whether the memoized deps were unchanged (and which
-  revisions were compared), which phase the system runs in, and whether
-  viewed stores changed since its last run (`stale_views`, the §10
-  ambient-staleness detection).
+- Done (first pass): `bowl.explain("system_name")` reports registration,
+  phase, matched rows (post joins/filters), memoized rows, and
+  `stale_views` (viewed stores that moved past the invocation's planned
+  revision — the §10 ambient-staleness detection). Friction 7. Still
+  open: per-entity explanations, naming *which* filter pruned a row, and
+  which dep revisions were compared.
 - Expose enough internal data to inspect:
   - system invocation keys
   - query dependencies
@@ -511,13 +526,17 @@ Current shortcut:
   `index_defs` on a `DiagnosticsDemand` fact so hover-only settles skip
   diagnostics entirely; demonstrate demand toggling as LSP debounce.
 - Done: hover restructured into the candidate-fact pipeline (the scaling
-  remedy for aggregator services): service enrichment stamps
-  `HoverFile`/`HoverWord` on the request (file resolution is a `FilePath`
-  join), each entity's own system inserts `HoverCandidate { priority, .. }`
-  facts from only its own data, and a `Phase::Cleanup` finalizer picks the
-  winner. Ordering comes from phases, not gate markers — dissolved
-  `HoverCtx`, the arbitration chain, and the `AstAvailable` gate on hover.
-  Apply the same pipeline to future services (goto, completions).
+  remedy for aggregator services): tracked enrichment stamps
+  `RequestKey`/`HoverFile`/`HoverWord` plus the fallback answer scaffold on
+  the request (file resolution is a `FilePath` join), each entity's own
+  `Phase::Complete` system inserts `HoverCandidate { priority, .. }` facts
+  from only its own data, and arbitration is a same-phase `RequestKey`
+  join — one invocation per (request, candidate) pair, monotonically
+  upgrading `HoverRank`/`HoverInfo` (a commutative max-fold, so pair order
+  is irrelevant). One phase barrier covers the ambient candidate reads;
+  everything else is tracked — dissolved `HoverCtx`, the arbitration
+  chain, and the `AstAvailable` gate on hover. Apply the same pipeline to
+  future services (goto, completions).
 - Migrate `index_defs` off the `AstAvailable` gate marker (to
   `Phase::Complete`, like the hover pipeline): marker-gated work is
   invisible to settledness checks while the marker is absent, which is the

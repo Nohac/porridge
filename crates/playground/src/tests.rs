@@ -30,10 +30,9 @@ async fn language_bowl() -> Bowl {
 
 /// A hover request batched into the same generation as the source it asks
 /// about must answer from that source's AST, not from a mid-derivation
-/// snapshot. Ungated, the candidate systems run in the same wave as
-/// `generate_ast` and read a view without the new definitions; the
-/// `AstAvailable` gate at the pipeline head defers enrichment one
-/// generation, after which every downstream read is consistent.
+/// snapshot. The candidate systems read lowered facts ambiently, so they
+/// sit one phase after lowering (`Phase::Complete`); everything else in
+/// the pipeline is tracked and needs no ordering at all.
 #[test]
 fn hover_batched_with_source_answers_from_that_source() {
     block_on(async {

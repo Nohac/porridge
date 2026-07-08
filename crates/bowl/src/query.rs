@@ -474,14 +474,18 @@ all_tuples!(impl_arg_bundle_tuple, 1, 8, T);
 /// to every view in later phases.
 ///
 /// ```text
-/// Phase::Complete   per-entity systems insert HoverCandidate facts
-///        --------- phase boundary: all candidate commits are visible ---------
-/// Phase::Cleanup    finalizer Views all HoverCandidates, picks the winner
+/// Phase::Evaluate   lowering systems derive AstDef facts
+///        --------- phase boundary: all lowering commits are visible ---------
+/// Phase::Complete   per-entity hover systems View the defs, emit candidates
 /// ```
 ///
 /// Tracked consumers do not need this: a [`Query`] on the produced type
-/// replans when the producer commits, even mid-phase. The phase-gate
-/// pattern is specifically the ambient-consumption discipline.
+/// replans when the producer commits, even mid-phase — which also means
+/// only *one* ambient hop fits between Evaluate and Complete. Deeper
+/// pipelines make the later stages tracked (see the playground's hover
+/// arbitration: a join over candidates with a monotone upgrade) instead of
+/// reaching for more phases. `Phase::Settle` is not a further barrier: its
+/// inserts defer to the next run.
 pub struct View<'a, T, F = ()>
 where
     T: QueryParam,

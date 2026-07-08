@@ -34,7 +34,7 @@ Diagnostic
   ])
 ```
 
-Cleanup later checks every source:
+The settle-phase cleanup later checks every source:
 
 ```text
 all source revisions match -> keep derived entity

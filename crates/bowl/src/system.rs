@@ -19,16 +19,27 @@ use variadics_please::all_tuples;
 /// Coarse phase in which a system runs during one evaluation generation.
 ///
 /// Systems registered without configuration run during [`Phase::Evaluate`].
+///
+/// `Startup`, `Evaluate`, and `Complete` are the forward-derivation phases
+/// of a generation. `Settle` runs once per settle, at convergence, and is
+/// not a further derivation stage: its removals apply immediately (reaping
+/// stale facts before settled reads return) while its inserts are *queued
+/// as inputs for the next run* — a settle-phase system can seed the next
+/// state-machine step, but it cannot drive the current settle forward.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Phase {
-    /// Runs once before the first evaluate phase.
+    /// Runs once before the first evaluate phase, and again after a
+    /// preemption restart — the retraction slot for ephemeral facts.
     Startup,
     /// Default phase for ordinary fact-producing systems.
     Evaluate,
-    /// Runs after evaluate systems in the same generation.
+    /// Runs after evaluate systems in the same generation. The phase
+    /// boundary is the barrier that makes ambient (`View`) consumption of
+    /// evaluate-phase output deterministic.
     Complete,
-    /// Runs after complete systems in the same generation.
-    Cleanup,
+    /// Runs at settle time, after the last generation converges. Removals
+    /// apply within the settle; inserts defer to the next run.
+    Settle,
 }
 
 impl Phase {
@@ -48,6 +59,10 @@ impl Phase {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct MemoEntry {
     deps: Vec<Dep>,
+    /// World revision of the snapshot this invocation last planned from.
+    /// Compared against viewed-store watermarks by `explain` to surface
+    /// ambient staleness (views moved, nothing reran).
+    pub(crate) planned_revision: u64,
 }
 
 /// Buffered output from one system invocation.
@@ -177,6 +192,10 @@ pub trait SystemParam {
     fn bound_key_types() -> Vec<(TypeId, &'static str)> {
         Vec::new()
     }
+    /// Component types this param reads *ambiently* (without contributing
+    /// memo deps). Used by the same-phase production flag and by
+    /// `explain`'s stale-view detection.
+    fn view_types(_out: &mut Vec<TypeId>) {}
     /// Whether this param's item reads component `key` (bound join provider).
     fn provides_key(_key: TypeId) -> bool {
         false
@@ -293,6 +312,10 @@ where
         let mut access = Q::access_all();
         access.extend(Filter::access_all());
         access
+    }
+
+    fn view_types(out: &mut Vec<TypeId>) {
+        out.extend(Q::access_all().iter().map(|access| access.component));
     }
 
     fn fetch<'a>(
@@ -544,6 +567,10 @@ macro_rules! impl_system_param_tuple {
             fn always_run() -> bool {
                 false $(|| $P::always_run())*
             }
+
+            fn view_types(out: &mut Vec<TypeId>) {
+                $($P::view_types(out);)*
+            }
         }
     };
 }
@@ -597,16 +624,51 @@ where
     }
 }
 
+/// Counts a system's rows for [`crate::Bowl::explain`]: `(matched,
+/// memoized)`, where memoized rows are matched rows the planner would skip
+/// because their recorded deps are unchanged.
+fn count_rows<Params>(
+    system: SystemId,
+    snapshot: &Snapshot,
+    memo: &HashMap<SystemInvocation, MemoEntry>,
+) -> (usize, usize)
+where
+    Params: SystemParam,
+{
+    let states = Params::states(snapshot);
+    let matched = states.len();
+    let memoized = states
+        .into_iter()
+        .filter(|state| {
+            let owner = SystemInvocation {
+                system,
+                keys: Params::keys(state),
+            };
+            let deps = Params::deps(snapshot, state);
+            !Params::always_run() && memo.get(&owner).is_some_and(|entry| entry.deps == deps)
+        })
+        .count();
+
+    (matched, memoized)
+}
+
 fn finish_invocation(
     owner: SystemInvocation,
     deps: Vec<Dep>,
+    planned_revision: u64,
     commands: Commands,
 ) -> (SystemOutput, (SystemInvocation, MemoEntry)) {
     let output = SystemOutput {
         owner: owner.clone(),
         commands: commands.take(),
     };
-    let memo_update = (owner, MemoEntry { deps });
+    let memo_update = (
+        owner,
+        MemoEntry {
+            deps,
+            planned_revision,
+        },
+    );
 
     (output, memo_update)
 }
@@ -647,6 +709,15 @@ pub(crate) trait Runnable: Send + Sync {
         false
     }
 
+    /// `(matched, memoized)` row counts for [`crate::Bowl::explain`].
+    fn row_counts(
+        &self,
+        _snapshot: &Snapshot,
+        _memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> (usize, usize) {
+        (0, 0)
+    }
+
     fn run<'a>(
         &'a self,
         bowl: Bowl,
@@ -676,13 +747,20 @@ pub(crate) trait Runnable: Send + Sync {
 pub struct BoxedSystem {
     pub(crate) runnable: Arc<dyn Runnable>,
     pub(crate) phase: Phase,
+    /// Full type path of the registered function, for `explain` lookups.
+    pub(crate) name: &'static str,
+    /// Component types the system's params read ambiently (`View`s), for
+    /// the same-phase production flag and `explain`'s stale-view report.
+    pub(crate) view_types: Arc<Vec<TypeId>>,
 }
 
 impl BoxedSystem {
-    fn new(runnable: Arc<dyn Runnable>) -> Self {
+    fn new(runnable: Arc<dyn Runnable>, name: &'static str, view_types: Vec<TypeId>) -> Self {
         Self {
             runnable,
             phase: Phase::Evaluate,
+            name,
+            view_types: Arc::new(view_types),
         }
     }
 
@@ -829,6 +907,14 @@ where
         self.system.has_work(snapshot, memo)
     }
 
+    fn row_counts(
+        &self,
+        snapshot: &Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> (usize, usize) {
+        self.system.runnable.row_counts(snapshot, memo)
+    }
+
     fn run<'a>(
         &'a self,
         bowl: Bowl,
@@ -838,13 +924,15 @@ where
         async move {
             let has_work = self.system.has_work(snapshot, memo);
             let start_commands = has_work.then(|| {
-                let commands = Commands::new();
+                let owner = SystemInvocation {
+                    system: self.id,
+                    keys: Vec::new(),
+                };
+                let commands =
+                    Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
                 self.callback.run(commands.clone());
                 SystemOutput {
-                    owner: SystemInvocation {
-                        system: self.id,
-                        keys: Vec::new(),
-                    },
+                    owner,
                     commands: commands.take(),
                 }
             });
@@ -892,6 +980,14 @@ where
         self.system.has_work(snapshot, memo)
     }
 
+    fn row_counts(
+        &self,
+        snapshot: &Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> (usize, usize) {
+        self.system.runnable.row_counts(snapshot, memo)
+    }
+
     fn run<'a>(
         &'a self,
         bowl: Bowl,
@@ -906,7 +1002,8 @@ where
             };
 
             if !run.outputs.is_empty() {
-                let commands = Commands::new();
+                let commands =
+                    Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
                 self.callback.run(commands.clone());
                 run.outputs.push(SystemOutput {
                     owner,
@@ -952,6 +1049,14 @@ where
         self.system.has_work(snapshot, memo)
     }
 
+    fn row_counts(
+        &self,
+        snapshot: &Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> (usize, usize) {
+        self.system.runnable.row_counts(snapshot, memo)
+    }
+
     fn run<'a>(
         &'a self,
         bowl: Bowl,
@@ -994,7 +1099,8 @@ where
                 return SystemRun::empty();
             }
 
-            let commands = Commands::new();
+            let commands =
+                Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
             self.callback.run(commands.clone());
 
             SystemRun {
@@ -1019,6 +1125,8 @@ where
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
         let phase = system.phase;
+        let name = system.name;
+        let view_types = Arc::clone(&system.view_types);
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
                 id,
@@ -1026,6 +1134,8 @@ where
                 callback: self.callback,
             }),
             phase,
+            name,
+            view_types,
         }
     }
 }
@@ -1038,6 +1148,8 @@ where
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
         let phase = system.phase;
+        let name = system.name;
+        let view_types = Arc::clone(&system.view_types);
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
                 id,
@@ -1045,6 +1157,8 @@ where
                 callback: self.callback,
             }),
             phase,
+            name,
+            view_types,
         }
     }
 }
@@ -1057,6 +1171,8 @@ where
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
         let phase = system.phase;
+        let name = system.name;
+        let view_types = Arc::clone(&system.view_types);
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
                 id,
@@ -1064,6 +1180,8 @@ where
                 callback: self.callback,
             }),
             phase,
+            name,
+            view_types,
         }
     }
 }
@@ -1120,11 +1238,12 @@ where
 
 /// Cleanup system for entities tagged with [`DerivedFrom`].
 ///
-/// Register this during [`Phase::Cleanup`] to remove derived entities whose
-/// owner entity has changed since insertion:
+/// Register this during [`Phase::Settle`] to remove derived entities whose
+/// owner entity has changed since insertion — removal-only, so it reaps at
+/// convergence without driving the settle forward:
 ///
 /// ```text
-/// bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup));
+/// bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle));
 /// ```
 pub async fn cleanup_stale_derived(
     query: Query<(Entity, &DerivedFrom)>,
@@ -1156,6 +1275,14 @@ where
             .is_empty()
     }
 
+    fn row_counts(
+        &self,
+        snapshot: &Snapshot,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+    ) -> (usize, usize) {
+        count_rows::<F::Param>(self.id, snapshot, memo)
+    }
+
     fn run<'a>(
         &'a self,
         bowl: Bowl,
@@ -1171,7 +1298,10 @@ where
                     let bowl = bowl.clone();
                     async move {
                         let writes = written_rows(&invocation.access);
-                        let commands = Commands::new();
+                        let commands = Commands::new(
+                            snapshot.spawn_slots(&invocation.owner),
+                            snapshot.entity_allocator(),
+                        );
                         // Read guards live here, in the invocation frame, so
                         // borrows handed to the system stay locked until the
                         // system function returns.
@@ -1187,7 +1317,7 @@ where
                         drop(guards);
 
                         let (output, memo_update) =
-                            finish_invocation(invocation.owner, invocation.deps, commands);
+                            finish_invocation(invocation.owner, invocation.deps, snapshot.revision_raw(), commands);
                         (output, memo_update, writes)
                     }
                 })
@@ -1216,7 +1346,10 @@ where
                 let snapshot = Arc::clone(&snapshot);
                 let run = async move {
                     let writes = written_rows(&invocation.access);
-                    let commands = Commands::new();
+                    let commands = Commands::new(
+                        snapshot.spawn_slots(&invocation.owner),
+                        snapshot.entity_allocator(),
+                    );
                     // Read guards live here, in the invocation frame, so
                     // borrows handed to the system stay locked until the
                     // system function returns.
@@ -1232,7 +1365,7 @@ where
                     drop(guards);
 
                     let (output, memo_update) =
-                        finish_invocation(invocation.owner, invocation.deps, commands);
+                        finish_invocation(invocation.owner, invocation.deps, snapshot.revision_raw(), commands);
 
                     SystemRun {
                         completed: true,
@@ -1302,10 +1435,16 @@ where
             );
         }
 
-        BoxedSystem::new(Arc::new(FunctionSystem {
-            id,
-            function: self,
-            _marker: PhantomData::<Marker>,
-        }))
+        let mut view_types = Vec::new();
+        F::Param::view_types(&mut view_types);
+        BoxedSystem::new(
+            Arc::new(FunctionSystem {
+                id,
+                function: self,
+                _marker: PhantomData::<Marker>,
+            }),
+            std::any::type_name::<F>(),
+            view_types,
+        )
     }
 }

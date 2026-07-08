@@ -19,7 +19,7 @@ use crate::lang::{
         import::SystemImportDb,
         namespace::QualifiedName,
     },
-    facts::{AstAvailable, Diagnostic, DiagnosticsDemand, Severity},
+    facts::{Diagnostic, DiagnosticsDemand, Severity},
     service::{HoverInfo, HoverRequest, Position},
 };
 
@@ -140,12 +140,6 @@ async fn main() {
         .await;
     for (entity, diagnostic) in diagnostics.collect() {
         info!(entity = entity.raw(), diagnostic = %diagnostic.0);
-    }
-
-    info!("ast available markers");
-    let ast_available = db.scoop::<Query<(Entity, &AstAvailable)>>().await;
-    for (entity, _) in ast_available.collect() {
-        info!(entity = entity.raw(), "ast available");
     }
 
     info!("hover request");

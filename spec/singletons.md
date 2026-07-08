@@ -213,9 +213,9 @@ For ephemeral singleton markers:
 commands.insert((Singleton::<AstAvailable>::new(), AstAvailable, Ephemeral));
 ```
 
-presence matters more than payload value. Cleanup removes the marker/entity at
-the end of evaluation, and reinsertion during the next evaluation should make
-the token present in that evaluation.
+presence matters more than payload value. The settle phase removes the
+marker/entity at the end of evaluation, and reinsertion during the next
+evaluation should make the token present in that evaluation.
 
 Important distinction:
 

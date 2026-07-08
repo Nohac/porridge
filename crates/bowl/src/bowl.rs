@@ -19,7 +19,7 @@ use variadics_please::all_tuples;
 
 use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
-    commands::{BaseCommandOp, InsertBaseCommand},
+    commands::{BaseCommandOp, CommandOp, InsertBaseCommand, RemoveComponentBaseCommand},
     query::{
         Access, AccessKind, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
         ExternalQueryFilter, ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
@@ -140,6 +140,10 @@ struct State {
     /// watermark covers them, so mid-epoch generations never drain input
     /// that arrived after the settle began (spec/epochs.md).
     deferred_inputs: Vec<(u64, Box<dyn BaseCommandOp>)>,
+    /// Insert/spawn commands issued by `Phase::Settle` systems. The settle
+    /// phase cannot drive its own settle forward: these queue as owned
+    /// derived writes for the start of the next run.
+    deferred_settle: Vec<(SystemInvocation, Box<dyn CommandOp>)>,
     /// Monotonic arrival sequence for deferred inputs.
     input_seq: u64,
     /// Number of callers currently inside `settle()`. Non-zero means an
@@ -261,8 +265,11 @@ impl<T: Component> IntoFuture for RemoveBuilder<T> {
     type IntoFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 
     fn into_future(self) -> Self::IntoFuture {
-        let _ = (self.bowl, self.entity, self.preempting);
-        todo!("external component removal: retract T as a base write with epoch semantics")
+        Box::pin(async move {
+            self.bowl
+                .remove_component_inner::<T>(self.entity, self.preempting)
+                .await;
+        })
     }
 }
 
@@ -813,6 +820,7 @@ impl Bowl {
                     pending_generation: None,
                     pending_inputs: Vec::new(),
                     deferred_inputs: Vec::new(),
+                    deferred_settle: Vec::new(),
                     input_seq: 0,
                     settling: 0,
                     preempt_window: false,
@@ -1016,8 +1024,104 @@ impl Bowl {
     /// ambient staleness, where the system's `View`s moved but its tracked
     /// deps did not ([`ExplainReport::stale_views`]).
     pub async fn explain(&self, system: &str) -> ExplainReport {
-        let _ = system;
-        todo!("explain facility: report registration, phase, matched and memoized rows")
+        let (target, memo, snapshot) = {
+            let mut state = self.inner.state.lock().await;
+            let target = state
+                .systems
+                .iter()
+                .enumerate()
+                .find(|(_, candidate)| candidate.name.ends_with(system))
+                .map(|(index, candidate)| (index, candidate.clone()));
+            let memo = state.memo.clone();
+            let snapshot = snapshot_locked(&mut state);
+            (target, memo, snapshot)
+        };
+
+        let Some((index, target)) = target else {
+            return ExplainReport {
+                registered: false,
+                phase: None,
+                matched_rows: 0,
+                memoized_rows: 0,
+                stale_views: 0,
+            };
+        };
+
+        let (matched_rows, memoized_rows) = target.runnable.row_counts(&snapshot, &memo);
+
+        // A viewed store that moved past the revision an invocation last
+        // planned from is ambient staleness: the view changed, nothing
+        // reran, and nothing ever will unless a tracked dep moves too.
+        let system_id = SystemId(index);
+        let stale_views = target
+            .view_types
+            .iter()
+            .filter(|type_id| {
+                let watermark = snapshot.store_watermark(**type_id);
+                memo.iter().any(|(owner, entry)| {
+                    owner.system == system_id && watermark > entry.planned_revision
+                })
+            })
+            .count();
+
+        ExplainReport {
+            registered: true,
+            phase: Some(target.phase),
+            matched_rows,
+            memoized_rows,
+            stale_views,
+        }
+    }
+
+    /// Queues an external component removal with the same epoch semantics
+    /// as [`Bowl::insert`]: idle bowls queue it for the next pending
+    /// generation, active epochs defer it to the next one, and
+    /// `.preempting()` forces a boundary.
+    async fn remove_component_inner<T: Component>(&self, entity: Entity, preempting: bool) {
+        let mut commands: Vec<Box<dyn BaseCommandOp>> =
+            vec![Box::new(RemoveComponentBaseCommand::<T> {
+                entity,
+                _marker: PhantomData,
+            })];
+
+        {
+            let mut state = self.inner.state.lock().await;
+            let next_generation = state.next_generation;
+
+            if state.settling == 0 {
+                state.pending_inputs.append(&mut commands);
+                state.pending_generation.get_or_insert(next_generation);
+                return;
+            }
+
+            if !preempting {
+                // An epoch is actively driving: the retraction belongs to
+                // the next epoch, like any other deferred input.
+                state.input_seq += 1;
+                let tag = state.input_seq;
+                state
+                    .deferred_inputs
+                    .extend(commands.into_iter().map(|command| (tag, command)));
+                return;
+            }
+        }
+
+        // Preempting removal mid-epoch: force a boundary so the restarted
+        // generation drains this retraction instead of the next epoch.
+        let mut waiter = PreemptWaiter::new(self, false);
+        loop {
+            {
+                let mut state = self.inner.state.lock().await;
+                if waiter.boundary_reached(&mut state) {
+                    waiter.finish();
+                    state.pending_inputs.append(&mut commands);
+                    let next_generation = state.next_generation;
+                    state.pending_generation.get_or_insert(next_generation);
+                    return;
+                }
+            }
+            yield_once().await;
+        }
     }
 
     async fn insert_inner<B>(
@@ -1225,7 +1329,7 @@ impl Bowl {
                     continue;
                 }
 
-                self.run_cleanup_phase().await;
+                self.run_settle_phase().await;
                 let mut state = self.inner.state.lock().await;
                 if promote_deferred_inputs(&mut state, epoch.watermark) {
                     continue;
@@ -1256,7 +1360,7 @@ impl Bowl {
         let runs = join_all(
             systems
                 .iter()
-                .filter(|system| system.phase != Phase::Cleanup)
+                .filter(|system| system.phase != Phase::Settle)
                 .map(|system| system.run_settled(bowl.clone(), &snapshot, &memo)),
         )
         .await;
@@ -1277,7 +1381,10 @@ impl Bowl {
         progress.needs_followup
     }
 
-    async fn run_cleanup_phase(&self) {
+    /// Runs the `Phase::Settle` systems once, at convergence. Their removal
+    /// commands apply within the settle (reaping stale facts before settled
+    /// reads return); their insert/spawn commands defer to the next run.
+    async fn run_settle_phase(&self) {
         let (systems, mut memo) = {
             let mut state = self.inner.state.lock().await;
             (state.systems.clone(), std::mem::take(&mut state.memo))
@@ -1287,7 +1394,7 @@ impl Bowl {
         let memo_snapshot = Arc::new(memo.clone());
         let mut runs = systems
             .iter()
-            .filter(|system| system.phase == Phase::Cleanup)
+            .filter(|system| system.phase == Phase::Settle)
             .flat_map(|system| {
                 system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo_snapshot)
             })
@@ -1301,7 +1408,7 @@ impl Bowl {
             .collect::<FuturesUnordered<_>>();
 
         while let Some((_owner, run)) = runs.next().await {
-            commit_system_run(&mut memo, &self.inner.state, run).await;
+            commit_system_run(&mut memo, &self.inner.state, run, Some(Phase::Settle)).await;
         }
 
         let mut state = self.inner.state.lock().await;
@@ -1540,7 +1647,8 @@ impl Bowl {
                 while let Some((owner, run)) = write_runs.next().await {
                     running.remove(&owner);
                     running_access.remove(&owner);
-                    let progress = commit_system_run(memo, &self.inner.state, run).await;
+                    let progress =
+                        commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
                     commit_budget.record(progress.commits);
                     phase_changed |= progress.needs_followup;
                 }
@@ -1619,7 +1727,7 @@ impl Bowl {
                 running.remove(&owner);
                 running_access.remove(&owner);
                 read_owners.remove(&owner);
-                let progress = commit_system_run(memo, &self.inner.state, run).await;
+                let progress = commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
                 commit_budget.record(progress.commits);
                 followup |= progress.needs_followup;
                 stale |= progress.stale;
@@ -1726,9 +1834,17 @@ impl Bowl {
         let generation = state.pending_generation.take()?;
         let inputs = std::mem::take(&mut state.pending_inputs);
 
+        // Settle-phase inserts deferred from the previous settle land first:
+        // they are this run's opening state (gate markers, seeded facts),
+        // applied as ordinary owned derived writes.
+        let deferred_settle = std::mem::take(&mut state.deferred_settle);
+        for (owner, command) in deferred_settle {
+            command.apply(&mut state.world, &owner);
+        }
         for input in inputs {
             input.apply(&mut state.world);
         }
+        state.world.flush_derived_from();
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
@@ -2084,7 +2200,7 @@ async fn commit_system_runs(
 ) -> CommitProgress {
     let mut progress = CommitProgress::default();
     for run in runs {
-        let next = commit_system_run(memo, state, run).await;
+        let next = commit_system_run(memo, state, run, None).await;
         progress.needs_followup |= next.needs_followup;
         progress.commits += next.commits;
     }
@@ -2096,7 +2212,9 @@ async fn commit_system_run(
     memo: &mut HashMap<SystemInvocation, MemoEntry>,
     state: &Mutex<State>,
     run: SystemRun,
+    phase: Option<Phase>,
 ) -> CommitProgress {
+    let defer_inserts = phase == Some(Phase::Settle);
     let outputs = run.outputs;
     let memo_updates = run.memo_updates;
     let writes = run.writes;
@@ -2124,13 +2242,59 @@ async fn commit_system_run(
     // Replace outputs by diffing: commands apply over the invocation's old
     // outputs so unchanged fingerprints keep their revisions, then whatever
     // the rerun did not re-emit is removed.
+    //
+    // With `defer_inserts` (Phase::Settle commits), inserts and spawns are
+    // held back as next-run inputs instead of applying now. The stale sweep
+    // still runs against what applied immediately, so a settle system that
+    // re-defers the same output each settle sees it removed at settle and
+    // reinstated when the next run starts — emergent ephemerality.
     for output in outputs {
+        let writer = output.owner.system;
         let previous = state.world.take_derived_outputs(&output.owner);
+        let mut deferred: Vec<(SystemInvocation, Box<dyn CommandOp>)> = Vec::new();
         for command in output.commands {
+            if defer_inserts && command.defers_at_settle() {
+                deferred.push((output.owner.clone(), command));
+                continue;
+            }
             command.apply(&mut state.world, &output.owner);
         }
+        // Anchor capture is deferred to buffer end; flush before the stale
+        // sweep so re-emitted DerivedFrom entries count as re-emitted.
+        state.world.flush_derived_from();
         state.world.finish_derived_spawns(&output.owner);
         state.world.remove_derived_stale(&output.owner, previous);
+        state.deferred_settle.append(&mut deferred);
+
+        // Debug flag: producing a component that a same-phase system reads
+        // ambiently is a silent race — the viewer may already have run and
+        // will never replan for this commit. Tracked consumers are exempt
+        // (their deps change; the replanner reruns them), and so are
+        // viewers with no matched rows in this generation (marker-gated
+        // consumers whose gate defers them to a later generation cannot
+        // have raced anything).
+        if cfg!(debug_assertions) {
+            let written = state.world.take_written_derived();
+            if let Some(phase) = phase {
+                for (type_id, type_name) in written {
+                    for (index, system) in state.systems.iter().enumerate() {
+                        if index != writer.0
+                            && system.phase == phase
+                            && system.view_types.contains(&type_id)
+                            && system.runnable.row_counts(&state.world, memo).0 > 0
+                        {
+                            panic!(
+                                "component `{type_name}` is produced and ambiently \
+                                 consumed in the same phase ({phase:?}): a `View` of it \
+                                 races the producing commit. Move the producer or the \
+                                 consumer across a phase boundary, or make the read a \
+                                 tracked `Query` input."
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     state.world.reconcile_written(&writes);
@@ -2893,7 +3057,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_derived_from_answer_from_view).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
                 .await;
 
             let inserted = bowl.insert((MutableA(1),)).await;
@@ -2923,7 +3087,7 @@ mod tests {
             let bowl = Bowl::new();
             bowl.add_system(make_multi_derived_from_answer_from_view)
                 .await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((MutableA(1),)).await;
@@ -3154,7 +3318,7 @@ mod tests {
             bowl.add_system(startup_phase.run_during(Phase::Startup))
                 .await;
             bowl.add_system(evaluate_phase).await;
-            bowl.add_system(cleanup_phase.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_phase.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((A(1),)).await;
@@ -3635,7 +3799,7 @@ mod tests {
             .await;
             bowl.add_system(count_after_note.run_during(Phase::Complete))
                 .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((A(1),)).await;
@@ -3658,7 +3822,7 @@ mod tests {
             .await;
             bowl.add_system(count_bs_after_note.run_during(Phase::Complete))
                 .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((B(0),)).await;
@@ -3685,7 +3849,7 @@ mod tests {
             .await;
             bowl.add_system(answer_after_untracked_marker.run_during(Phase::Complete))
                 .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((B(0),)).await;
@@ -3708,7 +3872,7 @@ mod tests {
             .await;
             bowl.add_system(answer_after_untracked_marker.run_during(Phase::Complete))
                 .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((B(0),)).await;
@@ -3911,7 +4075,7 @@ mod tests {
             // consumers rerun against the post-write derivations.
             bowl.add_system(def_startup_retract.run_during(Phase::Startup))
                 .await;
-            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((EpochSrc("old".to_string()),)).await;
@@ -4359,7 +4523,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(join_pairs_uncounted).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((A(1), FingerprintedRank(1))).await;
@@ -4548,7 +4712,7 @@ mod tests {
             let bowl = Bowl::new();
             bowl.add_system(derive_ranked_from_a).await;
             bowl.add_system(derive_sum_from_ranked).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((A(1),)).await;
@@ -4744,7 +4908,7 @@ mod tests {
             }))
             .await;
             bowl.add_system(lie_consume).await;
-            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((EpochSrc("beta".to_string()),)).await;
@@ -4843,7 +5007,7 @@ mod tests {
             bowl.add_system(preempt_consume).await;
             bowl.add_system(preempt_startup_retract.run_during(Phase::Startup))
                 .await;
-            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((EpochSrc("old".to_string()),)).await;
@@ -4945,7 +5109,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(diagnose_then_stamp).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
                 .await;
 
             bowl.insert((A(1),)).await;
@@ -5063,19 +5227,55 @@ mod tests {
     /// that ambiently consumes (`View`) what a same-phase sibling produces
     /// races it — tracked consumers replan on commit, ambient ones do not.
     /// The engine should flag the combination instead of racing silently.
+    /// (`Phase::Settle` is immune by construction: its inserts defer to the
+    /// next run, so the forward phases are where the race lives.)
     #[test]
     #[should_panic(expected = "consumed in the same phase")]
     fn same_phase_ambient_consumption_is_flagged() {
         block_on(async {
             let bowl = Bowl::new();
-            bowl.add_system(produce_in_cleanup.run_during(Phase::Cleanup))
+            bowl.add_system(produce_in_cleanup.run_during(Phase::Complete))
                 .await;
-            bowl.add_system(finalize_in_cleanup.run_during(Phase::Cleanup))
+            bowl.add_system(finalize_in_cleanup.run_during(Phase::Complete))
                 .await;
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(1),)).await;
             bowl.scoop::<Query<(Entity, &Count)>>().await;
+        });
+    }
+
+    async fn settle_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (_entity, _a) = query.item();
+        commands.insert((Note,));
+    }
+
+    /// `Phase::Settle` cannot drive its own settle forward: inserts issued
+    /// there queue as inputs for the next run, so a settled read never sees
+    /// them early, and the next run opens with them present.
+    #[test]
+    fn settle_phase_inserts_defer_to_the_next_run() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(settle_stamp.run_during(Phase::Settle)).await;
+
+            bowl.insert((A(1),)).await;
+            let notes = bowl.scoop::<Query<(Entity, &Note)>>().await;
+            assert_eq!(
+                notes.collect().len(),
+                0,
+                "a settle-phase insert must not land within its own settle"
+            );
+
+            // Any new input starts the next run, which opens with the
+            // deferred insert applied.
+            bowl.insert((B(1),)).await;
+            let notes = bowl.scoop::<Query<(Entity, &Note)>>().await;
+            assert_eq!(
+                notes.collect().len(),
+                1,
+                "the deferred insert must open the next run"
+            );
         });
     }
 

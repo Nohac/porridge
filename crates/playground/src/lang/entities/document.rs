@@ -1,12 +1,12 @@
 //! Document entity: source files as they enter the bowl, and the parse that
 //! turns their text into a CST.
 
-use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Query, Singleton, SystemExt};
+use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Query};
 use tracing::info;
 
 use crate::lang::{
     entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
-    facts::{CstAvailable, Diagnostic, Ephemeral},
+    facts::Diagnostic,
     grammar::parser::{CstData, NodeRef, Parser},
 };
 
@@ -29,10 +29,7 @@ impl LanguageEntity for Document {
     const NAME: &'static str = "document";
 
     async fn register(db: &Bowl) {
-        db.add_system(parse_file.on_settled(|mut commands: Commands| {
-            commands.insert((Singleton::<CstAvailable>::new(), CstAvailable, Ephemeral));
-        }))
-        .await;
+        db.add_system(parse_file).await;
     }
 }
 

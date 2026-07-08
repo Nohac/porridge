@@ -14,16 +14,20 @@
 mod hover;
 
 pub(crate) use hover::{
-    HoverCandidate, HoverFile, HoverInfo, HoverRequest, HoverWord, Position, priority,
+    HoverCandidate, HoverFile, HoverInfo, HoverRequest, HoverWord, Position, RequestKey, priority,
 };
 
 use bowl::{Bowl, Phase, SystemExt};
 
 pub(crate) async fn register_services(db: &Bowl) {
-    db.add_system(hover::stamp_hover_requests.run_during(Phase::Complete))
-        .await;
-    db.add_system(hover::resolve_hover_requests.run_during(Phase::Complete))
-        .await;
-    db.add_system(hover::finalize_hover.run_during(Phase::Cleanup))
+    // Enrichment reads only tracked inputs (request components plus the
+    // FilePath join), so it runs in the default Evaluate phase; candidate
+    // systems key on its outputs and replan as they commit.
+    db.add_system(hover::stamp_hover_requests).await;
+    db.add_system(hover::resolve_hover_requests).await;
+    // Arbitration is a tracked join over candidates with a monotone
+    // priority upgrade, so it is same-phase-safe next to the candidate
+    // systems in Complete — no barrier after them is needed.
+    db.add_system(hover::finalize_hover.run_during(Phase::Complete))
         .await;
 }

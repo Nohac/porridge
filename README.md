@@ -109,7 +109,7 @@ async fn main() {
     .await;
     bowl.add_system(validate_modules.run_during(bowl::Phase::Complete))
         .await;
-    bowl.add_system(cleanup_ephemeral.run_during(bowl::Phase::Cleanup))
+    bowl.add_system(cleanup_ephemeral.run_during(bowl::Phase::Settle))
         .await;
 
     bowl.insert((
@@ -626,16 +626,22 @@ ordering:
 # use bowl::{Bowl, Phase, Query, SystemExt};
 # async fn cleanup(_: Query<bowl::Entity>) {}
 # async fn example(bowl: Bowl) {
-bowl.add_system(cleanup.run_during(Phase::Cleanup)).await;
+bowl.add_system(cleanup.run_during(Phase::Settle)).await;
 # }
 ```
 
 Available phases:
 
-- `Startup`: once before the first evaluate phase
+- `Startup`: once before the first evaluate phase (and again after a
+  preemption restart — the retraction slot)
 - `Evaluate`: default fact production
-- `Complete`: checks or request handlers that should run after normal facts
-- `Cleanup`: cleanup systems that should not push normal evaluation forward
+- `Complete`: checks or request handlers that should run after normal facts;
+  the phase boundary makes ambient (`View`) reads of Evaluate output
+  deterministic
+- `Settle`: once per settle, at convergence. Removals apply within the
+  settle (stale facts are reaped before settled reads return); inserts and
+  spawns are queued as inputs for the *next* run — the settle phase cannot
+  drive its own settle forward
 
 Hooks colocate coordination behavior with a system:
 
@@ -718,7 +724,7 @@ Register `cleanup_stale_derived` during cleanup to remove stale derived facts:
 ```rust
 # use bowl::{Bowl, Phase, SystemExt, cleanup_stale_derived};
 # async fn example(bowl: Bowl) {
-bowl.add_system(cleanup_stale_derived.run_during(Phase::Cleanup))
+bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
     .await;
 # }
 ```

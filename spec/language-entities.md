@@ -81,17 +81,25 @@ Instead, requests flow through a phase-ordered pipeline (see
    prioritized `HoverCandidate` facts anchored to the request. In-phase
    streaming plans them as soon as enrichment commits. Param lists stay
    O(own facts) no matter how many entities exist.
-3. **Finalization** (`Phase::Cleanup`, service-owned): by settle time every
-   Complete wave has run, so every candidate exists; the finalizer picks the
-   highest priority and writes the response onto the request. Arbitration is
-   data (a priority band), not call order, and the service supplies
-   fallbacks.
+3. **Arbitration** (`Phase::Complete`, service-owned): a `RequestKey` join
+   pairs each request with exactly its own candidates — one invocation per
+   (request, candidate) pair — and each pair monotonically upgrades the
+   request's `HoverRank`/`HoverInfo` when its candidate outranks the
+   current answer. A max-fold commutes, so pair order is irrelevant, and
+   tracked consumption replans pairs as candidates commit — same-phase-safe
+   next to the candidate systems. The service seeds the fallback ladder at
+   enrichment (rank 0 "unknown file", rank 1 word-aware), so every band of
+   answer is data, not call order.
 
-Phase boundaries carry the whole ordering story. `Phase::Complete` runs
-after Evaluate has converged *in every generation*, so the pipeline's
-ambient reads (defs, imports, qualified names) are always consistent with
-the generation's inputs — including a request batched together with the
-source it asks about (pinned by `crates/playground/src/tests.rs`).
+One phase boundary carries the whole ambient-ordering story:
+`Phase::Complete` runs after Evaluate has converged *in every generation*,
+so the candidate systems' ambient reads (defs, imports, qualified names)
+are always consistent with the generation's inputs — including a request
+batched together with the source it asks about (pinned by
+`crates/playground/src/tests.rs`). Everything else in the pipeline is
+tracked, which needs no ordering at all. (`Phase::Settle` is not a further
+barrier: its inserts defer to the next run, which is why arbitration
+cannot live there.)
 
 An earlier version gated the pipeline on the ephemeral `AstAvailable`
 marker instead. That is racy by construction: work gated on a marker is
@@ -134,8 +142,7 @@ definition entity shows the pattern for that:
 disappear, but its `View` of them is deliberately non-invalidating. The fix
 is a tracked input over the set:
 
-- `index_defs` is gated on the `AstAvailable` marker (re-inserted by an
-  `on_settled` hook each wave the AST regenerated, removed in `Cleanup`) and
+- `index_defs` (`Phase::Complete`, demand-gated, driven by the file texts)
   aggregates all definitions into a `DefIndex` singleton.
 - `DefIndex` is `#[component(hash)]`: idempotent reruns keep its revision,
   so an unchanged set invalidates nothing.

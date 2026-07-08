@@ -14,7 +14,7 @@ use crate::lang::{
     entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{BelongsToFile, DiagnosticsDemand, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef, parser::Rule},
-    service::{HoverCandidate, HoverRequest, HoverWord, priority},
+    service::{HoverCandidate, HoverRequest, HoverWord, RequestKey, priority},
 };
 
 #[derive(Debug, Component, Hash)]
@@ -89,7 +89,13 @@ impl LanguageEntity for Definition {
 
     async fn register(db: &Bowl) {
         db.add_system(index_defs.run_during(Phase::Complete)).await;
-        db.add_system(check_duplicate_defs).await;
+        // Complete, not Evaluate: the check ambiently views the def set
+        // that lowering produces, so it must sit behind the phase barrier
+        // (the engine's same-phase flag catches it otherwise). Its tracked
+        // `DefIndex` input commits in the same phase — tracked reads
+        // replan, so that ordering is free.
+        db.add_system(check_duplicate_defs.run_during(Phase::Complete))
+            .await;
     }
 }
 
@@ -143,8 +149,8 @@ async fn hover_definitions(
 
     commands.insert((
         DerivedFrom::new(request),
+        RequestKey(request),
         HoverCandidate {
-            request,
             priority: priority::NAME,
             text: format!(
                 "`{}` is a {} definition on entity {}",

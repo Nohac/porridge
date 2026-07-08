@@ -14,7 +14,7 @@ use crate::lang::{
     entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{BelongsToFile, DiagnosticsDemand, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef},
-    service::{HoverCandidate, HoverFile, HoverRequest, Position, priority},
+    service::{HoverCandidate, HoverFile, HoverRequest, Position, RequestKey, priority},
 };
 
 #[derive(Component, Hash)]
@@ -112,8 +112,8 @@ async fn hover_imports(
 
     commands.insert((
         DerivedFrom::new(request),
+        RequestKey(request),
         HoverCandidate {
-            request,
             priority: priority::POSITION,
             text,
         },

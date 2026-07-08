@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 use crate::{
     Bundle, Component, Entity,
@@ -20,14 +23,32 @@ use crate::{
 /// ```
 #[derive(Clone)]
 pub struct Commands {
-    pub(crate) inner: Arc<Mutex<Vec<Box<dyn CommandOp>>>>,
+    pub(crate) inner: Arc<Mutex<CommandBuffer>>,
+}
+
+/// Invocation-local buffer state: the queued operations plus the spawn-id
+/// reservation context.
+pub(crate) struct CommandBuffer {
+    ops: Vec<Box<dyn CommandOp>>,
+    /// The invocation's previous spawn ids, in spawn order. Reservation
+    /// hands these out slot by slot so idempotent reruns keep their entity
+    /// identity; new slots allocate from the shared counter.
+    spawn_slots: Vec<Entity>,
+    spawn_cursor: usize,
+    allocator: Arc<AtomicU64>,
 }
 
 impl Commands {
-    /// Creates an empty invocation-local command buffer.
-    pub(crate) fn new() -> Self {
+    /// Creates an invocation-local command buffer that reserves spawn ids
+    /// from `spawn_slots` first and `allocator` after.
+    pub(crate) fn new(spawn_slots: Vec<Entity>, allocator: Arc<AtomicU64>) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(Vec::new())),
+            inner: Arc::new(Mutex::new(CommandBuffer {
+                ops: Vec::new(),
+                spawn_slots,
+                spawn_cursor: 0,
+                allocator,
+            })),
         }
     }
 
@@ -43,17 +64,21 @@ impl Commands {
     /// reserved id, so sibling commands in the same buffer can link to it
     /// (parent/child facts during lowering).
     ///
-    /// The id is guaranteed only for fresh spawns: a `Singleton<T>` bundle
-    /// may resolve to the already-existing singleton entity when the buffer
-    /// applies.
+    /// Reservation reuses the invocation's previous spawn ids slot by slot,
+    /// so idempotent reruns keep their entity identity; only genuinely new
+    /// slots allocate. The id is guaranteed only for fresh spawns: a
+    /// `Singleton<T>` bundle resolves to the already-existing singleton
+    /// entity when the buffer applies.
     pub fn insert<B: Bundle>(&mut self, bundle: B) -> Entity {
-        self.inner
-            .lock()
-            .expect("command buffer lock poisoned")
-            .push(Box::new(SpawnCommand { bundle }));
-        // Stub: id reservation at buffer time is pending; the regression
-        // test `spawned_entities_link_by_id_within_one_buffer` pins it.
-        Entity(u64::MAX)
+        let mut buffer = self.inner.lock().expect("command buffer lock poisoned");
+        let reserved = buffer
+            .spawn_slots
+            .get(buffer.spawn_cursor)
+            .copied()
+            .unwrap_or_else(|| Entity(buffer.allocator.fetch_add(1, Ordering::Relaxed)));
+        buffer.spawn_cursor += 1;
+        buffer.ops.push(Box::new(SpawnCommand { bundle, reserved }));
+        reserved
     }
 
     /// Buffers removing an entity and all attached components.
@@ -61,12 +86,19 @@ impl Commands {
         self.inner
             .lock()
             .expect("command buffer lock poisoned")
+            .ops
             .push(Box::new(RemoveEntityCommand { entity }));
     }
 
     /// Drains buffered command operations after the system invocation returns.
     pub(crate) fn take(self) -> Vec<Box<dyn CommandOp>> {
-        std::mem::take(&mut *self.inner.lock().expect("command buffer lock poisoned"))
+        std::mem::take(
+            &mut self
+                .inner
+                .lock()
+                .expect("command buffer lock poisoned")
+                .ops,
+        )
     }
 }
 
@@ -87,6 +119,7 @@ impl EntityCommands<'_> {
             .inner
             .lock()
             .expect("command buffer lock poisoned")
+            .ops
             .push(Box::new(InsertCommand {
                 entity: self.entity,
                 value,
@@ -99,6 +132,7 @@ impl EntityCommands<'_> {
             .inner
             .lock()
             .expect("command buffer lock poisoned")
+            .ops
             .push(Box::new(RemoveComponentCommand::<T> {
                 entity: self.entity,
                 _marker: std::marker::PhantomData,
@@ -110,6 +144,13 @@ impl EntityCommands<'_> {
 pub(crate) trait CommandOp: Send {
     /// Applies the operation as a derived write owned by `owner`.
     fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation);
+
+    /// Whether this operation is held back when issued from a
+    /// [`Phase::Settle`](crate::Phase::Settle) system: inserts and spawns
+    /// queue as inputs for the next run, removals apply within the settle.
+    fn defers_at_settle(&self) -> bool {
+        false
+    }
 }
 
 struct InsertCommand<T> {
@@ -121,18 +162,31 @@ impl<T: Component> CommandOp for InsertCommand<T> {
     fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
         world.insert_derived(self.entity, self.value, owner.clone());
     }
+
+    fn defers_at_settle(&self) -> bool {
+        true
+    }
 }
 
 struct SpawnCommand<B> {
     bundle: B,
+    /// Reserved at buffer time so sibling commands could link to it. A
+    /// singleton bundle supersedes the reservation with the existing
+    /// singleton entity when there is one.
+    reserved: Entity,
 }
 
 impl<B: Bundle> CommandOp for SpawnCommand<B> {
     fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
         let entity = B::singleton_key()
-            .map(|key| world.singleton_entity_or_spawn(key))
-            .unwrap_or_else(|| world.spawn_derived(owner));
+            .map(|key| world.singleton_entity_or_register(key, self.reserved))
+            .unwrap_or(self.reserved);
+        world.record_derived_spawn(owner, entity);
         self.bundle.insert_derived(world, entity, owner.clone());
+    }
+
+    fn defers_at_settle(&self) -> bool {
+        true
     }
 }
 
@@ -172,5 +226,17 @@ pub(crate) struct InsertBaseCommand<T> {
 impl<T: Component> BaseCommandOp for InsertBaseCommand<T> {
     fn apply(self: Box<Self>, world: &mut World) {
         world.insert_base(self.entity, self.value);
+    }
+}
+
+/// Base removal queued by external `bowl.entity(..).remove::<T>()`.
+pub(crate) struct RemoveComponentBaseCommand<T> {
+    pub(crate) entity: Entity,
+    pub(crate) _marker: std::marker::PhantomData<fn() -> T>,
+}
+
+impl<T: Component> BaseCommandOp for RemoveComponentBaseCommand<T> {
+    fn apply(self: Box<Self>, world: &mut World) {
+        world.remove_component::<T>(self.entity);
     }
 }

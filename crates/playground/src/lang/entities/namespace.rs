@@ -2,8 +2,8 @@
 //! membership key, and the join-driven qualified names of member definitions.
 
 use bowl::{
-    Bowl, Commands, Component, DerivedFrom, Entity, Eq, Phase, Query, SystemExt, View, Where,
-    With,
+    Bowl, Commands, Component, DerivedFrom, Entity, Eq, Phase, Query, SystemExt, SystemParam,
+    View, Where, With,
 };
 use tracing::info;
 
@@ -15,7 +15,7 @@ use crate::lang::{
         lexer::Token,
         parser::{CstData, NodeRef, Rule},
     },
-    service::{HoverCandidate, HoverRequest, HoverWord, priority},
+    service::{HoverCandidate, HoverRequest, HoverWord, RequestKey, priority},
 };
 
 #[derive(Component, Hash)]
@@ -76,22 +76,32 @@ impl HoverStage for Namespace {
     }
 }
 
+/// The ambient context the qualified-name answer reads, grouped as a param
+/// bundle so the signature stays flat as the entity grows
+/// (spec/language-entities.md).
+#[derive(SystemParam)]
+struct QualifiedDefs<'a> {
+    defs: View<'a, (Entity, &'a AstDef)>,
+    qualified: View<'a, (Entity, &'a QualifiedName)>,
+}
+
 /// Answers hover requests whose word names a namespace member: the
 /// qualified-name candidate outranks the definition entity's plain one.
 async fn hover_qualified_definitions(
     query: Query<(Entity, &HoverWord), With<HoverRequest>>,
-    defs: View<'_, (Entity, &AstDef)>,
-    qualified: View<'_, (Entity, &QualifiedName)>,
+    context: QualifiedDefs<'_>,
     mut commands: Commands,
 ) {
     crate::short_sleep().await;
 
     let (request, word) = query.item();
 
-    let Some((definition, def)) = defs.iter().find(|(_, def)| def.name() == word.0) else {
+    let Some((definition, def)) = context.defs.iter().find(|(_, def)| def.name() == word.0)
+    else {
         return;
     };
-    let Some((_, qualified)) = qualified
+    let Some((_, qualified)) = context
+        .qualified
         .iter()
         .find(|(_, qualified)| qualified.definition == definition)
     else {
@@ -100,8 +110,8 @@ async fn hover_qualified_definitions(
 
     commands.insert((
         DerivedFrom::new(request),
+        RequestKey(request),
         HoverCandidate {
-            request,
             priority: priority::QUALIFIED_NAME,
             text: format!(
                 "`{}` is a {} definition on entity {}, known as `{}`",

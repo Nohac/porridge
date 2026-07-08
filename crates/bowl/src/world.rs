@@ -3,7 +3,10 @@ use std::{
     cell::UnsafeCell,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ops::{Deref, DerefMut},
-    sync::{Arc, Condvar, Mutex},
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use crate::{
@@ -264,6 +267,8 @@ trait StoreDyn: Send + Sync {
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision>;
     /// Whether this store's component type participates in revision tracking.
     fn tracked(&self) -> bool;
+    /// Highest revision at which this store changed.
+    fn watermark(&self) -> u64;
     /// Removes one derived entry if it is still owned by `owner`.
     ///
     /// Returns whether the component type is tracked.
@@ -292,6 +297,11 @@ struct Store<T> {
     /// snapshot clones stay cheap while external `Where<Eq<T>>` queries can
     /// resolve candidates without scanning.
     by_fingerprint: Arc<HashMap<u64, BTreeSet<Entity>>>,
+    /// Highest revision at which this store changed (inserts, targeted
+    /// removals, and in-place writes; whole-entity sweeps are not yet
+    /// covered). Compared against memoized `planned_revision`s by
+    /// `explain`'s stale-view detection.
+    watermark: u64,
 }
 
 impl<T> Store<T> {
@@ -326,6 +336,7 @@ impl<T> Clone for Store<T> {
         Self {
             entries: self.entries.clone(),
             by_fingerprint: Arc::clone(&self.by_fingerprint),
+            watermark: self.watermark,
         }
     }
 }
@@ -335,6 +346,7 @@ impl<T> Default for Store<T> {
         Self {
             entries: BTreeMap::new(),
             by_fingerprint: Arc::new(HashMap::new()),
+            watermark: 0,
         }
     }
 }
@@ -360,6 +372,10 @@ impl<T: Component> StoreDyn for Store<T> {
         T::tracked()
     }
 
+    fn watermark(&self) -> u64 {
+        self.watermark
+    }
+
     fn reconcile_entry(&mut self, entity: Entity, revision: &mut Revision) {
         let (before, after, changed) = {
             let Some(entry) = self.entries.get_mut(&entity) else {
@@ -379,7 +395,9 @@ impl<T: Component> StoreDyn for Store<T> {
             (before, after, changed)
         };
 
-        let _ = changed;
+        if changed {
+            self.watermark = self.watermark.max(revision.0);
+        }
         if before != after {
             self.unindex_fingerprint(entity, before);
             self.index_fingerprint(entity, after);
@@ -431,7 +449,9 @@ impl Clone for Box<dyn StoreDyn> {
 /// `World` is currently public only because [`crate::QueryParam`] exposes it in
 /// low-level trait methods. It should be treated as an implementation detail.
 pub struct World {
-    next_entity: u64,
+    /// Shared monotonic id allocator. Shared (not copied) into snapshots so
+    /// command buffers can reserve real entity ids at buffer time.
+    next_entity: Arc<AtomicU64>,
     revision: Revision,
     /// Bumped on every structural change (entry added or removed, or a value
     /// replaced without a matching fingerprint), including untracked
@@ -449,8 +469,11 @@ pub struct World {
     ///
     /// Reruns reuse these ids slot by slot so idempotent spawn output keeps
     /// its entity identity (and its component revisions) instead of growing
-    /// the id space on every rerun.
-    derived_spawns: HashMap<SystemInvocation, Vec<Entity>>,
+    /// the id space on every rerun. Shared (not copied) into snapshots so
+    /// `Commands` buffers reserve the previous run's slot ids at buffer
+    /// time; the map itself is only mutated at commit, under the state
+    /// lock, and one invocation is never in flight twice.
+    derived_spawns: Arc<Mutex<HashMap<SystemInvocation, Vec<Entity>>>>,
     /// Per-owner spawn cursor for the commit currently being applied.
     spawn_cursors: HashMap<SystemInvocation, usize>,
     /// Entities removed since the runner last drained this list.
@@ -458,6 +481,21 @@ pub struct World {
     /// The commit path uses it to purge memo entries keyed by entities that
     /// no longer exist.
     removed_entities: Vec<Entity>,
+    /// `DerivedFrom` inserts deferred until the current command buffer has
+    /// fully applied.
+    ///
+    /// Anchor revisions must be resolved at buffer end: capturing them in
+    /// command-application order makes a derived fact stale on arrival
+    /// whenever a *later* command in the same buffer writes to its anchor
+    /// entity — and cleanup then silently reaps it.
+    pending_derived_from: Vec<(Entity, DerivedFrom, Origin, Option<SystemInvocation>)>,
+    /// True while `flush_derived_from` re-enters `insert`, so the deferral
+    /// branch steps aside and the anchors capture for real.
+    flushing_anchors: bool,
+    /// Component types written as derived outputs since the runner last
+    /// drained this list. Debug builds use it to flag same-phase ambient
+    /// consumption (a commit producing what a same-phase system `View`s).
+    written_derived: Vec<(TypeId, &'static str)>,
 }
 
 impl Clone for World {
@@ -469,16 +507,24 @@ impl Clone for World {
     /// table. Ownership checks against a snapshot must go through the live
     /// bowl instead.
     fn clone(&self) -> Self {
+        debug_assert!(
+            self.pending_derived_from.is_empty(),
+            "snapshot taken with unflushed DerivedFrom anchors; \
+             a command-application site is missing flush_derived_from()"
+        );
         Self {
-            next_entity: self.next_entity,
+            next_entity: Arc::clone(&self.next_entity),
             revision: self.revision,
             mutations: self.mutations,
             stores: self.stores.clone(),
             singleton_entities: self.singleton_entities.clone(),
             derived_owners: HashMap::new(),
-            derived_spawns: HashMap::new(),
+            derived_spawns: Arc::clone(&self.derived_spawns),
             spawn_cursors: HashMap::new(),
             removed_entities: Vec::new(),
+            pending_derived_from: Vec::new(),
+            flushing_anchors: false,
+            written_derived: Vec::new(),
         }
     }
 }
@@ -504,16 +550,25 @@ impl World {
     /// Creates an empty world.
     pub(crate) fn new() -> Self {
         Self {
-            next_entity: 0,
+            next_entity: Arc::new(AtomicU64::new(0)),
             revision: Revision(0),
             mutations: 0,
             stores: HashMap::new(),
             singleton_entities: HashMap::new(),
             derived_owners: HashMap::new(),
-            derived_spawns: HashMap::new(),
+            derived_spawns: Arc::new(Mutex::new(HashMap::new())),
             spawn_cursors: HashMap::new(),
             removed_entities: Vec::new(),
+            pending_derived_from: Vec::new(),
+            flushing_anchors: false,
+            written_derived: Vec::new(),
         }
+    }
+
+    /// Drains the component types written as derived outputs since the
+    /// last drain.
+    pub(crate) fn take_written_derived(&mut self) -> Vec<(TypeId, &'static str)> {
+        std::mem::take(&mut self.written_derived)
     }
 
     /// Drains the entities removed since the last drain.
@@ -521,45 +576,84 @@ impl World {
         std::mem::take(&mut self.removed_entities)
     }
 
-    /// Returns the entity for an invocation's next spawn slot.
+    /// Applies the `DerivedFrom` inserts deferred from the command buffer
+    /// that just finished applying, capturing anchor revisions against the
+    /// fully written world.
     ///
-    /// Slots are matched by spawn order within one commit; a rerun that spawns
-    /// the same outputs reuses the same entity ids.
-    pub(crate) fn spawn_derived(&mut self, owner: &SystemInvocation) -> Entity {
+    /// Must run before anything reads the world (planning, snapshots,
+    /// stale-output removal), so the deferral is never observable.
+    pub(crate) fn flush_derived_from(&mut self) {
+        if self.pending_derived_from.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.pending_derived_from);
+        self.flushing_anchors = true;
+        for (entity, value, origin, owner) in pending {
+            self.insert(entity, value, origin, owner);
+        }
+        self.flushing_anchors = false;
+    }
+
+    /// Records an invocation's spawn into its next slot at commit time.
+    ///
+    /// The entity id itself was reserved at buffer time ([`Commands`] hands
+    /// out the previous run's slot ids in spawn order, allocating fresh ids
+    /// only for new slots), so a rerun that spawns the same outputs reuses
+    /// the same entity ids. Recording keeps the slot list current for the
+    /// next reservation.
+    pub(crate) fn record_derived_spawn(&mut self, owner: &SystemInvocation, entity: Entity) {
         let cursor = self.spawn_cursors.entry(owner.clone()).or_default();
         let slot = *cursor;
         *cursor += 1;
 
-        let spawns = self.derived_spawns.entry(owner.clone()).or_default();
-        if let Some(entity) = spawns.get(slot) {
-            return *entity;
+        let mut map = self
+            .derived_spawns
+            .lock()
+            .expect("derived spawn map lock poisoned");
+        let spawns = map.entry(owner.clone()).or_default();
+        if slot < spawns.len() {
+            spawns[slot] = entity;
+        } else {
+            spawns.push(entity);
         }
+    }
 
-        let entity = Entity(self.next_entity);
-        self.next_entity += 1;
+    /// The previous run's spawn slots for `owner`, in spawn order.
+    ///
+    /// Read at buffer time by [`Commands`]; safe because the map is only
+    /// mutated at commit and one invocation is never in flight twice.
+    pub(crate) fn spawn_slots(&self, owner: &SystemInvocation) -> Vec<Entity> {
         self.derived_spawns
-            .get_mut(owner)
-            .expect("spawn list inserted above")
-            .push(entity);
-        entity
+            .lock()
+            .expect("derived spawn map lock poisoned")
+            .get(owner)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// The shared monotonic entity id allocator.
+    pub(crate) fn entity_allocator(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.next_entity)
     }
 
     /// Ends the spawn phase of one commit, dropping unused trailing slots.
     pub(crate) fn finish_derived_spawns(&mut self, owner: &SystemInvocation) {
         let cursor = self.spawn_cursors.remove(owner).unwrap_or(0);
-        if let Some(spawns) = self.derived_spawns.get_mut(owner) {
+        let mut map = self
+            .derived_spawns
+            .lock()
+            .expect("derived spawn map lock poisoned");
+        if let Some(spawns) = map.get_mut(owner) {
             spawns.truncate(cursor);
             if spawns.is_empty() {
-                self.derived_spawns.remove(owner);
+                map.remove(owner);
             }
         }
     }
 
     /// Allocates a fresh entity id in the live world.
     pub(crate) fn spawn_empty(&mut self) -> Entity {
-        let entity = Entity(self.next_entity);
-        self.next_entity += 1;
-        entity
+        Entity(self.next_entity.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Returns the entity for a singleton key, allocating one if needed.
@@ -571,6 +665,21 @@ impl World {
         let entity = self.spawn_empty();
         self.singleton_entities.insert(key, entity);
         entity
+    }
+
+    /// Returns the entity for a singleton key, registering `candidate` as
+    /// the singleton entity if none exists yet.
+    ///
+    /// Used by spawn commands whose id was reserved at buffer time: the
+    /// reservation stands when this spawn *creates* the singleton, and is
+    /// superseded by the existing entity otherwise.
+    pub(crate) fn singleton_entity_or_register(&mut self, key: TypeId, candidate: Entity) -> Entity {
+        if let Some(entity) = self.singleton_entities.get(&key) {
+            return *entity;
+        }
+
+        self.singleton_entities.insert(key, candidate);
+        candidate
     }
 
     /// Inserts a base input component.
@@ -601,6 +710,17 @@ impl World {
         owner: Option<SystemInvocation>,
     ) {
         if let Some(derived_from) = (&mut value as &mut dyn Any).downcast_mut::<DerivedFrom>() {
+            // Anchor revisions resolve at buffer end, not in command order:
+            // a later command in the same buffer may still write to an
+            // anchor entity, and capturing now would make this derived fact
+            // stale on arrival. Defer the whole insert until
+            // `flush_derived_from` runs after the buffer has applied.
+            if !self.flushing_anchors {
+                let deferred = std::mem::replace(derived_from, DerivedFrom::many([]));
+                self.pending_derived_from
+                    .push((entity, deferred, origin, owner));
+                return;
+            }
             derived_from.capture(|entity| self.entity_revision(entity));
         }
 
@@ -649,8 +769,14 @@ impl World {
             self.mutations += 1;
         }
 
+        if cfg!(debug_assertions) && origin == Origin::Derived {
+            self.written_derived
+                .push((TypeId::of::<T>(), std::any::type_name::<T>()));
+        }
+
         let new_owner = owner.clone();
         let store = self.store_mut::<T>();
+        store.watermark = store.watermark.max(revision.0);
         let previous = store.entries.insert(
             entity,
             ComponentEntry {
@@ -795,7 +921,10 @@ impl World {
     /// invocation clears its previous facts before applying the new command
     /// buffer.
     pub(crate) fn remove_derived_owned(&mut self, owner: &SystemInvocation) {
-        self.derived_spawns.remove(owner);
+        self.derived_spawns
+            .lock()
+            .expect("derived spawn map lock poisoned")
+            .remove(owner);
         let Some(outputs) = self.derived_owners.remove(owner) else {
             return;
         };
@@ -884,7 +1013,10 @@ impl World {
 
         let mut removed = Vec::new();
         for owner in owners {
-            self.derived_spawns.remove(&owner);
+            self.derived_spawns
+                .lock()
+                .expect("derived spawn map lock poisoned")
+                .remove(&owner);
             let Some(outputs) = self.derived_owners.remove(&owner) else {
                 continue;
             };
@@ -961,6 +1093,10 @@ impl World {
         self.mutations += 1;
         if T::tracked() {
             bump(&mut self.revision);
+            let watermark = self.revision.0;
+            if let Some(store) = self.store_mut_existing::<T>() {
+                store.watermark = store.watermark.max(watermark);
+            }
         }
 
         if let Some(owner) = &removed.owner {
@@ -1100,7 +1236,16 @@ impl World {
 
     /// Upper bound used for simple entity scans.
     pub(crate) fn next_entity_raw(&self) -> u64 {
-        self.next_entity
+        self.next_entity.load(Ordering::Relaxed)
+    }
+
+    /// Highest revision at which the store for `type_id` changed; zero when
+    /// no such store exists.
+    pub(crate) fn store_watermark(&self, type_id: TypeId) -> u64 {
+        self.stores
+            .get(&type_id)
+            .map(|store| store.watermark())
+            .unwrap_or(0)
     }
 
     /// Entities that currently have a component of type `T`, ascending.
