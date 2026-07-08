@@ -712,17 +712,21 @@ where
 pub struct Dep {
     type_id: TypeId,
     entity: Entity,
-    revision: Revision,
+    /// `None` records "observed absent": an `Option<&T>` part saw no
+    /// component, and the dep goes stale the moment one appears. Presence
+    /// and absence are both tracked observations.
+    revision: Option<Revision>,
 }
 
 impl Dep {
     /// Raw revision counter of this dependency, for cursor comparisons.
+    /// Absence observations report zero (they precede every revision).
     pub(crate) fn revision_raw(&self) -> u64 {
-        self.revision.0
+        self.revision.map(|revision| revision.0).unwrap_or(0)
     }
 
     pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
-        snapshot.revision_by_type(self.type_id, self.entity) == Some(self.revision)
+        snapshot.revision_by_type(self.type_id, self.entity) == self.revision
     }
 
     /// Absorbs the post-commit revision when the dep row was written by the
@@ -736,9 +740,7 @@ impl Dep {
             return;
         }
 
-        if let Some(revision) = world.revision_by_type(self.type_id, self.entity) {
-            self.revision = revision;
-        }
+        self.revision = world.revision_by_type(self.type_id, self.entity);
     }
 }
 
@@ -1129,6 +1131,55 @@ impl<T: Component> QueryPart for &T {
 }
 
 impl<T: Component> ExternalReadQueryPart for &T {}
+
+impl<T: Component> QueryPart for Option<&T> {
+    type Item<'a> = Option<&'a T>;
+
+    fn store_len(_snapshot: &Snapshot) -> usize {
+        // An optional part never constrains the row set, so it must never
+        // be picked as the driving store.
+        usize::MAX
+    }
+
+    fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
+        // Only reachable when every part is optional: fall back to the
+        // dense id scan, like the bare `Entity` param.
+        (0..snapshot.next_entity_raw()).map(Entity).collect()
+    }
+
+    fn matches(_snapshot: &Snapshot, _entity: Entity) -> bool {
+        true
+    }
+
+    fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+        optional_component_dep::<T>(snapshot, entity)
+            .into_iter()
+            .collect()
+    }
+
+    fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
+        // Declared even when absent: a writer creating `T` on this row must
+        // still serialize against the observing invocation.
+        vec![Access::read::<T>(entity)]
+    }
+
+    fn access_all() -> Access {
+        Access::read_all::<T>()
+    }
+
+    fn fetch<'a>(
+        _bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        entity: Entity,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
+        snapshot
+            .get::<T>(entity)
+            .map(|component| store_read_guard(component, guards))
+    }
+}
+
+impl<T: Component> ExternalReadQueryPart for Option<&T> {}
 
 impl<T: Component> QueryPart for MutRef<'_, T> {
     type Item<'a> = MutRef<'a, T>;
@@ -1901,8 +1952,20 @@ fn component_dep_if_tracked<T: Component>(snapshot: &Snapshot, entity: Entity) -
     T::tracked().then(|| Dep {
         type_id: TypeId::of::<T>(),
         entity,
-        revision: snapshot
-            .revision::<T>(entity)
-            .expect("query dependency referenced a missing component"),
+        revision: Some(
+            snapshot
+                .revision::<T>(entity)
+                .expect("query dependency referenced a missing component"),
+        ),
+    })
+}
+
+/// Dep for an `Option<&T>` part: presence records the revision, absence
+/// records `None` — both are observations that invalidate on transition.
+fn optional_component_dep<T: Component>(snapshot: &Snapshot, entity: Entity) -> Option<Dep> {
+    T::tracked().then(|| Dep {
+        type_id: TypeId::of::<T>(),
+        entity,
+        revision: snapshot.revision::<T>(entity),
     })
 }

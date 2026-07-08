@@ -79,13 +79,14 @@ See:
   and per-system; share via small nested bundles, never a kitchen-sink one —
   over-borrowing widens declared access and creates false scheduler
   conflicts with `MutRef` systems.
-- Add optional query parts (`Option<&T>` in a row tuple) so systems stop
-  carrying side-`View`s solely to look up a maybe-present component by
-  entity (see `index_defs`/`check_duplicate_defs` and their `paths` view).
-  **Next up after the qol batch**, together with the outer-join form in §7:
-  both are the same missing shape — absence as a plannable row state — and
-  the hover service showed the cost (a separate else-branch system per
-  inner join).
+- Done: optional query parts — `Option<&T>` in a row tuple matches whether
+  or not `T` is present, and *both* transitions invalidate: presence
+  records the revision, absence records a `None`-revision dep that goes
+  stale the moment the component appears. An optional part never drives
+  row enumeration (`store_len = MAX`) and declares read access even when
+  absent so writers creating `T` still serialize. Untracked components
+  stay untracked (no dep either way). Still open: the outer-join form
+  (§7) — the same missing shape on the bound side of a join.
 - Done: external component removal — `bowl.entity(e).remove::<T>()`
   mirrors targeted inserts with the same epoch semantics (deferred
   mid-epoch, `.preempting()` to force a boundary); friction 2.

@@ -5245,6 +5245,60 @@ mod tests {
         });
     }
 
+    async fn count_optional_b(
+        query: Query<(Entity, &A, Option<&B>)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _a, b) = query.item();
+        commands
+            .entity(entity)
+            .insert(Count(b.map(|b| b.0 as usize).unwrap_or(100)));
+    }
+
+    /// `Option<&T>` in a row tuple: the row matches whether or not `T` is
+    /// present, the item reports it, and *both* transitions invalidate —
+    /// absence is a tracked observation, not a skipped read. Systems stop
+    /// carrying side-`View`s just to look up a maybe-present component.
+    #[test]
+    fn optional_parts_match_and_track_presence_and_absence() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(count_optional_b).await;
+
+            let with_b = bowl.insert((A(1), B(7))).await;
+            let without_b = bowl.insert((A(2),)).await;
+
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = counts.collect();
+            assert_eq!(rows.len(), 2, "absent B must not exclude the row");
+            let count_of = |entity: Entity, rows: &[(Entity, &Count)]| {
+                rows.iter().find(|(e, _)| *e == entity).map(|(_, c)| c.0)
+            };
+            assert_eq!(count_of(with_b.entity(), &rows), Some(7));
+            assert_eq!(count_of(without_b.entity(), &rows), Some(100));
+
+            // Absence -> presence must rerun the row.
+            bowl.entity(without_b.entity()).insert((B(9),)).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = counts.collect();
+            assert_eq!(
+                count_of(without_b.entity(), &rows),
+                Some(9),
+                "a component appearing must invalidate the observing row"
+            );
+
+            // Presence -> absence must rerun the row.
+            bowl.entity(with_b.entity()).remove::<B>().await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = counts.collect();
+            assert_eq!(
+                count_of(with_b.entity(), &rows),
+                Some(100),
+                "a component disappearing must invalidate the observing row"
+            );
+        });
+    }
+
     async fn settle_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (_entity, _a) = query.item();
         commands.insert((Note,));
