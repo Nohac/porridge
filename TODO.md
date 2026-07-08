@@ -449,7 +449,13 @@ Current shortcut:
   producing generation) and tracked consumers are exempt; the settle phase
   is immune by construction since its inserts defer to the next run. The
   flag immediately caught `check_duplicate_defs` viewing lowering output
-  from Evaluate — moved to Complete.
+  from Evaluate — moved to Complete. The check is *entity-granular*: it
+  fires only when the written entity ends up carrying every component one
+  of the viewer's `View`s requires, so shared vocabulary components
+  (spans, file anchors, price tags) on unrelated entities do not trip it,
+  while a write that completes a previously partial row still does.
+  Remaining gap: removals are not flagged — a same-phase commit removing
+  a viewed component changes the view's row set just as silently.
 
 Current shortcut:
 - Systems and invalid rows are polled concurrently, but there is still no

@@ -492,10 +492,11 @@ pub struct World {
     /// True while `flush_derived_from` re-enters `insert`, so the deferral
     /// branch steps aside and the anchors capture for real.
     flushing_anchors: bool,
-    /// Component types written as derived outputs since the runner last
-    /// drained this list. Debug builds use it to flag same-phase ambient
-    /// consumption (a commit producing what a same-phase system `View`s).
-    written_derived: Vec<(TypeId, &'static str)>,
+    /// Derived component writes since the runner last drained this list:
+    /// which type landed on which entity. Debug builds use it to flag
+    /// same-phase ambient consumption — a written entity races a view only
+    /// if it ends up carrying *all* the components the view requires.
+    written_derived: Vec<(TypeId, Entity, &'static str)>,
 }
 
 impl Clone for World {
@@ -565,10 +566,16 @@ impl World {
         }
     }
 
-    /// Drains the component types written as derived outputs since the
-    /// last drain.
-    pub(crate) fn take_written_derived(&mut self) -> Vec<(TypeId, &'static str)> {
+    /// Drains the derived component writes recorded since the last drain.
+    pub(crate) fn take_written_derived(&mut self) -> Vec<(TypeId, Entity, &'static str)> {
         std::mem::take(&mut self.written_derived)
+    }
+
+    /// Whether `entity` currently carries a component of type `type_id`.
+    pub(crate) fn has_dyn(&self, type_id: TypeId, entity: Entity) -> bool {
+        self.stores
+            .get(&type_id)
+            .is_some_and(|store| store.revision_for_entity(entity).is_some())
     }
 
     /// Drains the entities removed since the last drain.
@@ -771,7 +778,7 @@ impl World {
 
         if cfg!(debug_assertions) && origin == Origin::Derived {
             self.written_derived
-                .push((TypeId::of::<T>(), std::any::type_name::<T>()));
+                .push((TypeId::of::<T>(), entity, std::any::type_name::<T>()));
         }
 
         let new_owner = owner.clone();

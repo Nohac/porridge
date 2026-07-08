@@ -192,10 +192,12 @@ pub trait SystemParam {
     fn bound_key_types() -> Vec<(TypeId, &'static str)> {
         Vec::new()
     }
-    /// Component types this param reads *ambiently* (without contributing
-    /// memo deps). Used by the same-phase production flag and by
-    /// `explain`'s stale-view detection.
-    fn view_types(_out: &mut Vec<TypeId>) {}
+    /// Component sets this param reads *ambiently* (without contributing
+    /// memo deps) — one entry per `View`, listing the components an entity
+    /// must carry to appear in it. Used by the same-phase production flag
+    /// (a written entity races a view only if it carries the whole set)
+    /// and by `explain`'s stale-view detection.
+    fn view_sets(_out: &mut Vec<Vec<TypeId>>) {}
     /// For outer-join params: the bound key types this state must verify
     /// have *no* matching row. Nonempty only for the absent placeholder
     /// state of an `Option<Query<..>>`.
@@ -446,8 +448,13 @@ where
         access
     }
 
-    fn view_types(out: &mut Vec<TypeId>) {
-        out.extend(Q::access_all().iter().map(|access| access.component));
+    fn view_sets(out: &mut Vec<Vec<TypeId>>) {
+        out.push(
+            Q::access_all()
+                .iter()
+                .map(|access| access.component)
+                .collect(),
+        );
     }
 
     fn fetch<'a>(
@@ -742,8 +749,8 @@ macro_rules! impl_system_param_tuple {
                 false $(|| $P::always_run())*
             }
 
-            fn view_types(out: &mut Vec<TypeId>) {
-                $($P::view_types(out);)*
+            fn view_sets(out: &mut Vec<Vec<TypeId>>) {
+                $($P::view_sets(out);)*
             }
         }
     };
@@ -923,18 +930,19 @@ pub struct BoxedSystem {
     pub(crate) phase: Phase,
     /// Full type path of the registered function, for `explain` lookups.
     pub(crate) name: &'static str,
-    /// Component types the system's params read ambiently (`View`s), for
-    /// the same-phase production flag and `explain`'s stale-view report.
-    pub(crate) view_types: Arc<Vec<TypeId>>,
+    /// One component set per `View` the system's params read ambiently:
+    /// the components an entity must carry to appear in that view. For the
+    /// same-phase production flag and `explain`'s stale-view report.
+    pub(crate) view_sets: Arc<Vec<Vec<TypeId>>>,
 }
 
 impl BoxedSystem {
-    fn new(runnable: Arc<dyn Runnable>, name: &'static str, view_types: Vec<TypeId>) -> Self {
+    fn new(runnable: Arc<dyn Runnable>, name: &'static str, view_sets: Vec<Vec<TypeId>>) -> Self {
         Self {
             runnable,
             phase: Phase::Evaluate,
             name,
-            view_types: Arc::new(view_types),
+            view_sets: Arc::new(view_sets),
         }
     }
 
@@ -1300,7 +1308,7 @@ where
         let system = self.system.into_system(id);
         let phase = system.phase;
         let name = system.name;
-        let view_types = Arc::clone(&system.view_types);
+        let view_sets = Arc::clone(&system.view_sets);
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
                 id,
@@ -1309,7 +1317,7 @@ where
             }),
             phase,
             name,
-            view_types,
+            view_sets,
         }
     }
 }
@@ -1323,7 +1331,7 @@ where
         let system = self.system.into_system(id);
         let phase = system.phase;
         let name = system.name;
-        let view_types = Arc::clone(&system.view_types);
+        let view_sets = Arc::clone(&system.view_sets);
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
                 id,
@@ -1332,7 +1340,7 @@ where
             }),
             phase,
             name,
-            view_types,
+            view_sets,
         }
     }
 }
@@ -1346,7 +1354,7 @@ where
         let system = self.system.into_system(id);
         let phase = system.phase;
         let name = system.name;
-        let view_types = Arc::clone(&system.view_types);
+        let view_sets = Arc::clone(&system.view_sets);
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
                 id,
@@ -1355,7 +1363,7 @@ where
             }),
             phase,
             name,
-            view_types,
+            view_sets,
         }
     }
 }
@@ -1609,8 +1617,8 @@ where
             );
         }
 
-        let mut view_types = Vec::new();
-        F::Param::view_types(&mut view_types);
+        let mut view_sets = Vec::new();
+        F::Param::view_sets(&mut view_sets);
         BoxedSystem::new(
             Arc::new(FunctionSystem {
                 id,
@@ -1618,7 +1626,7 @@ where
                 _marker: PhantomData::<Marker>,
             }),
             std::any::type_name::<F>(),
-            view_types,
+            view_sets,
         )
     }
 }

@@ -240,7 +240,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
             "<{static_ty} as ::bowl::__derive::SystemParam>::validate_local()?;"
         ));
         view_types_body.push_str(&format!(
-            "<{static_ty} as ::bowl::__derive::SystemParam>::view_types(out);"
+            "<{static_ty} as ::bowl::__derive::SystemParam>::view_sets(out);"
         ));
     }
 
@@ -299,7 +299,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 ::std::result::Result::Ok(())
             }}
 
-            fn view_types(out: &mut ::std::vec::Vec<::std::any::TypeId>) {{
+            fn view_sets(out: &mut ::std::vec::Vec<::std::vec::Vec<::std::any::TypeId>>) {{
                 {view_types_body}
             }}
         }}"

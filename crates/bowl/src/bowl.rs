@@ -1053,8 +1053,15 @@ impl Bowl {
         // planned from is ambient staleness: the view changed, nothing
         // reran, and nothing ever will unless a tracked dep moves too.
         let system_id = SystemId(index);
-        let stale_views = target
-            .view_types
+        let mut viewed: Vec<TypeId> = target
+            .view_sets
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        viewed.sort_unstable();
+        viewed.dedup();
+        let stale_views = viewed
             .iter()
             .filter(|type_id| {
                 let watermark = snapshot.store_watermark(**type_id);
@@ -2266,27 +2273,37 @@ async fn commit_system_run(
         state.world.remove_derived_stale(&output.owner, previous);
         state.deferred_settle.append(&mut deferred);
 
-        // Debug flag: producing a component that a same-phase system reads
+        // Debug flag: producing an entity that a same-phase system reads
         // ambiently is a silent race — the viewer may already have run and
-        // will never replan for this commit. Tracked consumers are exempt
-        // (their deps change; the replanner reruns them), and so are
-        // viewers with no matched rows in this generation (marker-gated
-        // consumers whose gate defers them to a later generation cannot
-        // have raced anything).
+        // will never replan for this commit. The check is entity-granular:
+        // a write races a view only if the written entity ends up carrying
+        // *every* component the view requires (shared vocabulary
+        // components on unrelated entities do not trip it, and a write
+        // that completes a previously partial row does). Tracked consumers
+        // are exempt (their deps change; the replanner reruns them), and
+        // so are viewers with no matched rows in this generation
+        // (marker-gated consumers whose gate defers them to a later
+        // generation cannot have raced anything).
         if cfg!(debug_assertions) {
             let written = state.world.take_written_derived();
             if let Some(phase) = phase {
-                for (type_id, type_name) in written {
+                for (type_id, entity, type_name) in written {
                     for (index, system) in state.systems.iter().enumerate() {
-                        if index != writer.0
-                            && system.phase == phase
-                            && system.view_types.contains(&type_id)
-                            && system.runnable.row_counts(&state.world, memo).0 > 0
-                        {
+                        if index == writer.0 || system.phase != phase {
+                            continue;
+                        }
+                        let races = system.view_sets.iter().any(|required| {
+                            required.contains(&type_id)
+                                && required
+                                    .iter()
+                                    .all(|component| state.world.has_dyn(*component, entity))
+                        });
+                        if races && system.runnable.row_counts(&state.world, memo).0 > 0 {
                             panic!(
-                                "component `{type_name}` is produced and ambiently \
-                                 consumed in the same phase ({phase:?}): a `View` of it \
-                                 races the producing commit. Move the producer or the \
+                                "component `{type_name}` completed an entity that a \
+                                 same-phase ({phase:?}) `View` matches: the producing \
+                                 commit is produced and ambiently consumed in the same \
+                                 phase and races the viewer. Move the producer or the \
                                  consumer across a phase boundary, or make the read a \
                                  tracked `Query` input."
                             );
@@ -5296,6 +5313,74 @@ mod tests {
                 Some(100),
                 "a component disappearing must invalidate the observing row"
             );
+        });
+    }
+
+    async fn restock_oranges(query: Query<(Entity, &A)>, mut commands: Commands) {
+        let (_entity, _a) = query.item();
+        // An "orange with a price tag": Rank is shared vocabulary that many
+        // kinds of entities carry.
+        commands.insert((C(1), Rank(12)));
+    }
+
+    async fn count_priced_ds(
+        query: Query<(Entity, &B)>,
+        priced: View<'_, (Entity, &D, &Rank)>,
+        mut commands: Commands,
+    ) {
+        let (entity, _b) = query.item();
+        commands.entity(entity).insert(Count(priced.len()));
+    }
+
+    /// The same-phase flag is entity-granular: producing an entity that a
+    /// same-phase view can never match (an "orange" sharing only the
+    /// vocabulary component `Rank` with a `(D, Rank)` view of "priced
+    /// apples") is not a race and must not panic. Type-level overlap alone
+    /// used to trip this — the dsql port's blocker.
+    #[test]
+    fn same_phase_flag_ignores_rows_the_viewer_cannot_match() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(restock_oranges.run_during(Phase::Complete))
+                .await;
+            bowl.add_system(count_priced_ds.run_during(Phase::Complete))
+                .await;
+
+            bowl.insert((A(1),)).await;
+            bowl.insert((B(1),)).await;
+
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(
+                counts.collect()[0].1.0,
+                0,
+                "oranges never appear in the (D, Rank) view"
+            );
+        });
+    }
+
+    async fn sticker_d(query: Query<(Entity, &Rank), Without<D>>, mut commands: Commands) {
+        let (entity, _rank) = query.item();
+        // The write itself is only {D}, but it *completes* the (D, Rank)
+        // row on an entity that already carried Rank.
+        commands.entity(entity).insert(D(1));
+    }
+
+    /// The converse guarantee: a write that completes a previously partial
+    /// row must still be flagged, even though the written set alone is not
+    /// a superset of what the view requires — the check inspects the
+    /// entity after the write, not the write itself.
+    #[test]
+    #[should_panic(expected = "consumed in the same phase")]
+    fn same_phase_flag_catches_writes_completing_a_viewed_row() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(sticker_d.run_during(Phase::Complete)).await;
+            bowl.add_system(count_priced_ds.run_during(Phase::Complete))
+                .await;
+
+            bowl.insert((Rank(3),)).await;
+            bowl.insert((B(1),)).await;
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
         });
     }
 
