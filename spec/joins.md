@@ -174,6 +174,16 @@ same: filter inside the system against a `View`.
   keys — `Where<And<Eq<A>, Eq<B>>>` pairs a row only when *every* key
   matches its provider (`compound_bound_join_requires_every_key_to_match`).
   Bound keys are plural throughout; validation and pruning loop per key.
+- Outer form — **supported.** `Option<Query<Q, Where<Eq<K>>>>` runs one
+  invocation per matched pair plus exactly one `None` invocation for a
+  provider row with zero matches, instead of dropping it from the product.
+  The `None` invocation's memo records store-scoped watermark deps on the
+  joined stores, so a partner appearing, changing, or disappearing reruns
+  the unmatched row (coarse: any write to those stores invalidates every
+  unmatched row; per-fingerprint-bucket deps are the refinement). This is
+  what lets an inner join absorb its "nothing matched" else-branch system —
+  the hover service's `stamp` folded into `resolve`. "Left" outer is the
+  only meaningful variant: the provider side owns invocation identity.
 - `Gte`/`Gt`/`Lt`/`Lte` — deferred until a concrete need. A bound ordered
   comparison is a theta/band join: fingerprints cannot order, so pruning
   needs value reads and `PartialOrd` at plan time, and the pair set churns

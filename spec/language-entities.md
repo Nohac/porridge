@@ -69,12 +69,14 @@ accretes one view per contributing entity (and hits the 8-param ceiling).
 Instead, requests flow through a phase-ordered pipeline (see
 `lang/service/hover.rs`):
 
-1. **Enrichment** (`Phase::Complete`, service-owned): resolve what every
+1. **Enrichment** (`Phase::Evaluate`, service-owned): resolve what every
    contributor needs once — the request's file, the word under the cursor —
-   and stamp it onto the request entity (`HoverEnriched`, `HoverFile`,
-   `HoverWord`). File resolution is a bound join: the request's `FilePath`
-   pairs with the file carrying the equal path, so the lookup is a planned
-   pair with tracked deps rather than a view scan.
+   and stamp it onto the request entity (`RequestKey`, `HoverFile`,
+   `HoverWord`, plus the fallback `HoverRank`/`HoverInfo` scaffold). File
+   resolution is a bound *outer* join: the request's `FilePath` pairs with
+   the file carrying the equal path, and a request matching no file still
+   runs once with `None` — so the same system seeds the "unknown file"
+   fallback and no separate stamp/else-branch system exists.
 2. **Candidates** (`Phase::Complete`, entity-owned): each entity registers
    its own request-answering system through `HoverStage::register_hover`,
    reading only the enriched request plus its own facts, and inserts

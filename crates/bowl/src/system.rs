@@ -10,7 +10,7 @@ use crate::{
     commands::CommandOp,
     query::{
         Access, AccessKind, Dep, GuardStore, QueryFilter, QueryParam, filtered_access,
-        filtered_deps, filtered_rows,
+        filtered_deps, filtered_rows, store_watermark_dep,
     },
     world::{Snapshot, SystemId, SystemInvocation},
 };
@@ -196,6 +196,18 @@ pub trait SystemParam {
     /// memo deps). Used by the same-phase production flag and by
     /// `explain`'s stale-view detection.
     fn view_types(_out: &mut Vec<TypeId>) {}
+    /// For outer-join params: the bound key types this state must verify
+    /// have *no* matching row. Nonempty only for the absent placeholder
+    /// state of an `Option<Query<..>>`.
+    fn absent_keys(_state: &Self::State) -> Vec<TypeId> {
+        Vec::new()
+    }
+    /// For outer-join params: whether no row of the inner query carries
+    /// `key` with an equal fingerprint — i.e. the absent placeholder is
+    /// legitimate for this provider.
+    fn absent_binding_matches(_snapshot: &Snapshot, _key: TypeId, _fingerprint: u64) -> bool {
+        true
+    }
     /// Whether this param's item reads component `key` (bound join provider).
     fn provides_key(_key: TypeId) -> bool {
         false
@@ -283,6 +295,126 @@ where
         key: TypeId,
     ) -> Option<Option<u64>> {
         Q::provided_key(snapshot, state, key)
+    }
+}
+
+/// Outer join: like the bound inner join, but a provider row with *zero*
+/// matching rows still runs — exactly once, with `None` — instead of being
+/// silently dropped. The unfiltered "else branch" system an inner join
+/// forces (seed a fallback when nothing matched) folds into the join.
+impl<Q, Filter> SystemParam for Option<Query<Q, Filter>>
+where
+    Q: QueryParam,
+    Filter: QueryFilter<Q> + Send,
+{
+    type State = Option<Q::State>;
+    type Item<'a> = Option<Query<Q::Item<'a>, Filter>>;
+
+    fn states(snapshot: &Snapshot) -> Vec<Self::State> {
+        // The absent placeholder always enumerates; `binding_matches`
+        // prunes it from tuples whose provider has a matching row.
+        let mut states = filtered_rows::<Q, Filter>(snapshot)
+            .into_iter()
+            .map(Some)
+            .collect::<Vec<_>>();
+        states.push(None);
+        states
+    }
+
+    fn keys(state: &Self::State) -> Vec<Entity> {
+        match state {
+            Some(state) => Q::keys(state),
+            None => Vec::new(),
+        }
+    }
+
+    fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
+        match state {
+            Some(state) => filtered_deps::<Q, Filter>(snapshot, state),
+            // The None invocation observed "no partner": record the joined
+            // stores' watermarks so partner churn (appear, change,
+            // disappear) reruns the unmatched row. Store-scoped and
+            // therefore coarse, but correct.
+            None => {
+                let mut deps = Vec::new();
+                for access in Q::access_all() {
+                    deps.push(store_watermark_dep(snapshot, access.component));
+                }
+                for (key, _name) in Filter::bound_key_types() {
+                    deps.push(store_watermark_dep(snapshot, key));
+                }
+                deps
+            }
+        }
+    }
+
+    fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
+        match state {
+            Some(state) => filtered_access::<Q, Filter>(snapshot, state),
+            // Component-level read access: writers creating a matching
+            // partner must serialize against the unmatched invocation.
+            None => {
+                let mut access = Q::access_all();
+                access.extend(Filter::access_all());
+                access
+            }
+        }
+    }
+
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        state: &Self::State,
+        _commands: &Commands,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
+        state
+            .as_ref()
+            .map(|state| Query::new(Q::fetch(bowl, snapshot, state, guards)))
+    }
+
+    fn bound_keys(snapshot: &Snapshot, state: &Self::State) -> Vec<(TypeId, Option<u64>)> {
+        match state {
+            Some(state) => Filter::bound_keys(snapshot, state),
+            None => Vec::new(),
+        }
+    }
+
+    fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        Filter::bound_key_types()
+    }
+
+    fn absent_keys(state: &Self::State) -> Vec<TypeId> {
+        match state {
+            Some(_) => Vec::new(),
+            None => Filter::bound_key_types()
+                .into_iter()
+                .map(|(key, _name)| key)
+                .collect(),
+        }
+    }
+
+    fn absent_binding_matches(snapshot: &Snapshot, key: TypeId, fingerprint: u64) -> bool {
+        // Legitimate only when no inner row carries an equal key.
+        !filtered_rows::<Q, Filter>(snapshot).iter().any(|state| {
+            Filter::bound_keys(snapshot, state)
+                .into_iter()
+                .any(|(row_key, row_fingerprint)| {
+                    row_key == key && row_fingerprint == Some(fingerprint)
+                })
+        })
+    }
+
+    fn validate_local() -> Result<(), String> {
+        if Filter::bound_key_types().is_empty() {
+            return Err(
+                "`Option<Query<..>>` is an outer join and needs a bound `Where<Eq<..>>` \
+                 filter; for a maybe-present component on the row itself use `Option<&T>` \
+                 in the tuple instead"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -488,6 +620,48 @@ macro_rules! impl_system_param_tuple {
                         // Unreachable: providers are validated at registration.
                         None => return false,
                     }
+                }
+
+                // Outer joins: the absent placeholder survives only when no
+                // row of its inner query carries the provider's key.
+                let mut absent: Vec<(usize, TypeId)> = Vec::new();
+                let mut index = 0usize;
+                $(
+                    for key in $P::absent_keys($P) {
+                        absent.push((index, key));
+                    }
+                    index += 1;
+                )*
+                let _ = index;
+
+                for (absent_index, key) in absent {
+                    let mut provided: Option<Option<u64>> = None;
+                    let mut index = 0usize;
+                    $(
+                        if index != absent_index && provided.is_none() {
+                            provided = $P::provided_key(snapshot, $P, key);
+                        }
+                        index += 1;
+                    )*
+                    let _ = index;
+
+                    let Some(Some(fingerprint)) = provided else {
+                        panic!(
+                            "outer-join provider component must be \
+                             `#[component(hash)]` so rows can join on fingerprints"
+                        );
+                    };
+
+                    let mut index = 0usize;
+                    $(
+                        if index == absent_index
+                            && !$P::absent_binding_matches(snapshot, key, fingerprint)
+                        {
+                            return false;
+                        }
+                        index += 1;
+                    )*
+                    let _ = index;
                 }
 
                 true

@@ -21,9 +21,10 @@ use bowl::{Bowl, Phase, SystemExt};
 
 pub(crate) async fn register_services(db: &Bowl) {
     // Enrichment reads only tracked inputs (request components plus the
-    // FilePath join), so it runs in the default Evaluate phase; candidate
-    // systems key on its outputs and replan as they commit.
-    db.add_system(hover::stamp_hover_requests).await;
+    // FilePath outer join), so it runs in the default Evaluate phase;
+    // candidate systems key on its outputs and replan as they commit. The
+    // outer join runs unmatched requests too, so enrichment seeds the
+    // whole fallback scaffold itself — no separate stamp system.
     db.add_system(hover::resolve_hover_requests).await;
     // Arbitration is a tracked join over candidates with a monotone
     // priority upgrade, so it is same-phase-safe next to the candidate

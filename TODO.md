@@ -300,12 +300,16 @@ let rows = diagnostics.collect();
   `Without` cannot combine on one query today) and compound join keys
   (`And<Eq<Name>, Eq<Arity>>` for overload resolution). See the operator
   matrix in `spec/joins.md`.
-- Add optional/outer join forms: a bound join only runs when a pair
-  *exists*, so every "and if nothing matched" branch today needs a
-  separate system driven by the bare row (the hover service's `stamp` seeds
-  the unknown-file fallback only because `resolve`'s inner join cannot).
-  A `Where<Eq<K>>` variant yielding `Option<(..)>` for the bound side
-  would collapse those else-branch systems into their joins.
+- Done: outer joins — `Option<Query<Q, Where<Eq<K>>>>` runs one invocation
+  per matched pair as before, plus exactly one `None` invocation for a
+  provider row with zero matches, so "and if nothing matched" branches
+  fold into the join (the hover service's `stamp` system is gone;
+  `resolve` seeds the fallback itself). The `None` invocation records
+  store-scoped watermark deps on the joined stores, so partner churn
+  reruns unmatched rows — coarse (any store write invalidates every
+  unmatched row) but correct; per-fingerprint-bucket deps are the
+  refinement if it ever shows up in profiles. Whole-entity removal sweeps
+  do not yet bump store watermarks (component-level removal does).
 - Add ordered/range predicates as join keys (position-in-span is the
   playground's blocker): with them, the hover candidates become tracked
   joins, move to `Evaluate`, and the finalizer flattens back to a plain
@@ -314,9 +318,10 @@ let rows = diagnostics.collect();
 - Follow-up: engine-maintained relationships (Bevy-style inverse components,
   tracked and fingerprinted) to make membership sets a memoizable dependency,
   unlocking `Where<In<T>>` and retiring the hand-rolled set-fingerprint
-  pattern. See the companion-design section of `spec/joins.md`. Combined
-  with outer joins, the hover service's three request-shaped rules
-  (request / request⋈file / request⋈candidates) could collapse toward one.
+  pattern. See the companion-design section of `spec/joins.md`. Outer
+  joins already collapsed the hover service's bare-request rule into the
+  file join (two rules left: request⟕file / request⋈candidates); set-valued
+  tracked reads would let arbitration collapse into the same rule too.
 
 Current shortcut:
 - Queries iterate component stores (smallest participating store for tuples).

@@ -5299,6 +5299,73 @@ mod tests {
         });
     }
 
+    async fn resolve_or_default(
+        query: Query<(Entity, &FingerprintedRank), With<Request>>,
+        partner: Option<Query<(Entity, &D), Where<Eq<FingerprintedRank>>>>,
+        mut commands: Commands,
+    ) {
+        let (request, _key) = query.item();
+        match partner {
+            Some(partner) => {
+                let (_entity, d) = partner.item();
+                commands.entity(request).insert(Count(d.0 as usize));
+            }
+            None => {
+                commands.entity(request).insert(Count(999));
+            }
+        }
+    }
+
+    /// Outer join: a bound `Where<Eq<K>>` join wrapped in `Option` runs one
+    /// invocation per matched pair as usual, plus exactly one `None`
+    /// invocation for a provider row with zero matches — instead of
+    /// silently dropping it. The unfiltered "else branch" system this
+    /// replaces (the hover service's `stamp`) can then fold into the join.
+    #[test]
+    fn outer_joins_run_unmatched_rows_with_none() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(resolve_or_default).await;
+
+            let matched = bowl.insert((Request, FingerprintedRank(1))).await;
+            let unmatched = bowl.insert((Request, FingerprintedRank(2))).await;
+            let partner = bowl.insert((D(42), FingerprintedRank(1))).await;
+
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = counts.collect();
+            let count_of = |entity: Entity, rows: &[(Entity, &Count)]| {
+                rows.iter().find(|(e, _)| *e == entity).map(|(_, c)| c.0)
+            };
+            assert_eq!(
+                count_of(matched.entity(), &rows),
+                Some(42),
+                "the matched pair must join as an inner join does"
+            );
+            assert_eq!(
+                count_of(unmatched.entity(), &rows),
+                Some(999),
+                "an unmatched provider row must run once with None"
+            );
+
+            // Unmatched -> matched: a partner appearing replans the pair.
+            bowl.insert((D(7), FingerprintedRank(2))).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = counts.collect();
+            assert_eq!(count_of(unmatched.entity(), &rows), Some(7));
+
+            // Matched -> unmatched: the partner losing its component must
+            // rerun the provider row as None again.
+            bowl.entity(partner.entity()).remove::<D>().await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = counts.collect();
+            assert_eq!(
+                count_of(matched.entity(), &rows),
+                Some(999),
+                "losing the partner must flap the row back to None"
+            );
+        });
+    }
+
     async fn settle_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
         let (_entity, _a) = query.item();
         commands.insert((Note,));

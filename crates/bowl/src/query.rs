@@ -716,6 +716,12 @@ pub struct Dep {
     /// component, and the dep goes stale the moment one appears. Presence
     /// and absence are both tracked observations.
     revision: Option<Revision>,
+    /// A store-scoped dep observes the whole store's watermark instead of
+    /// one row — the `None` invocation of an outer join records these for
+    /// the joined query's stores, so a partner appearing, changing, or
+    /// disappearing reruns the unmatched row. Coarser than row deps
+    /// (any store write invalidates), but correct.
+    store_scoped: bool,
 }
 
 impl Dep {
@@ -726,6 +732,10 @@ impl Dep {
     }
 
     pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
+        if self.store_scoped {
+            return snapshot.store_watermark(self.type_id)
+                == self.revision.map(|revision| revision.0).unwrap_or(0);
+        }
         snapshot.revision_by_type(self.type_id, self.entity) == self.revision
     }
 
@@ -740,6 +750,9 @@ impl Dep {
             return;
         }
 
+        if self.store_scoped {
+            return;
+        }
         self.revision = world.revision_by_type(self.type_id, self.entity);
     }
 }
@@ -1957,6 +1970,7 @@ fn component_dep_if_tracked<T: Component>(snapshot: &Snapshot, entity: Entity) -
                 .revision::<T>(entity)
                 .expect("query dependency referenced a missing component"),
         ),
+        store_scoped: false,
     })
 }
 
@@ -1967,5 +1981,17 @@ fn optional_component_dep<T: Component>(snapshot: &Snapshot, entity: Entity) -> 
         type_id: TypeId::of::<T>(),
         entity,
         revision: snapshot.revision::<T>(entity),
+        store_scoped: false,
     })
+}
+
+/// Store-scoped dep on `type_id`'s watermark, recorded by the `None`
+/// invocation of an outer join so partner churn reruns the unmatched row.
+pub(crate) fn store_watermark_dep(snapshot: &Snapshot, type_id: TypeId) -> Dep {
+    Dep {
+        type_id,
+        entity: Entity(0),
+        revision: Some(Revision(snapshot.store_watermark(type_id))),
+        store_scoped: true,
+    }
 }

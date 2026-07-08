@@ -4,13 +4,13 @@
 //! The pipeline needs exactly one phase barrier, and arbitration is a
 //! commutative fold, not call order:
 //!
-//! 1. `stamp_hover_requests` + `resolve_hover_requests` (Evaluate) read
-//!    only tracked inputs, so they need no ordering at all. Stamping seeds
-//!    the answer scaffold — [`RequestKey`], [`HoverRank`] at zero, and the
-//!    lowest-rank [`HoverInfo`] fallback. Resolution is a bound join (the
-//!    request's `FilePath` pairs with the file carrying the equal path); a
-//!    resolved request gets [`HoverFile`]/[`HoverWord`] plus a word-aware
-//!    fallback upgrade.
+//! 1. `resolve_hover_requests` (Evaluate) reads only tracked inputs, so it
+//!    needs no ordering at all. It is an *outer* join: the request's
+//!    `FilePath` pairs with the file carrying the equal path, and a request
+//!    matching no file still runs once with `None` — so one system seeds
+//!    the whole answer scaffold ([`RequestKey`], [`HoverRank`], the
+//!    fallback [`HoverInfo`]) for matched and unmatched requests alike. A
+//!    resolved request additionally gets [`HoverFile`]/[`HoverWord`].
 //! 2. Each entity's own hover system (Complete, registered through
 //!    `HoverStage::register_hover`) reads the enriched request plus its own
 //!    facts *ambiently* and inserts [`HoverCandidate`] facts. The ambient
@@ -98,43 +98,31 @@ pub(crate) mod priority {
     pub(crate) const NONE: u8 = 0;
 }
 
-pub(crate) async fn stamp_hover_requests(
-    query: Query<(Entity, &Position), With<HoverRequest>>,
-    mut commands: Commands,
-) {
-    crate::short_sleep().await;
-
-    let (request, _position) = query.item();
-    info!(request = request.raw(), "stamp_hover_requests");
-    commands.entity(request).insert(RequestKey(request));
-    commands.entity(request).insert(HoverRank(priority::NONE));
-    commands
-        .entity(request)
-        .insert(HoverInfo("unknown file".to_string()));
-}
-
-/// Join: the request's `FilePath` binds to the file entity carrying the
-/// equal path, making the file lookup a planned pair instead of a view
-/// scan — one invocation per (request, matching file). A pair existing at
-/// all means the file resolved, so this also upgrades the fallback answer
-/// past the "unknown file" scaffold.
+/// Outer join: the request's `FilePath` binds to the file entity carrying
+/// the equal path — one invocation per (request, matching file) pair, plus
+/// exactly one `None` invocation for a request whose path matches nothing.
+/// Both branches seed the whole answer scaffold ([`RequestKey`],
+/// [`HoverRank`], the fallback [`HoverInfo`]), so no separate "stamp"
+/// system is needed for the unmatched case.
 pub(crate) async fn resolve_hover_requests(
-    query: Query<
-        (
-            Entity,
-            &FilePath,
-            &Position,
-            MutRef<'_, HoverRank>,
-            MutRef<'_, HoverInfo>,
-        ),
-        With<HoverRequest>,
-    >,
-    file: Query<(Entity, &FileText), Where<Eq<FilePath>>>,
+    query: Query<(Entity, &FilePath, &Position), With<HoverRequest>>,
+    file: Option<Query<(Entity, &FileText), Where<Eq<FilePath>>>>,
     mut commands: Commands,
 ) {
     crate::short_sleep().await;
 
-    let (request, _path, position, mut rank, mut info) = query.item();
+    let (request, _path, position) = query.item();
+    commands.entity(request).insert(RequestKey(request));
+
+    let Some(file) = file else {
+        info!(request = request.raw(), "resolve_hover_requests: unknown file");
+        commands.entity(request).insert(HoverRank(priority::NONE));
+        commands
+            .entity(request)
+            .insert(HoverInfo("unknown file".to_string()));
+        return;
+    };
+
     let (file_entity, text) = file.item();
     info!(
         request = request.raw(),
@@ -148,13 +136,11 @@ pub(crate) async fn resolve_hover_requests(
         commands.entity(request).insert(HoverWord(word.to_string()));
     }
 
-    if priority::RESOLVED > rank.0 {
-        rank.0 = priority::RESOLVED;
-        info.0 = match word {
-            Some(word) => format!("unresolved symbol `{word}`"),
-            None => "no symbol at position".to_string(),
-        };
-    }
+    commands.entity(request).insert(HoverRank(priority::RESOLVED));
+    commands.entity(request).insert(HoverInfo(match word {
+        Some(word) => format!("unresolved symbol `{word}`"),
+        None => "no symbol at position".to_string(),
+    }));
 }
 
 /// Arbitration: one invocation per (request, candidate) pair via the
