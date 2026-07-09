@@ -10,7 +10,7 @@ use crate::{
     commands::CommandOp,
     query::{
         Access, AccessKind, Dep, GuardStore, QueryFilter, QueryParam, filtered_access,
-        filtered_deps, filtered_rows, store_watermark_dep,
+        filtered_deps, filtered_rows, filtered_rows_from_candidates, store_watermark_dep,
     },
     world::{Snapshot, SystemId, SystemInvocation},
 };
@@ -212,6 +212,16 @@ pub trait SystemParam {
     ) -> Option<Vec<Entity>> {
         None
     }
+    /// Whether planning may enumerate this param's rows from a sibling
+    /// provider's pair list (single-key bound joins) instead of forming the
+    /// full product and pruning.
+    fn pair_expandable() -> bool {
+        false
+    }
+    /// Row states restricted to `candidates` (pair-driven planning).
+    fn states_from_candidates(snapshot: &Snapshot, _candidates: Vec<Entity>) -> Vec<Self::State> {
+        Self::states(snapshot)
+    }
     /// Component sets this param reads *ambiently* (without contributing
     /// memo deps) — one entry per `View`, listing the components an entity
     /// must carry to appear in it. Used by the same-phase production flag
@@ -313,6 +323,14 @@ where
 
     fn in_key_types() -> Vec<(TypeId, &'static str)> {
         Filter::in_key_types()
+    }
+
+    fn pair_expandable() -> bool {
+        Filter::in_key_types().len() + Filter::bound_key_types().len() == 1
+    }
+
+    fn states_from_candidates(snapshot: &Snapshot, candidates: Vec<Entity>) -> Vec<Self::State> {
+        filtered_rows_from_candidates::<Q, Filter>(snapshot, candidates)
     }
 
     fn provides_key(key: TypeId) -> bool {
@@ -607,11 +625,19 @@ macro_rules! impl_system_param_tuple {
 
             fn states(snapshot: &Snapshot) -> Vec<Self::State> {
                 let mut states = Vec::new();
+                // Pair-expandable params (single-key bound joins) are not
+                // enumerated independently: their rows come from the
+                // already-picked provider's pair list during product
+                // construction, so planning is O(pairs), not O(product).
                 $(
-                    let $P = $P::states(snapshot);
+                    let $P = if $P::pair_expandable() {
+                        ::std::vec::Vec::new()
+                    } else {
+                        $P::states(snapshot)
+                    };
                 )*
 
-                for_each_state!(states, (); $($P),*);
+                for_each_state!(snapshot, states, []; $($P),*);
 
                 let has_bound = false
                     $(|| !$P::bound_key_types().is_empty())*
@@ -837,12 +863,73 @@ macro_rules! impl_system_param_tuple {
 }
 
 macro_rules! for_each_state {
-    ($out:ident, ($($picked:expr,)*);) => {
+    ($snapshot:ident, $out:ident, [$(($PickedTy:ident, $picked:expr)),*];) => {
         $out.push(($($picked.clone(),)*));
     };
-    ($out:ident, ($($picked:expr,)*); $head:ident $(, $tail:ident)*) => {
-        for state in &$head {
-            for_each_state!($out, ($($picked,)* state,); $($tail),*);
+    ($snapshot:ident, $out:ident, [$(($PickedTy:ident, $picked:expr)),*]; $head:ident $(, $tail:ident)*) => {
+        // Pair-driven expansion: a single-key bound join enumerates its
+        // rows from the already-picked provider's pair list — the member
+        // list for `In`, the fingerprint index bucket for `Eq` — instead
+        // of the full product.
+        let __pair_rows = if $head::pair_expandable() {
+            let mut __rows: ::std::option::Option<::std::vec::Vec<_>> =
+                ::std::option::Option::None;
+            if let ::std::option::Option::Some((__key, _)) =
+                $head::in_key_types().into_iter().next()
+            {
+                $(
+                    if __rows.is_none() {
+                        if let ::std::option::Option::Some(__members) =
+                            $PickedTy::provided_members($snapshot, $picked, __key)
+                        {
+                            __rows = ::std::option::Option::Some(
+                                $head::states_from_candidates($snapshot, __members),
+                            );
+                        }
+                    }
+                )*
+            } else if let ::std::option::Option::Some((__key, __name)) =
+                $head::bound_key_types().into_iter().next()
+            {
+                $(
+                    if __rows.is_none() {
+                        if let ::std::option::Option::Some(__provided) =
+                            $PickedTy::provided_key($snapshot, $picked, __key)
+                        {
+                            let ::std::option::Option::Some(__fingerprint) = __provided else {
+                                panic!(
+                                    "bound `Where<Eq<{__name}>>` provider component must be \
+                                     `#[component(hash)]` so rows can join on fingerprints"
+                                );
+                            };
+                            __rows = ::std::option::Option::Some(
+                                $head::states_from_candidates(
+                                    $snapshot,
+                                    $snapshot.fingerprint_candidates(__key, __fingerprint),
+                                ),
+                            );
+                        }
+                    }
+                )*
+            }
+            match __rows {
+                ::std::option::Option::Some(rows) => rows,
+                ::std::option::Option::None => panic!(
+                    "bound join provider must precede the joined query in the \
+                     system's parameter list (pair-driven planning reads the \
+                     provider's pair list while building the product)"
+                ),
+            }
+        } else {
+            ::std::vec::Vec::new()
+        };
+        let __iter = if $head::pair_expandable() { &__pair_rows } else { &$head };
+        for state in __iter {
+            for_each_state!(
+                $snapshot, $out,
+                [$(($PickedTy, $picked),)* ($head, state)];
+                $($tail),*
+            );
         }
     };
 }

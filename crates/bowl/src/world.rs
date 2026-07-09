@@ -275,6 +275,9 @@ trait StoreDyn: Send + Sync {
     /// Raises the change watermark (used by removal paths that bump the
     /// world revision outside the store).
     fn bump_watermark(&mut self, revision: u64);
+    /// Entities whose stored fingerprint equals `fingerprint`, ascending —
+    /// the pair candidates for index-driven `Eq` join planning.
+    fn fingerprint_entities(&self, fingerprint: u64) -> Vec<Entity>;
     /// Relationship maintenance info for `entity`'s stored value, read
     /// before a removal path drops the entry: the edge it carries (if it is
     /// a relationship source) and the retractions it implies (if it is a
@@ -392,6 +395,13 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn bump_watermark(&mut self, revision: u64) {
         self.watermark = self.watermark.max(revision);
+    }
+
+    fn fingerprint_entities(&self, fingerprint: u64) -> Vec<Entity> {
+        self.by_fingerprint
+            .get(&fingerprint)
+            .map(|entities| entities.iter().copied().collect())
+            .unwrap_or_default()
     }
 
     fn relationship_ops(
@@ -1384,6 +1394,15 @@ impl World {
     /// Upper bound used for simple entity scans.
     pub(crate) fn next_entity_raw(&self) -> u64 {
         self.next_entity.load(Ordering::Relaxed)
+    }
+
+    /// Pair candidates for an index-driven `Eq` join: entities whose stored
+    /// fingerprint for `type_id` equals `fingerprint`.
+    pub(crate) fn fingerprint_candidates(&self, type_id: TypeId, fingerprint: u64) -> Vec<Entity> {
+        self.stores
+            .get(&type_id)
+            .map(|store| store.fingerprint_entities(fingerprint))
+            .unwrap_or_default()
     }
 
     /// Highest revision at which the store for `type_id` changed; zero when

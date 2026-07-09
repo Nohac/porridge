@@ -4,7 +4,7 @@
 //! a derive pipeline, per-row checks with an ambient `View`) without the toy
 //! language, so benchmark numbers isolate engine costs from parsing.
 
-use bowl::{Bowl, Commands, Component, Cow, DerivedFrom, Entity, Eq, Query, View, Where};
+use bowl::{Bowl, Commands, Component, Cow, DerivedFrom, Entity, Eq, In, Query, View, Where};
 
 #[derive(Component, Hash, Clone, PartialEq, std::cmp::Eq)]
 #[component(hash)]
@@ -199,4 +199,64 @@ pub async fn defs_bowl(defs: usize) -> Bowl {
     }
 
     bowl
+}
+
+#[derive(Component, Hash)]
+#[component(hash)]
+#[relationship(target = GroupMembers)]
+pub struct BelongsTo(pub Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = BelongsTo)]
+pub struct GroupMembers(pub Vec<Entity>);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct GroupTag(pub u64);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct Item(pub u64);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct PairMark(pub u64);
+
+pub async fn pair_items(
+    groups: Query<(Entity, &GroupTag, &GroupMembers)>,
+    member: Query<(Entity, &Item), Where<In<GroupMembers>>>,
+    mut commands: Commands,
+) {
+    let (_group, tag, _members) = groups.item();
+    let (item_entity, item) = member.item();
+    commands.entity(item_entity).insert(PairMark(tag.0 ^ item.0));
+}
+
+/// `groups` providers each holding `members_per_group` members, joined by a
+/// `Where<In<..>>` system. Isolates join *planning* cost: the pair space is
+/// providers × members-per-group, but naive planning probes providers ×
+/// all-items tuples per wave.
+pub async fn in_join_bowl(groups: usize, members_per_group: usize) -> (Bowl, Vec<Entity>) {
+    let bowl = Bowl::new();
+    bowl.add_system(pair_items).await;
+
+    let mut group_entities = Vec::new();
+    for group in 0..groups {
+        let inserted = bowl.insert((GroupTag(group as u64),)).await;
+        group_entities.push(inserted.entity());
+        for member in 0..members_per_group {
+            bowl.insert((
+                Item((group * members_per_group + member) as u64),
+                BelongsTo(inserted.entity()),
+            ))
+            .await;
+        }
+    }
+
+    (bowl, group_entities)
+}
+
+/// Retags one group so exactly its pairs replan on the next settle.
+pub async fn touch_group(bowl: &Bowl, group: Entity, bump: u64) {
+    bowl.entity(group).insert((GroupTag(bump),)).await;
 }

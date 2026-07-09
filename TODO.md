@@ -327,27 +327,18 @@ let rows = diagnostics.collect();
   compare across types. Validate with a chain-fixpoint regression test
   (depth-N chain, edit mid-chain, assert only the suffix re-derives) and
   check `CommitLimit` headroom on deep chains.
-- **Make bound-join planning pair-driven** (dsql resolver scaling wall):
-  tuple `states()` builds the full cartesian product of every param's row
-  set and only then prunes non-pairs, cloning the provider's member `Vec`
-  per probed tuple — a fixed-point resolver enumerated ~2M tuples per
-  generation (15.5s debug settles) while the matched steady state was
-  30/160/80 rows, all memoized (`explain` surfaced the mismatch
-  immediately; the dsql fixed point is parked at their eca2d5f awaiting
-  this). `Where<In<T>>` pairs must be *enumerated from the maintained
-  member list* — for a provider row the inverse literally is the pair
-  list — making planning O(total members), not O(providers × candidates).
-  Sketch: expand In-bound params lazily during product construction from
-  the already-picked provider's member list (`rows_hinted` with the
-  members as candidates), which requires the provider param to precede
-  the bound param in the tuple (enforce at registration with a clear
-  error); and replace the per-probe `provided_members` clone with an
-  in-place contains probe. `Eq` joins have the same product shape and
-  want fingerprint-index-driven pairing (the per-store index already
-  exists); not yet bitten only because every current `Eq` join keeps one
-  side tiny. Acceptance: dsql re-lands the fixed-point resolver by
-  reverting their revert, and `check` wall-clock on the real project
-  stays flat.
+- Done: **pair-driven bound-join planning** (dsql resolver scaling wall).
+  Single-key `Where<In<T>>`/`Where<Eq<T>>` params no longer enumerate
+  independently: during product construction their rows expand from the
+  already-picked provider's pair list (the maintained member list for
+  `In`, the fingerprint-index bucket for `Eq`), so planning is O(pairs),
+  not O(providers × candidates) — `in_join_planning` bench: −54/−71/−79%
+  at 8×32/16×64/32×128, growing with size (spec/bench-reports.md).
+  New rule, enforced by panic: the provider param must precede the bound
+  param in the signature. Compound (multi-key) joins keep the
+  product-and-prune path; `binding_matches` remains as the correctness
+  backstop on expanded tuples. dsql can now re-land its fixed-point
+  resolver (revert of their revert at eca2d5f).
 - Add ordered/range predicates as join keys (position-in-span is the
   playground's blocker): with them, the hover candidates become tracked
   joins, move to `Evaluate`, and the finalizer flattens back to a plain

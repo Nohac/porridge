@@ -294,3 +294,31 @@ bimodality documented in round 1), so residuals inside that band are not
 attributable. The remaining structural cost per non-settled settle is two
 uncontended lock round-trips (epoch guard) plus one atomic load and one
 `poll_fn` frame per wave — tens of nanoseconds.
+
+## Pair-driven join planning round
+
+Trigger: the dsql fixed-point resolver enumerated ~2M tuples per generation
+(15.5s debug settles) while its matched steady state was 30/160/80 rows,
+all memoized — tuple `states()` built the full cartesian product and only
+then pruned non-pairs, cloning the provider's member list per probed tuple.
+
+Change: single-key bound joins (`Where<In<T>>`, `Where<Eq<T>>`) no longer
+enumerate independently. During product construction, the bound param's
+rows are expanded from the already-picked provider's pair list — the
+maintained member list for `In`, the fingerprint-index bucket for `Eq` —
+so planning is O(pairs), not O(providers × candidates). Compound
+(multi-key) joins keep the product-and-prune path. New rule, enforced by
+panic: the provider param must precede the bound param in the signature.
+
+New bench `in_join_planning` (groups × members-per-group; retag one group,
+re-settle):
+
+| size    | before   | after    | change |
+|---------|----------|----------|--------|
+| 8×32    | 1.08 ms  | 0.50 ms  | −54%   |
+| 16×64   | 7.50 ms  | 2.17 ms  | −71%   |
+| 32×128  | 61.2 ms  | 12.6 ms  | −79%   |
+
+The improvement grows with size because the product term is gone; the
+remaining cost is the real pair work (invocations, deps, commits). The
+rest of the suite is unchanged within the documented noise band.

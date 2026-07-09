@@ -17,8 +17,9 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use benches::{
-    Def, Parity, ParityNote, Path, Text, bump_all_sources, defs_bowl, file_name,
-    file_pipeline_bowl, parity_bowl, scan_bowl, settle_files, spawn_parity_bowl, touch_file,
+    Def, PairMark, Parity, ParityNote, Path, Text, bump_all_sources, defs_bowl, file_name,
+    file_pipeline_bowl, in_join_bowl, parity_bowl, scan_bowl, settle_files, spawn_parity_bowl,
+    touch_file, touch_group,
 };
 use bowl::{Entity, Eq, Query, Where};
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -191,11 +192,45 @@ fn view_scaling(c: &mut Criterion) {
     group.finish();
 }
 
+fn in_join_planning(c: &mut Criterion) {
+    let mut group = c.benchmark_group("in_join_planning");
+    group.sample_size(10);
+
+    // (groups, members per group): the pair space is groups × members, but
+    // naive product planning probes groups × (groups × members) tuples per
+    // wave. Incremental: retag one group, settle.
+    for (groups, members) in [(8, 32), (16, 64), (32, 128)] {
+        let id = format!("{groups}x{members}");
+        group.bench_with_input(
+            BenchmarkId::from_parameter(id),
+            &(groups, members),
+            |b, &(groups, members)| {
+                b.iter_batched(
+                    || {
+                        let (bowl, group_entities) = block_on(in_join_bowl(groups, members));
+                        block_on(settle_files(&bowl));
+                        (bowl, group_entities, 1u64)
+                    },
+                    |(bowl, group_entities, bump)| {
+                        black_box(block_on(async {
+                            touch_group(&bowl, group_entities[0], 1000 + bump).await;
+                            bowl.scoop::<Query<(Entity, &PairMark)>>().await.len()
+                        }))
+                    },
+                    BatchSize::PerIteration,
+                )
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     name = engine;
     config = Criterion::default()
         .measurement_time(Duration::from_secs(2))
         .warm_up_time(Duration::from_millis(300));
-    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, where_eq, view_scaling
+    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, where_eq, view_scaling, in_join_planning
 );
 criterion_main!(engine);

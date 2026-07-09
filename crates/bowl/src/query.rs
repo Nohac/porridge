@@ -2002,6 +2002,23 @@ where
         .collect()
 }
 
+/// `filtered_rows` restricted to `candidates` — pair-driven join planning
+/// enumerates a bound query's rows from the provider's pair list instead of
+/// probing the full product.
+pub(crate) fn filtered_rows_from_candidates<Q, F>(
+    snapshot: &Snapshot,
+    candidates: Vec<Entity>,
+) -> Vec<Q::State>
+where
+    Q: QueryParam,
+    F: QueryFilter<Q>,
+{
+    Q::rows_hinted(snapshot, Some(candidates))
+        .into_iter()
+        .filter(|state| F::matches(snapshot, state))
+        .collect()
+}
+
 pub(crate) fn external_filtered_rows<Q, F>(
     snapshot: &Snapshot,
     args: &QueryArgs,
