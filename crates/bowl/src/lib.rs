@@ -109,7 +109,7 @@ pub use entity::Entity;
 pub use macros::Component;
 pub use query::{
     And, ArgBundle, Cow, CowQueryParam, EntityMutResult, Eq, ExternalFilter, ExternalQueryFilter,
-    FilterExpr, Gte, Mut, MutRef, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam,
+    FilterExpr, Gte, In, Mut, MutRef, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam,
     QueryResult, View, Where, With, Without,
 };
 pub use system::{

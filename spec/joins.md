@@ -169,6 +169,13 @@ meaning is obvious and cheap get support. The escape hatch is always the
 same: filter inside the system against a `View`.
 
 - `Eq<T>` — supported (the equality join above).
+- `In<T>` — **supported.** The identity join over a maintained relationship
+  inverse: `Where<In<Members>>` binds to the sibling reading `&Members` and
+  pairs rows whose *entity* is in the set. No `#[component(hash)]` key
+  requirement — the provider reads the member list off the inverse
+  (`Component::relationship_members`), and the pair's dep on the inverse's
+  revision covers membership changes by construction. Provider rule and
+  validation are shared with `Eq` (exactly one sibling reading `&T`).
 - `And` — **supported.** Both payoffs landed: general system-side filter
   composition (`And<With<A>, Without<B>>` on one query) and compound join
   keys — `Where<And<Eq<A>, Eq<B>>>` pairs a row only when *every* key

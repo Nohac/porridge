@@ -75,6 +75,12 @@ pub trait Component: Send + Sync + 'static {
     fn relationship_retractions(&self) -> Vec<RelationshipRetraction> {
         Vec::new()
     }
+
+    /// If this component is a maintained relationship inverse, its member
+    /// list (sorted by entity id). Read by `Where<In<T>>` join providers.
+    fn relationship_members(&self) -> Option<Vec<Entity>> {
+        None
+    }
 }
 
 /// The maintained side of a relationship: an engine-written component on

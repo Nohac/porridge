@@ -176,6 +176,13 @@ pub struct Where<F>(PhantomData<F>);
 #[derive(Debug, Clone, Copy)]
 pub struct Eq<T>(PhantomData<T>);
 
+/// Identity join over a maintained relationship inverse: matches rows whose
+/// *entity* is a member of the sibling-provided set `T` (`Where<In<Members>>`
+/// binds to the sibling reading `&Members`). Where `Eq` is a value join, `In`
+/// joins on membership; the pair's dependency on the inverse's revision
+/// covers membership changes by construction.
+pub struct In<T>(PhantomData<T>);
+
 /// Requires component `T` on the row entity to be greater than or equal to the
 /// bound query argument.
 #[derive(Debug, Clone, Copy)]
@@ -818,6 +825,15 @@ pub trait QueryParam {
     ) -> Option<Option<u64>> {
         None
     }
+    /// Member list of the maintained inverse `key` on this row, when the
+    /// param's item reads `key` (the `Where<In<..>>` provider side).
+    fn provided_members(
+        _snapshot: &Snapshot,
+        _state: &Self::State,
+        _key: TypeId,
+    ) -> Option<Vec<Entity>> {
+        None
+    }
     /// Fetches the user-facing item for a previously enumerated row.
     fn fetch<'a>(
         bowl: &Bowl,
@@ -982,6 +998,15 @@ impl<T: Component> QueryParam for &T {
         (key == TypeId::of::<T>()).then(|| snapshot.fingerprint::<T>(*state))
     }
 
+    fn provided_members(snapshot: &Snapshot, state: &Self::State, key: TypeId) -> Option<Vec<Entity>> {
+        if key != TypeId::of::<T>() {
+            return None;
+        }
+        snapshot
+            .get::<T>(*state)
+            .and_then(|value| value.relationship_members())
+    }
+
     fn fetch<'a>(
         _bowl: &Bowl,
         snapshot: &'a Snapshot,
@@ -1079,6 +1104,15 @@ pub trait QueryPart {
     fn provided_key(_snapshot: &Snapshot, _entity: Entity, _key: TypeId) -> Option<Option<u64>> {
         None
     }
+    /// Member list of the maintained inverse `key` on `entity`, when this
+    /// part reads `key` (the `Where<In<..>>` provider side).
+    fn provided_members(
+        _snapshot: &Snapshot,
+        _entity: Entity,
+        _key: TypeId,
+    ) -> Option<Vec<Entity>> {
+        None
+    }
     fn fetch<'a>(
         bowl: &Bowl,
         snapshot: &'a Snapshot,
@@ -1126,6 +1160,15 @@ impl<T: Component> QueryPart for &T {
 
     fn provided_key(snapshot: &Snapshot, entity: Entity, key: TypeId) -> Option<Option<u64>> {
         (key == TypeId::of::<T>()).then(|| snapshot.fingerprint::<T>(entity))
+    }
+
+    fn provided_members(snapshot: &Snapshot, entity: Entity, key: TypeId) -> Option<Vec<Entity>> {
+        if key != TypeId::of::<T>() {
+            return None;
+        }
+        snapshot
+            .get::<T>(entity)
+            .and_then(|value| value.relationship_members())
     }
 
     fn fetch<'a>(
@@ -1329,6 +1372,19 @@ macro_rules! impl_entity_query_param {
                 None
             }
 
+            fn provided_members(
+                snapshot: &Snapshot,
+                state: &Self::State,
+                key: TypeId,
+            ) -> Option<Vec<Entity>> {
+                $(
+                    if let Some(found) = $P::provided_members(snapshot, *state, key) {
+                        return Some(found);
+                    }
+                )*
+                None
+            }
+
             fn fetch<'a>(
                 bowl: &Bowl,
                 snapshot: &'a Snapshot,
@@ -1388,6 +1444,16 @@ pub trait QueryFilter<Q: QueryParam> {
     /// Static form of [`QueryFilter::bound_keys`] (key types and display
     /// names), used for registration-time binding validation.
     fn bound_key_types() -> Vec<(TypeId, &'static str)> {
+        Vec::new()
+    }
+    /// Membership join keys (`Where<In<T>>`): the set component's type and
+    /// this row's entity, matched against the sibling-provided member list.
+    fn in_keys(_snapshot: &Snapshot, _state: &Q::State) -> Vec<(TypeId, Entity)> {
+        Vec::new()
+    }
+    /// Static form of [`QueryFilter::in_keys`] for registration validation
+    /// (the provider rule is the same as `Eq`: one sibling reading `&T`).
+    fn in_key_types() -> Vec<(TypeId, &'static str)> {
         Vec::new()
     }
 }
@@ -1479,6 +1545,37 @@ where
     }
 }
 
+impl<Q, T> QueryFilter<Q> for Where<In<T>>
+where
+    Q: QueryParam,
+    Q::State: EntityQueryState,
+    T: Component,
+{
+    fn matches(_snapshot: &Snapshot, _state: &Q::State) -> bool {
+        // Membership pruning happens in the tuple binding pass, against the
+        // sibling-provided set.
+        true
+    }
+
+    fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
+        // The membership dep rides the provider's `&T` read: the inverse's
+        // revision moves exactly when membership changes.
+        Vec::new()
+    }
+
+    fn access(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Access> {
+        Vec::new()
+    }
+
+    fn in_keys(_snapshot: &Snapshot, state: &Q::State) -> Vec<(TypeId, Entity)> {
+        vec![(TypeId::of::<T>(), state.entity())]
+    }
+
+    fn in_key_types() -> Vec<(TypeId, &'static str)> {
+        vec![(TypeId::of::<T>(), std::any::type_name::<T>())]
+    }
+}
+
 /// Conjunction of two system-side filters.
 ///
 /// Composes any two filters (`And<With<A>, Without<B>>`) including bound
@@ -1538,6 +1635,18 @@ where
         keys.extend(R::bound_key_types());
         keys
     }
+
+    fn in_keys(snapshot: &Snapshot, state: &Q::State) -> Vec<(TypeId, Entity)> {
+        let mut keys = L::in_keys(snapshot, state);
+        keys.extend(R::in_keys(snapshot, state));
+        keys
+    }
+
+    fn in_key_types() -> Vec<(TypeId, &'static str)> {
+        let mut keys = L::in_key_types();
+        keys.extend(R::in_key_types());
+        keys
+    }
 }
 
 /// `Where<And<L, R>>` distributes into the conjunction of `Where<L>` and
@@ -1574,6 +1683,14 @@ where
 
     fn bound_key_types() -> Vec<(TypeId, &'static str)> {
         <And<Where<L>, Where<R>> as QueryFilter<Q>>::bound_key_types()
+    }
+
+    fn in_keys(snapshot: &Snapshot, state: &Q::State) -> Vec<(TypeId, Entity)> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::in_keys(snapshot, state)
+    }
+
+    fn in_key_types() -> Vec<(TypeId, &'static str)> {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::in_key_types()
     }
 }
 

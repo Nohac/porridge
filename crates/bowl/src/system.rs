@@ -192,6 +192,26 @@ pub trait SystemParam {
     fn bound_key_types() -> Vec<(TypeId, &'static str)> {
         Vec::new()
     }
+    /// Membership join keys a `Where<In<T>>` filter on this param requires:
+    /// the set component's type and this row's entity, matched against the
+    /// sibling-provided member list.
+    fn in_keys(_snapshot: &Snapshot, _state: &Self::State) -> Vec<(TypeId, Entity)> {
+        Vec::new()
+    }
+    /// Static form of [`SystemParam::in_keys`] (the provider rule is the
+    /// same as `Eq`: exactly one sibling reading `&T`).
+    fn in_key_types() -> Vec<(TypeId, &'static str)> {
+        Vec::new()
+    }
+    /// Member list of the maintained inverse `key` on this param's row,
+    /// when the param's item reads `key` (`Where<In<..>>` provider side).
+    fn provided_members(
+        _snapshot: &Snapshot,
+        _state: &Self::State,
+        _key: TypeId,
+    ) -> Option<Vec<Entity>> {
+        None
+    }
     /// Component sets this param reads *ambiently* (without contributing
     /// memo deps) — one entry per `View`, listing the components an entity
     /// must carry to appear in it. Used by the same-phase production flag
@@ -287,6 +307,14 @@ where
         Filter::bound_key_types()
     }
 
+    fn in_keys(snapshot: &Snapshot, state: &Self::State) -> Vec<(TypeId, Entity)> {
+        Filter::in_keys(snapshot, state)
+    }
+
+    fn in_key_types() -> Vec<(TypeId, &'static str)> {
+        Filter::in_key_types()
+    }
+
     fn provides_key(key: TypeId) -> bool {
         Q::provides_key(key)
     }
@@ -297,6 +325,14 @@ where
         key: TypeId,
     ) -> Option<Option<u64>> {
         Q::provided_key(snapshot, state, key)
+    }
+
+    fn provided_members(
+        snapshot: &Snapshot,
+        state: &Self::State,
+        key: TypeId,
+    ) -> Option<Vec<Entity>> {
+        Q::provided_members(snapshot, state, key)
     }
 }
 
@@ -577,7 +613,9 @@ macro_rules! impl_system_param_tuple {
 
                 for_each_state!(states, (); $($P),*);
 
-                let has_bound = false $(|| !$P::bound_key_types().is_empty())*;
+                let has_bound = false
+                    $(|| !$P::bound_key_types().is_empty())*
+                    $(|| !$P::in_key_types().is_empty())*;
                 if has_bound {
                     states.retain(|state| Self::binding_matches(snapshot, state));
                 }
@@ -626,6 +664,43 @@ macro_rules! impl_system_param_tuple {
                         ),
                         // Unreachable: providers are validated at registration.
                         None => return false,
+                    }
+                }
+
+                // Membership joins: a `Where<In<T>>` row pairs only when its
+                // entity is in the sibling-provided member list.
+                let mut membership: Vec<(usize, TypeId, Entity)> = Vec::new();
+                let mut index = 0usize;
+                $(
+                    for (key, member) in $P::in_keys(snapshot, $P) {
+                        membership.push((index, key, member));
+                    }
+                    index += 1;
+                )*
+                let _ = index;
+
+                for (in_index, key, member) in membership {
+                    let mut provided: Option<Vec<Entity>> = None;
+                    let mut index = 0usize;
+                    $(
+                        if index != in_index && provided.is_none() {
+                            provided = $P::provided_members(snapshot, $P, key);
+                        }
+                        index += 1;
+                    )*
+                    let _ = index;
+
+                    match provided {
+                        Some(members) => {
+                            if members.binary_search(&member).is_err() {
+                                return false;
+                            }
+                        }
+                        None => panic!(
+                            "`Where<In<..>>` provider must read a maintained \
+                             relationship inverse (`relationship_members` returned \
+                             nothing for the bound set component)"
+                        ),
                     }
                 }
 
@@ -681,6 +756,11 @@ macro_rules! impl_system_param_tuple {
                 let mut index = 0usize;
                 $(
                     for (key, name) in $P::bound_key_types() {
+                        bound.push((index, key, name));
+                    }
+                    // Membership joins share the provider rule: exactly one
+                    // sibling reading `&T`.
+                    for (key, name) in $P::in_key_types() {
                         bound.push((index, key, name));
                     }
                     index += 1;

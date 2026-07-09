@@ -347,11 +347,14 @@ let rows = diagnostics.collect();
   removal, whole-entity removal, and the derived-output sweeps all keep
   it current (the sweep routing also closed the store-watermark gap for
   removals); removing a target retracts every source's edge — no despawn
-  cascades, lifetime stays `DerivedFrom`. Still open: the
+  cascades, lifetime stays `DerivedFrom`. Done: `Where<In<T>>` — the
+  identity join over the inverse (one invocation per (set-holder, member)
+  pair; membership changes re-pair via the provider's dep on the
+  inverse's revision; provider rule shared with `Eq`). Still open: the
   `#[relationship]`/`#[relationship_target]` derive attributes (hand
   trait impls work today), playground adoption to retire the `DefIndex`
-  set-fingerprint pattern, and the `Where<In<T>>`/edge-traversal query
-  surface.
+  set-fingerprint pattern, and edge-traversal joins (child rows joining
+  their parent's facts through the edge — the dsql resolver's ask).
 
 Current shortcut:
 - Queries iterate component stores (smallest participating store for tuples).

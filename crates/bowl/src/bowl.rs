@@ -2489,7 +2489,7 @@ mod tests {
 
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
-        Entity, Eq, Gte, Mut, MutRef, Named, Phase, Query, RelationshipEdge,
+        Entity, Eq, Gte, In, Mut, MutRef, Named, Phase, Query, RelationshipEdge,
         RelationshipRetraction, RelationshipTarget, Singleton, SystemExt, View, Where, With,
         Without, cleanup_stale_derived, hash_component, relationship_retractions_for,
     };
@@ -5478,6 +5478,10 @@ mod tests {
         fn relationship_retractions(&self) -> Vec<RelationshipRetraction> {
             relationship_retractions_for(self)
         }
+
+        fn relationship_members(&self) -> Option<Vec<Entity>> {
+            Some(self.0.clone())
+        }
     }
     impl RelationshipTarget for Members {
         type Edge = MemberOf;
@@ -5608,6 +5612,47 @@ mod tests {
             // The source entity itself survives — no cascade.
             let sources = bowl.scoop::<Query<(Entity, &B)>>().await;
             assert_eq!(sources.collect().len(), 1);
+        });
+    }
+
+    async fn tag_members(
+        parents: Query<(Entity, &A, &Members)>,
+        member: Query<(Entity, &B), Where<In<Members>>>,
+        mut commands: Commands,
+    ) {
+        let (_parent, _a, _members) = parents.item();
+        let (member_entity, _b) = member.item();
+        commands.entity(member_entity).insert(Note);
+    }
+
+    /// `Where<In<Members>>` is an identity join: one invocation per
+    /// (set-holder, member) pair, matching rows whose *entity* is in the
+    /// sibling-provided inverse. Membership changes re-pair by
+    /// construction, since the provider's row depends on the inverse's
+    /// revision.
+    #[test]
+    fn in_joins_pair_members_with_their_set() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(tag_members).await;
+
+            let parent = bowl.insert((A(0),)).await;
+            bowl.insert((B(1), MemberOf(parent.entity()))).await;
+            bowl.insert((B(2), MemberOf(parent.entity()))).await;
+            let stray = bowl.insert((B(3),)).await;
+
+            let noted = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            let rows = noted.collect();
+            assert_eq!(rows.len(), 2, "only members pair with the set");
+            assert!(!rows.contains(&stray.entity()));
+
+            // Joining the set re-pairs: the provider row's dep on the
+            // inverse moved, and the new (parent, stray) pair plans fresh.
+            bowl.entity(stray.entity())
+                .insert((MemberOf(parent.entity()),))
+                .await;
+            let noted = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            assert_eq!(noted.collect().len(), 3);
         });
     }
 
