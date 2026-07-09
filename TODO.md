@@ -350,11 +350,15 @@ let rows = diagnostics.collect();
   cascades, lifetime stays `DerivedFrom`. Done: `Where<In<T>>` — the
   identity join over the inverse (one invocation per (set-holder, member)
   pair; membership changes re-pair via the provider's dep on the
-  inverse's revision; provider rule shared with `Eq`). Still open: the
-  `#[relationship]`/`#[relationship_target]` derive attributes (hand
-  trait impls work today), playground adoption to retire the `DefIndex`
-  set-fingerprint pattern, and edge-traversal joins (child rows joining
-  their parent's facts through the edge — the dsql resolver's ask).
+  inverse's revision; provider rule shared with `Eq`). Done: the
+  `#[relationship(target = T)]`/`#[relationship_target(relationship = E)]`
+  derive attributes — the edge's first tuple field is the target entity,
+  the inverse is a tuple struct over `Vec<Entity>` with its fingerprint
+  generated from the member list (combining with
+  `#[component(hash)]`/`revision` is rejected). Still open: playground
+  adoption to retire the `DefIndex` set-fingerprint pattern, and
+  edge-traversal joins (child rows joining their parent's facts through
+  the edge — the dsql resolver's ask).
 
 Current shortcut:
 - Queries iterate component stores (smallest participating store for tuples).

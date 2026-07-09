@@ -1,77 +1,117 @@
 use proc_macro::{Delimiter, TokenStream, TokenTree};
 
-#[proc_macro_derive(Component, attributes(component))]
+#[proc_macro_derive(Component, attributes(component, relationship, relationship_target))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let use_hash = has_hash_attribute(input.clone());
     let untracked = has_untracked_attribute(input.clone());
     let use_revision = has_revision_attribute(input.clone());
+    let edge_target = attribute_value(input.clone(), "relationship", "target");
+    let target_edge = attribute_value(input.clone(), "relationship_target", "relationship");
     let Some(name) = type_name(input) else {
         return compile_error("Component can only be derived for structs and enums");
     };
 
-    if use_revision {
-        if use_hash {
-            return compile_error(
-                "#[component(hash)] and #[component(revision)] are mutually exclusive",
-            );
+    if use_revision && use_hash {
+        return compile_error(
+            "#[component(hash)] and #[component(revision)] are mutually exclusive",
+        );
+    }
+    if target_edge.is_some() && (use_hash || use_revision) {
+        return compile_error(
+            "#[relationship_target] generates its fingerprint from the member list; \
+             #[component(hash)]/#[component(revision)] are redundant and rejected",
+        );
+    }
+    if edge_target.is_some() && target_edge.is_some() {
+        return compile_error(
+            "a component cannot be both a #[relationship] edge and a #[relationship_target]",
+        );
+    }
+
+    let tracked_fn = if untracked {
+        "fn tracked() -> bool { false }"
+    } else {
+        ""
+    };
+
+    // The fingerprint, in precedence order: the `revision: u64` field
+    // verbatim (change detection without hashing the payload), a hash of
+    // the whole value, or — for a maintained inverse — a hash of the
+    // ordered member list (fingerprinted by construction).
+    let fingerprint_fn = if use_revision {
+        "fn fingerprint(&self) -> ::core::option::Option<u64> {
+            ::core::option::Option::Some(self.revision)
+        }"
+        .to_string()
+    } else if use_hash {
+        "fn fingerprint(&self) -> ::core::option::Option<u64> {
+            ::core::option::Option::Some(::bowl::hash_component(self))
+        }"
+        .to_string()
+    } else if target_edge.is_some() {
+        "fn fingerprint(&self) -> ::core::option::Option<u64> {
+            ::core::option::Option::Some(::bowl::hash_component(&self.0))
+        }"
+        .to_string()
+    } else {
+        String::new()
+    };
+
+    // #[relationship(target = T)]: this component is an edge whose first
+    // tuple field is the target entity; the engine maintains `T` on it.
+    let edge_fn = edge_target
+        .map(|target| {
+            format!(
+                "fn relationship_edge(&self) -> ::core::option::Option<::bowl::RelationshipEdge> {{
+                    ::core::option::Option::Some(::bowl::RelationshipEdge::new::<{target}>(self.0))
+                }}"
+            )
+        })
+        .unwrap_or_default();
+
+    // #[relationship_target(relationship = E)]: this component is the
+    // maintained inverse — a tuple struct over `Vec<Entity>`.
+    let target_fns = if target_edge.is_some() {
+        "fn relationship_retractions(&self) -> ::std::vec::Vec<::bowl::RelationshipRetraction> {
+            ::bowl::relationship_retractions_for(self)
         }
-        let tracked = if untracked {
-            "fn tracked() -> bool { false }"
-        } else {
-            ""
-        };
-        // The fingerprint is the `revision: u64` field, verbatim: change
-        // detection for large components whose payload is expensive (or
-        // impossible) to hash. The owner bumps the counter on real
-        // mutation; equal counters mean equal values.
-        return format!(
-            "impl ::bowl::Component for {name} {{
-                {tracked}
-                fn fingerprint(&self) -> ::core::option::Option<u64> {{
-                    ::core::option::Option::Some(self.revision)
-                }}
-            }}"
-        )
-        .parse()
-        .expect("generated component impl should parse");
-    }
 
-    match (use_hash, untracked) {
-        (true, true) => format!(
-            "impl ::bowl::Component for {name} {{
-                fn tracked() -> bool {{
-                    false
-                }}
+        fn relationship_members(&self) -> ::core::option::Option<::std::vec::Vec<::bowl::Entity>> {
+            ::core::option::Option::Some(self.0.clone())
+        }"
+    } else {
+        ""
+    };
 
-                fn fingerprint(&self) -> ::core::option::Option<u64> {{
-                    ::core::option::Option::Some(::bowl::hash_component(self))
-                }}
-            }}"
-        )
-        .parse()
-        .expect("generated component impl should parse"),
-        (true, false) => format!(
-            "impl ::bowl::Component for {name} {{
-                fn fingerprint(&self) -> ::core::option::Option<u64> {{
-                    ::core::option::Option::Some(::bowl::hash_component(self))
-                }}
-            }}"
-        )
-        .parse()
-        .expect("generated component impl should parse"),
-        (false, true) => format!(
-            "impl ::bowl::Component for {name} {{
-                fn tracked() -> bool {{
-                    false
-                }}
-            }}"
-        )
-        .parse()
-        .expect("generated component impl should parse"),
-        (false, false) => format!("impl ::bowl::Component for {name} {{}}")
-            .parse()
-            .expect("generated component impl should parse"),
-    }
+    let target_impl = target_edge
+        .map(|edge| {
+            format!(
+                "impl ::bowl::RelationshipTarget for {name} {{
+                    type Edge = {edge};
+
+                    fn from_members(members: ::std::vec::Vec<::bowl::Entity>) -> Self {{
+                        {name}(members)
+                    }}
+
+                    fn members(&self) -> &[::bowl::Entity] {{
+                        &self.0
+                    }}
+                }}"
+            )
+        })
+        .unwrap_or_default();
+
+    format!(
+        "impl ::bowl::Component for {name} {{
+            {tracked_fn}
+            {fingerprint_fn}
+            {edge_fn}
+            {target_fns}
+        }}
+        {target_impl}"
+    )
+    .parse()
+    .expect("generated component impl should parse")
 }
 
 fn has_hash_attribute(input: TokenStream) -> bool {
@@ -84,6 +124,68 @@ fn has_untracked_attribute(input: TokenStream) -> bool {
 
 fn has_revision_attribute(input: TokenStream) -> bool {
     component_attribute_contains(input, "revision")
+}
+
+/// Extracts `value` from `#[attribute(key = value)]`, where the value may
+/// be a path (tokens are concatenated until a comma or the end).
+fn attribute_value(input: TokenStream, attribute: &str, key: &str) -> Option<String> {
+    let mut tokens = input.into_iter().peekable();
+
+    while let Some(token) = tokens.next() {
+        let TokenTree::Punct(punct) = token else {
+            continue;
+        };
+        if punct.as_char() != '#' {
+            continue;
+        }
+        let Some(TokenTree::Group(group)) = tokens.next() else {
+            continue;
+        };
+        if group.delimiter() != Delimiter::Bracket {
+            continue;
+        }
+
+        let mut inner = group.stream().into_iter();
+        let Some(TokenTree::Ident(name)) = inner.next() else {
+            continue;
+        };
+        if name.to_string() != attribute {
+            continue;
+        }
+        let Some(TokenTree::Group(args)) = inner.next() else {
+            continue;
+        };
+        if args.delimiter() != Delimiter::Parenthesis {
+            continue;
+        }
+
+        let mut args = args.stream().into_iter();
+        while let Some(token) = args.next() {
+            let TokenTree::Ident(ident) = token else {
+                continue;
+            };
+            if ident.to_string() != key {
+                continue;
+            }
+            match args.next() {
+                Some(TokenTree::Punct(eq)) if eq.as_char() == '=' => {}
+                _ => continue,
+            }
+
+            let mut value = String::new();
+            for token in args.by_ref() {
+                if matches!(&token, TokenTree::Punct(punct) if punct.as_char() == ',') {
+                    break;
+                }
+                value.push_str(&token.to_string());
+            }
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+    }
+
+    None
 }
 
 fn component_attribute_contains(input: TokenStream, needle: &str) -> bool {

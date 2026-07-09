@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use bowl::{Bowl, Component, Entity, Query, Singleton};
+use bowl::{Bowl, Component, Entity, In, Query, Singleton, Where};
 use futures::executor::block_on;
 
 use crate::lang::{
@@ -200,5 +200,67 @@ fn revision_fingerprints_cut_off_reruns_without_hashing_payloads() {
         let rows = blobs.collect();
         assert_eq!(rows[0].1.revision, 2);
         assert_eq!(rows[0].1.payload, 2.0);
+    });
+}
+
+/// The `#[relationship]`/`#[relationship_target]` derive attributes: the
+/// edge declares its target, the inverse is fingerprinted by construction,
+/// and the whole maintenance + `Where<In<..>>` surface works without a
+/// single hand-written trait impl.
+#[derive(Component, Hash)]
+#[component(hash)]
+#[relationship(target = Squad)]
+struct SquadMember(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = SquadMember)]
+struct Squad(Vec<Entity>);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+struct Callsign(&'static str);
+
+async fn roster(
+    squads: bowl::Query<(Entity, &Squad)>,
+    member: bowl::Query<(Entity, &Callsign), Where<In<Squad>>>,
+    mut commands: bowl::Commands,
+) {
+    let (_squad, _members) = squads.item();
+    let (member_entity, _callsign) = member.item();
+    commands.entity(member_entity).insert(Rostered);
+}
+
+#[derive(Component)]
+struct Rostered;
+
+#[test]
+fn derived_relationship_attributes_maintain_the_inverse() {
+    block_on(async {
+        let db = Bowl::new();
+        db.add_system(roster).await;
+
+        let leader = db.insert((Callsign("lead"),)).await;
+        let m1 = db
+            .insert((Callsign("alpha"), SquadMember(leader.entity())))
+            .await;
+        let m2 = db
+            .insert((Callsign("bravo"), SquadMember(leader.entity())))
+            .await;
+        // A callsign outside the squad never pairs.
+        db.insert((Callsign("stray"),)).await;
+
+        let squads = db.scoop::<Query<(Entity, &Squad)>>().await;
+        let rows = squads.collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, leader.entity());
+        assert_eq!(rows[0].1.0, vec![m1.entity(), m2.entity()]);
+
+        let rostered = db.scoop::<Query<Entity, bowl::With<Rostered>>>().await;
+        assert_eq!(rostered.collect().len(), 2, "only members pair via In");
+
+        // Retracting an edge shrinks the inverse.
+        db.entity(m2.entity()).remove::<SquadMember>().await;
+        let squads = db.scoop::<Query<(Entity, &Squad)>>().await;
+        assert_eq!(squads.collect()[0].1.0, vec![m1.entity()]);
     });
 }
