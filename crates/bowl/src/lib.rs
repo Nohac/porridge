@@ -101,7 +101,10 @@ pub use bowl::{
     InsertBuilder, InsertedEntity, RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
 };
 pub use commands::Commands;
-pub use component::{Component, ComponentHookContext, DerivedFrom, Singleton, hash_component};
+pub use component::{
+    Component, ComponentHookContext, DerivedFrom, RelationshipEdge, RelationshipRetraction,
+    RelationshipTarget, Singleton, hash_component, relationship_retractions_for,
+};
 pub use entity::Entity;
 pub use macros::Component;
 pub use query::{

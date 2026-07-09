@@ -2489,8 +2489,9 @@ mod tests {
 
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
-        Entity, Eq, Gte, Mut, MutRef, Named, Phase, Query, Singleton, SystemExt, View, Where,
-        With, Without, cleanup_stale_derived,
+        Entity, Eq, Gte, Mut, MutRef, Named, Phase, Query, RelationshipEdge,
+        RelationshipRetraction, RelationshipTarget, Singleton, SystemExt, View, Where, With,
+        Without, cleanup_stale_derived, hash_component, relationship_retractions_for,
     };
 
     struct A(u32);
@@ -5447,6 +5448,205 @@ mod tests {
                 count_of(matched.entity(), &rows),
                 Some(999),
                 "losing the partner must flap the row back to None"
+            );
+        });
+    }
+
+    // --- relationship tests (spec/joins.md, "Authoring shape") ---
+    // Hand-written impls of what #[relationship]/#[relationship_target]
+    // will derive; the engine maintenance is what is under test.
+
+    #[derive(Clone, PartialEq)]
+    struct MemberOf(Entity);
+    impl Component for MemberOf {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+
+        fn relationship_edge(&self) -> Option<RelationshipEdge> {
+            Some(RelationshipEdge::new::<Members>(self.0))
+        }
+    }
+
+    #[derive(Clone, PartialEq)]
+    struct Members(Vec<Entity>);
+    impl Component for Members {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+
+        fn relationship_retractions(&self) -> Vec<RelationshipRetraction> {
+            relationship_retractions_for(self)
+        }
+    }
+    impl RelationshipTarget for Members {
+        type Edge = MemberOf;
+
+        fn from_members(members: Vec<Entity>) -> Self {
+            Members(members)
+        }
+
+        fn members(&self) -> &[Entity] {
+            &self.0
+        }
+    }
+
+    /// Inserting an edge maintains the ordered inverse on the target;
+    /// retargeting moves membership between inverses; removing the edge
+    /// retracts it, and an emptied inverse is removed outright.
+    #[test]
+    fn relationships_maintain_an_ordered_fingerprinted_inverse() {
+        block_on(async {
+            let bowl = Bowl::new();
+            let parent = bowl.insert((A(0),)).await;
+            let parent2 = bowl.insert((A(1),)).await;
+            let child_b = bowl.insert((B(1), MemberOf(parent.entity()))).await;
+            let child_c = bowl.insert((C(1), MemberOf(parent.entity()))).await;
+
+            let members_of = |rows: &[(Entity, &Members)], target: Entity| {
+                rows.iter()
+                    .find(|(entity, _)| *entity == target)
+                    .map(|(_, members)| members.0.clone())
+            };
+
+            let result = bowl.scoop::<Query<(Entity, &Members)>>().await;
+            let rows = result.collect();
+            assert_eq!(rows.len(), 1, "the inverse must appear on the target");
+            assert_eq!(
+                members_of(&rows, parent.entity()),
+                Some(vec![child_b.entity(), child_c.entity()]),
+                "members are ordered by entity id"
+            );
+
+            // Retarget: child_c moves to parent2; both inverses update.
+            bowl.entity(child_c.entity())
+                .insert((MemberOf(parent2.entity()),))
+                .await;
+            let result = bowl.scoop::<Query<(Entity, &Members)>>().await;
+            let rows = result.collect();
+            assert_eq!(members_of(&rows, parent.entity()), Some(vec![child_b.entity()]));
+            assert_eq!(members_of(&rows, parent2.entity()), Some(vec![child_c.entity()]));
+
+            // Removing the edge retracts membership; empty inverses vanish.
+            bowl.entity(child_b.entity()).remove::<MemberOf>().await;
+            let result = bowl.scoop::<Query<(Entity, &Members)>>().await;
+            let rows = result.collect();
+            assert_eq!(
+                members_of(&rows, parent.entity()),
+                None,
+                "an emptied inverse is removed, keeping With<Members> meaningful"
+            );
+            assert_eq!(members_of(&rows, parent2.entity()), Some(vec![child_c.entity()]));
+        });
+    }
+
+    static MEMBERS_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    async fn observe_members(query: Query<(Entity, &Members)>) {
+        let (_entity, _members) = query.item();
+        MEMBERS_RUNS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Membership is a revision-level fact: unchanged edges keep the
+    /// inverse's revision (fingerprint cutoff), so consumers tracked on it
+    /// rerun exactly when membership changes.
+    #[test]
+    fn membership_changes_invalidate_tracked_consumers() {
+        block_on(async {
+            MEMBERS_RUNS.store(0, Ordering::SeqCst);
+            let bowl = Bowl::new();
+            bowl.add_system(observe_members).await;
+
+            let parent = bowl.insert((A(0),)).await;
+            let child = bowl.insert((B(1), MemberOf(parent.entity()))).await;
+            bowl.scoop::<Query<(Entity, &Members)>>().await;
+            assert_eq!(MEMBERS_RUNS.load(Ordering::SeqCst), 1);
+
+            // Re-inserting the identical edge is a fingerprint hit: the
+            // inverse is untouched and nothing reruns.
+            bowl.entity(child.entity())
+                .insert((MemberOf(parent.entity()),))
+                .await;
+            bowl.scoop::<Query<(Entity, &Members)>>().await;
+            assert_eq!(
+                MEMBERS_RUNS.load(Ordering::SeqCst),
+                1,
+                "an unchanged edge must not invalidate the inverse"
+            );
+
+            // A new member is a real membership change.
+            bowl.insert((C(1), MemberOf(parent.entity()))).await;
+            bowl.scoop::<Query<(Entity, &Members)>>().await;
+            assert_eq!(MEMBERS_RUNS.load(Ordering::SeqCst), 2);
+        });
+    }
+
+    async fn remove_noted(query: Query<Entity, With<Note>>, mut commands: Commands) {
+        commands.remove(query.item());
+    }
+
+    /// Removing the target entity retracts every source's edge component —
+    /// edge consistency, not lifetime policy (no despawn cascade).
+    #[test]
+    fn removing_the_target_retracts_source_edges() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(remove_noted).await;
+
+            let parent = bowl.insert((A(0),)).await;
+            bowl.insert((B(1), MemberOf(parent.entity()))).await;
+            let edges = bowl.scoop::<Query<(Entity, &MemberOf)>>().await;
+            assert_eq!(edges.collect().len(), 1);
+
+            bowl.entity(parent.entity()).insert((Note,)).await;
+            let edges = bowl.scoop::<Query<(Entity, &MemberOf)>>().await;
+            assert_eq!(
+                edges.collect().len(),
+                0,
+                "sources must not keep dangling edges to a removed target"
+            );
+            // The source entity itself survives — no cascade.
+            let sources = bowl.scoop::<Query<(Entity, &B)>>().await;
+            assert_eq!(sources.collect().len(), 1);
+        });
+    }
+
+    async fn spawn_member_when_ranked(
+        query: Query<(Entity, &ParentLink, &FingerprintedRank)>,
+        mut commands: Commands,
+    ) {
+        let (_entity, link, rank) = query.item();
+        if rank.0 == 1 {
+            commands.insert((B(7), MemberOf(link.0)));
+        }
+    }
+
+    /// The derived-output sweep is a removal path too: when a rerun stops
+    /// emitting an edge, the diff sweep must retract its membership.
+    #[test]
+    fn swept_derived_edges_retract_membership() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(spawn_member_when_ranked).await;
+
+            let parent = bowl.insert((A(0),)).await;
+            let driver = bowl
+                .insert((ParentLink(parent.entity()), FingerprintedRank(1)))
+                .await;
+
+            let result = bowl.scoop::<Query<(Entity, &Members)>>().await;
+            assert_eq!(result.collect().len(), 1, "the derived edge must register");
+
+            // Rerun without re-emitting: the sweep removes the spawned
+            // child's components, including the edge.
+            bowl.entity(driver.entity())
+                .insert((FingerprintedRank(2),))
+                .await;
+            let result = bowl.scoop::<Query<(Entity, &Members)>>().await;
+            assert_eq!(
+                result.collect().len(),
+                0,
+                "a swept edge must retract its membership"
             );
         });
     }

@@ -310,6 +310,23 @@ let rows = diagnostics.collect();
   unmatched row) but correct; per-fingerprint-bucket deps are the
   refinement if it ever shows up in profiles. Whole-entity removal sweeps
   do not yet bump store watermarks (component-level removal does).
+- Add heterogeneous-key bound joins (dsql resolver blocker): `Eq` today
+  requires the *same* component type on both sides, so parent/child
+  chains — `ParentKey(node)` on the child, `NodeKey(node)` on the
+  parent — cannot join, and every ancestor walk falls back to ambient
+  views. That is what pins resolver-shaped systems to `Complete` and
+  makes consumers re-derive context at query time (dsql: seven systems
+  independently re-running the same `SelectionTree` resolution walk). A
+  two-type form (`Where<Eq<ParentKey, NodeKey>>`-ish, fingerprint
+  equality across types) turns recursive derivation into a tracked fixed
+  point in `Evaluate`: roots resolve from their own facts, each child
+  joins its parent's resolved fact, and the streaming replanner iterates
+  to convergence — incrementally minimal, since an edit re-derives only
+  the chains below it. Contract to pin: both key components must be
+  `#[component(hash)]` over identically-shaped data so fingerprints
+  compare across types. Validate with a chain-fixpoint regression test
+  (depth-N chain, edit mid-chain, assert only the suffix re-derives) and
+  check `CommitLimit` headroom on deep chains.
 - Add ordered/range predicates as join keys (position-in-span is the
   playground's blocker): with them, the hover candidates become tracked
   joins, move to `Evaluate`, and the finalizer flattens back to a plain
@@ -322,6 +339,19 @@ let rows = diagnostics.collect();
   joins already collapsed the hover service's bare-request rule into the
   file join (two rules left: request⟕file / request⋈candidates); set-valued
   tracked reads would let arbitration collapse into the same rule too.
+  Relations *subsume* heterogeneous-key joins (a parent→child edge is a
+  hetero join plus an index plus ordering), so relationships were built
+  directly. Done (v1 core): `Component::relationship_edge` +
+  `RelationshipTarget` maintain a fingerprinted inverse ordered by entity
+  id, written as an ownerless base fact; insert, retarget, component
+  removal, whole-entity removal, and the derived-output sweeps all keep
+  it current (the sweep routing also closed the store-watermark gap for
+  removals); removing a target retracts every source's edge — no despawn
+  cascades, lifetime stays `DerivedFrom`. Still open: the
+  `#[relationship]`/`#[relationship_target]` derive attributes (hand
+  trait impls work today), playground adoption to retire the `DefIndex`
+  set-fingerprint pattern, and the `Where<In<T>>`/edge-traversal query
+  surface.
 
 Current shortcut:
 - Queries iterate component stores (smallest participating store for tuples).
@@ -521,6 +551,23 @@ Current shortcut:
 ## 15. Improve The Toy Language Playground
 
 - Keep expanding the playground as the main integration test.
+- Document the "resolution as a derivation" pattern in
+  `spec/language-entities.md` (dsql lesson): when a fact is meaningless in
+  isolation — its meaning depends on ancestors or surrounding context —
+  derive that meaning onto the entity *once*, in a dedicated resolver
+  stage, instead of re-resolving it inside every consumer. The smell that
+  calls for it: systems sitting in `Complete` not because their answers
+  must be late, but because their *inputs* are ambient views of lowered
+  facts (dsql had seven systems independently re-running the same
+  resolution walk; with a `ResolvedSelection` fact, each collapsed to the
+  ~20-line tracked-join shape of the healthy hover systems). One honestly
+  cross-cutting resolver is fine — resolution genuinely is cross-cutting;
+  seven inlined copies of it are the disease.
+- Once heterogeneous-key joins exist (§7), demonstrate recursive
+  derivation-to-fixpoint in the playground: derive namespace-qualified
+  names through the parent chain as tracked joins instead of the
+  lowering-time walk, pinning convergence and per-chain incrementality
+  against a real language shape.
 - Add a more realistic external `SystemImportDb` that can change over time.
 - Expand the language service layer:
   - hover

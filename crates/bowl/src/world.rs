@@ -11,7 +11,10 @@ use std::{
 
 use crate::{
     Component, Entity,
-    component::{ComponentHookContext, DerivedFrom},
+    component::{
+        ComponentHookContext, DerivedFrom, RelationshipEdge, RelationshipRetraction,
+        RelationshipTarget,
+    },
 };
 
 /// Monotonic revision assigned to tracked component writes.
@@ -269,6 +272,17 @@ trait StoreDyn: Send + Sync {
     fn tracked(&self) -> bool;
     /// Highest revision at which this store changed.
     fn watermark(&self) -> u64;
+    /// Raises the change watermark (used by removal paths that bump the
+    /// world revision outside the store).
+    fn bump_watermark(&mut self, revision: u64);
+    /// Relationship maintenance info for `entity`'s stored value, read
+    /// before a removal path drops the entry: the edge it carries (if it is
+    /// a relationship source) and the retractions it implies (if it is a
+    /// maintained inverse).
+    fn relationship_ops(
+        &self,
+        entity: Entity,
+    ) -> (Option<RelationshipEdge>, Vec<RelationshipRetraction>);
     /// Removes one derived entry if it is still owned by `owner`.
     ///
     /// Returns whether the component type is tracked.
@@ -297,10 +311,10 @@ struct Store<T> {
     /// snapshot clones stay cheap while external `Where<Eq<T>>` queries can
     /// resolve candidates without scanning.
     by_fingerprint: Arc<HashMap<u64, BTreeSet<Entity>>>,
-    /// Highest revision at which this store changed (inserts, targeted
-    /// removals, and in-place writes; whole-entity sweeps are not yet
-    /// covered). Compared against memoized `planned_revision`s by
-    /// `explain`'s stale-view detection.
+    /// Highest revision at which this store changed (inserts, removals —
+    /// including whole-entity and sweep paths — and in-place writes).
+    /// Compared against memoized `planned_revision`s by `explain`'s
+    /// stale-view detection and by outer-join absence deps.
     watermark: u64,
 }
 
@@ -376,6 +390,23 @@ impl<T: Component> StoreDyn for Store<T> {
         self.watermark
     }
 
+    fn bump_watermark(&mut self, revision: u64) {
+        self.watermark = self.watermark.max(revision);
+    }
+
+    fn relationship_ops(
+        &self,
+        entity: Entity,
+    ) -> (Option<RelationshipEdge>, Vec<RelationshipRetraction>) {
+        self.entries
+            .get(&entity)
+            .map(|entry| {
+                let value = entry.value.read();
+                (value.relationship_edge(), value.relationship_retractions())
+            })
+            .unwrap_or((None, Vec::new()))
+    }
+
     fn reconcile_entry(&mut self, entity: Entity, revision: &mut Revision) {
         let (before, after, changed) = {
             let Some(entry) = self.entries.get_mut(&entity) else {
@@ -431,6 +462,7 @@ impl<T: Component> StoreDyn for Store<T> {
 
         if T::tracked() {
             bump(revision);
+            self.watermark = self.watermark.max(revision.0);
         }
 
         Some(removed.owner)
@@ -576,6 +608,56 @@ impl World {
         self.stores
             .get(&type_id)
             .is_some_and(|store| store.revision_for_entity(entity).is_some())
+    }
+
+    /// Adds `source` to the maintained inverse `T` on `target`, keeping the
+    /// member list sorted by entity id. Idempotent. The inverse is written
+    /// as a base fact with no owner, so derived-output diffing never
+    /// touches it (spec/joins.md, "Authoring shape").
+    pub(crate) fn relationship_add_member<T: RelationshipTarget>(
+        &mut self,
+        source: Entity,
+        target: Entity,
+    ) {
+        let mut members = self
+            .store::<T>()
+            .and_then(|store| store.entries.get(&target))
+            .map(|entry| entry.value.read().members().to_vec())
+            .unwrap_or_default();
+
+        match members.binary_search(&source) {
+            Ok(_) => return,
+            Err(index) => members.insert(index, source),
+        }
+        self.insert_base(target, T::from_members(members));
+    }
+
+    /// Removes `source` from the maintained inverse `T` on `target`,
+    /// removing the inverse outright when it empties. Tolerates a missing
+    /// inverse (the target may be mid-removal).
+    pub(crate) fn relationship_remove_member<T: RelationshipTarget>(
+        &mut self,
+        source: Entity,
+        target: Entity,
+    ) {
+        let Some(mut members) = self
+            .store::<T>()
+            .and_then(|store| store.entries.get(&target))
+            .map(|entry| entry.value.read().members().to_vec())
+        else {
+            return;
+        };
+
+        let Ok(index) = members.binary_search(&source) else {
+            return;
+        };
+        members.remove(index);
+
+        if members.is_empty() {
+            self.remove_component::<T>(target);
+        } else {
+            self.insert_base(target, T::from_members(members));
+        }
     }
 
     /// Drains the entities removed since the last drain.
@@ -731,6 +813,8 @@ impl World {
             derived_from.capture(|entity| self.entity_revision(entity));
         }
 
+        let edge = value.relationship_edge();
+
         if let Some(key) = T::singleton_key() {
             match self.singleton_entities.get(&key) {
                 Some(existing) if *existing != entity => {
@@ -804,6 +888,10 @@ impl World {
             store.index_fingerprint(entity, fingerprint);
         }
 
+        let previous_edge = previous
+            .as_ref()
+            .and_then(|entry| entry.value.read().relationship_edge());
+
         let type_id = TypeId::of::<T>();
         if let Some(previous_owner) = previous.and_then(|entry| entry.owner) {
             if Some(&previous_owner) != new_owner.as_ref() {
@@ -816,6 +904,20 @@ impl World {
                     .entry(new_owner)
                     .or_default()
                     .insert((type_id, entity));
+            }
+        }
+
+        // Relationship maintenance: keep the target's inverse current. An
+        // unchanged target (idempotent re-emission) touches nothing, so the
+        // fingerprint cutoff on the inverse keeps holding.
+        let previous_target = previous_edge.as_ref().map(|edge| edge.target);
+        let new_target = edge.as_ref().map(|edge| edge.target);
+        if previous_target != new_target {
+            if let Some(previous_edge) = previous_edge {
+                (previous_edge.remove)(self, entity, previous_edge.target);
+            }
+            if let Some(edge) = edge {
+                (edge.add)(self, entity, edge.target);
             }
         }
 
@@ -987,6 +1089,7 @@ impl World {
             return false;
         };
 
+        let (edge, _) = store.relationship_ops(entity);
         let Some(tracked) = store.remove_entry_owned(entity, owner) else {
             return false;
         };
@@ -994,6 +1097,16 @@ impl World {
         self.mutations += 1;
         if tracked {
             bump(&mut self.revision);
+            let watermark = self.revision.0;
+            if let Some(store) = self.stores.get_mut(&type_id) {
+                store.bump_watermark(watermark);
+            }
+        }
+
+        // Sweeps are a removal path like any other: a swept edge retracts
+        // its membership from the target's inverse.
+        if let Some(edge) = edge {
+            (edge.remove)(self, entity, edge.target);
         }
 
         true
@@ -1043,6 +1156,21 @@ impl World {
     /// If removed components were themselves derived, their owners are returned
     /// so the caller can clear any remaining outputs for those invocations.
     pub(crate) fn remove_entity(&mut self, entity: Entity) -> Vec<SystemInvocation> {
+        // Collect relationship maintenance before anything is removed, and
+        // apply it only after the whole entity is gone, so store iteration
+        // order never matters: this entity's edges retract from their
+        // targets, and if this entity was itself a target, every source's
+        // edge component is retracted (edge consistency, no cascade).
+        let mut edges = Vec::new();
+        let mut retractions = Vec::new();
+        for store in self.stores.values() {
+            let (edge, mut retract) = store.relationship_ops(entity);
+            if let Some(edge) = edge {
+                edges.push(edge);
+            }
+            retractions.append(&mut retract);
+        }
+
         let mut owners = Vec::new();
         let mut unindex = Vec::new();
 
@@ -1065,6 +1193,13 @@ impl World {
         self.singleton_entities
             .retain(|_, singleton_entity| *singleton_entity != entity);
         self.removed_entities.push(entity);
+
+        for edge in edges {
+            (edge.remove)(self, entity, edge.target);
+        }
+        for retraction in retractions {
+            (retraction.remove_edge)(self, retraction.source);
+        }
 
         owners
     }
@@ -1094,6 +1229,7 @@ impl World {
         let store = self.store_mut_existing::<T>()?;
         let removed = store.entries.remove(&entity)?;
         store.unindex_fingerprint(entity, removed.fingerprint);
+        let edge = removed.value.read().relationship_edge();
 
         T::on_remove(ComponentHookContext::new(entity));
 
@@ -1119,6 +1255,10 @@ impl World {
             {
                 self.singleton_entities.remove(&key);
             }
+        }
+
+        if let Some(edge) = edge {
+            (edge.remove)(self, entity, edge.target);
         }
 
         let value = Arc::try_unwrap(removed.value).ok()?.into_inner();

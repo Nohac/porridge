@@ -5,7 +5,10 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::{Entity, world::Revision};
+use crate::{
+    Entity,
+    world::{Revision, World},
+};
 
 /// Context passed to component lifecycle hooks.
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +60,94 @@ pub trait Component: Send + Sync + 'static {
     /// Runs before this component type is removed as part of removing the whole
     /// entity.
     fn on_entity_remove(_context: ComponentHookContext) {}
+
+    /// If this component is a relationship edge, the target entity plus the
+    /// maintainers for its engine-maintained inverse (spec/joins.md,
+    /// "Authoring shape"). The engine keeps the inverse current at insert,
+    /// retarget, and every removal path.
+    fn relationship_edge(&self) -> Option<RelationshipEdge> {
+        None
+    }
+
+    /// If this component is a maintained relationship inverse, retraction
+    /// ops for when its entity is removed: each removes one source's edge
+    /// component (edge consistency, not lifetime policy).
+    fn relationship_retractions(&self) -> Vec<RelationshipRetraction> {
+        Vec::new()
+    }
+}
+
+/// The maintained side of a relationship: an engine-written component on
+/// the target entity listing every source pointing at it, ordered by
+/// entity id, fingerprinted over that ordered set.
+pub trait RelationshipTarget: Component + Sized {
+    /// The edge component whose values point at this target.
+    type Edge: Component;
+
+    /// Builds the inverse from its member list (sorted by entity id).
+    fn from_members(members: Vec<Entity>) -> Self;
+
+    /// The current member list, sorted by entity id.
+    fn members(&self) -> &[Entity];
+}
+
+/// Erased maintenance handle produced by a relationship edge component:
+/// which entity it points at, and monomorphized maintainers for the
+/// target's inverse.
+pub struct RelationshipEdge {
+    pub(crate) target: Entity,
+    pub(crate) add: fn(&mut World, Entity, Entity),
+    pub(crate) remove: fn(&mut World, Entity, Entity),
+}
+
+impl RelationshipEdge {
+    /// Builds the maintenance handle for an edge pointing at `target`,
+    /// maintaining inverse component `T`.
+    pub fn new<T: RelationshipTarget>(target: Entity) -> Self {
+        Self {
+            target,
+            add: add_member::<T>,
+            remove: remove_member::<T>,
+        }
+    }
+}
+
+/// One source's edge retraction, applied when a relationship target entity
+/// is removed.
+pub struct RelationshipRetraction {
+    pub(crate) source: Entity,
+    pub(crate) remove_edge: fn(&mut World, Entity),
+}
+
+impl RelationshipRetraction {
+    /// Builds the retraction removing edge component `E` from `source`.
+    pub fn new<E: Component>(source: Entity) -> Self {
+        Self {
+            source,
+            remove_edge: |world, source| {
+                world.remove_component::<E>(source);
+            },
+        }
+    }
+}
+
+/// Convenience: the retractions for a whole inverse, one per member.
+pub fn relationship_retractions_for<T: RelationshipTarget>(
+    target: &T,
+) -> Vec<RelationshipRetraction> {
+    target
+        .members()
+        .iter()
+        .map(|member| RelationshipRetraction::new::<T::Edge>(*member))
+        .collect()
+}
+
+fn add_member<T: RelationshipTarget>(world: &mut World, source: Entity, target: Entity) {
+    world.relationship_add_member::<T>(source, target);
+}
+
+fn remove_member<T: RelationshipTarget>(world: &mut World, source: Entity, target: Entity) {
+    world.relationship_remove_member::<T>(source, target);
 }
 
 /// Marker component that routes a bundle through the singleton index for `T`.

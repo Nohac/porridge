@@ -249,17 +249,67 @@ pair's dep on the `Members` revision covers membership changes by
 construction. One mechanism, both granularities: `Where<In<Members>>` for
 per-pair work, `&Members` in the driving query for per-set work.
 
+### Authoring shape (v1 decisions)
+
+Mirror Bevy's authoring shape — two components, an attribute linking them,
+the source of truth on the source — because that is the surface ported code
+touches:
+
+```rust
+#[derive(Component, Hash)]
+#[component(hash)]
+#[relationship(target = Members)]
+struct MemberOf(pub Entity);        // source of truth, on the member
+
+#[derive(Component)]
+#[relationship_target(relationship = MemberOf)]
+struct Members(..);                 // engine-maintained inverse
+```
+
+Diverge from Bevy in three places:
+
+1. **The target is fingerprinted by construction.** The macro generates the
+   fingerprint over the ordered member set; that is the feature (membership
+   as a revision-level fact), and users must not be able to omit it.
+2. **No `linked_spawn`/despawn cascades.** Lifetime stays `DerivedFrom`'s
+   job. Removing the *target entity* still retracts the sources' edge
+   components — that is edge consistency, not lifetime policy.
+3. **Porridge-native query surface.** No `iter_descendants`; the payoffs
+   are tracked deps on the inverse, `Where<In<T>>`, and child⋈parent joins
+   through the edge (which subsumes the heterogeneous-key `Eq` ask).
+
+Resolved decisions:
+
+- **Origin**: maintained inverses are inserted with `Origin::Base` and no
+  owner. Everything falls out: derived-output diffing only touches
+  owner-tagged entries, so reruns cannot sweep the inverse; bound-entity
+  cleanup removes whole entities and edge consistency is restored by the
+  target-removal retraction. A dedicated `Origin::Maintained` only becomes
+  necessary if base-vs-maintained ambiguity bites in practice (external
+  callers can currently stomp a maintained component; documented, accepted
+  for the prototype).
+- **Ordering**: sorted by entity id. Deterministic under concurrent
+  producers, stable across idempotent reruns (spawn-slot reuse keeps ids
+  stable), join-friendly. Explicit ordering is a later attribute if a need
+  appears.
+- **Maintenance points**: insertion is one choke point (`World::insert`,
+  same special-case precedent as `DerivedFrom` anchors). Removal is
+  *three* — `remove_component`, `remove_entity`, and the store-level
+  owned-entry sweeps — and the sweep path currently bypasses world-level
+  logic (the same gap already documented for store watermarks). Routing all
+  three through relationship maintenance is step zero, and fixes the
+  watermark gap as a side effect. Maintenance ops from removal paths are
+  queued and applied after the primary operation completes, so ordering
+  inside `remove_entity`'s store iteration never matters.
+- **Empty inverse**: removed, not kept — `With<Members>` stays meaningful.
+
 ### Costs
 
-- A new engine concept: the inverse is written by the commit machinery, not
-  by any invocation, so it fits neither `Origin::Base` nor
-  `Origin::Derived`. It needs a maintained-origin story — cleanup, and how
-  it interacts with derived-output diffing when a member's creator reruns.
 - Write amplification is inherent: every real membership change bumps the
   target's inverse and reruns its set-consumers. That is what set semantics
   means, but high-churn targets with many members will feel it.
-- Unlike Bevy's `Vec<Entity>` children, the inverse needs canonical ordering
-  (a sorted set) so fingerprints are stable across idempotent reruns.
+- A retargeted edge (`MemberOf(a)` → `MemberOf(b)`) touches two inverses;
+  an unchanged re-emission (equal fingerprint) must touch neither.
 
 ### Boundary
 
@@ -270,9 +320,13 @@ already does, not to relationship maintenance.
 
 ### Ordering
 
-Bound `Eq` first: it needs no new engine concepts. Relationships second,
-as the replacement for the set-fingerprint pattern once bound filters have
-proven out the planning changes.
+Bound `Eq` landed first and proved the planning machinery (compound keys,
+outer joins). Relationships are next — directly, without a separate
+heterogeneous-key `Eq` feature first, since relations subsume it (a
+parent→child edge is a hetero join plus an index plus ordering). v1 scope:
+edge maintenance + the fingerprinted inverse as a tracked input, which
+already retires the set-fingerprint pattern. `Where<In<T>>` and
+edge-traversal joins are the follow-up query surface.
 
 ## What this replaces
 
