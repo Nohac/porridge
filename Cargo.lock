@@ -45,6 +45,7 @@ dependencies = [
  "bowl",
  "criterion",
  "futures",
+ "tokio",
 ]
 
 [[package]]
@@ -54,6 +55,7 @@ dependencies = [
  "async_fn_traits",
  "futures",
  "macros",
+ "tokio",
  "tracing",
  "variadics_please",
 ]

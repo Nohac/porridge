@@ -17,9 +17,10 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use benches::{
-    Def, PairMark, Parity, ParityNote, Path, Text, W1, W2, W3, bump_all_sources, defs_bowl,
-    file_name, file_pipeline_bowl, fleet_bowl, in_join_bowl, parity_bowl, scan_bowl,
-    settle_files, spawn_parity_bowl, touch_file, touch_group, touch_slot0, wide_row_bowl,
+    Def, Digest, PairMark, Parity, ParityNote, Path, Text, W1, W2, W3, bump_all_sources,
+    compute_bowl, defs_bowl, file_name, file_pipeline_bowl, fleet_bowl, in_join_bowl,
+    parity_bowl, scan_bowl, settle_files, spawn_parity_bowl, touch_file, touch_group,
+    touch_slot0, wide_row_bowl,
 };
 use bowl::{Entity, Eq, Query, Where};
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -245,6 +246,44 @@ fn planner_gating(c: &mut Criterion) {
     group.finish();
 }
 
+/// The parallel runtime: identical CPU-heavy settle, cooperatively
+/// polled on the driver (block_on, no ambient executor) vs spawned onto
+/// tokio workers (multi-thread runtime ambient).
+fn parallel_compute(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parallel_compute");
+    group.sample_size(10);
+
+    let rows = 32usize;
+    group.bench_function("inline", |b| {
+        b.iter_batched(
+            || block_on(compute_bowl(rows)),
+            |bowl| {
+                black_box(block_on(async {
+                    bowl.scoop::<Query<(Entity, &Digest)>>().await.len()
+                }))
+            },
+            BatchSize::PerIteration,
+        )
+    });
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .build()
+        .expect("bench runtime");
+    group.bench_function("workers", |b| {
+        b.iter_batched(
+            || runtime.block_on(compute_bowl(rows)),
+            |bowl| {
+                black_box(runtime.block_on(async {
+                    bowl.scoop::<Query<(Entity, &Digest)>>().await.len()
+                }))
+            },
+            BatchSize::PerIteration,
+        )
+    });
+
+    group.finish();
+}
+
 fn in_join_planning(c: &mut Criterion) {
     let mut group = c.benchmark_group("in_join_planning");
     group.sample_size(10);
@@ -284,6 +323,6 @@ criterion_group!(
     config = Criterion::default()
         .measurement_time(Duration::from_secs(2))
         .warm_up_time(Duration::from_millis(300));
-    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, presence_scan, where_eq, view_scaling, in_join_planning, planner_gating
+    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, presence_scan, where_eq, view_scaling, in_join_planning, planner_gating, parallel_compute
 );
 criterion_main!(engine);

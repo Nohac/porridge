@@ -342,3 +342,33 @@ pub async fn touch_slot0(bowl: &Bowl, target: Entity, bump: u64) {
     bowl.entity(target).insert((Slot::<0>(bump),)).await;
     bowl.scoop::<Query<(Entity, &Slot<0>)>>().await;
 }
+
+/// CPU-heavy fixtures for the parallel runtime: each row burns real
+/// compute, so worker-thread spawning shows up as wall-clock division.
+#[derive(Component, Hash, Clone)]
+#[component(hash)]
+pub struct Work(pub u64);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct Digest(pub u64);
+
+pub async fn crunch(query: Query<(Entity, &Work)>, mut commands: Commands<(Digest,)>) {
+    let (entity, work) = query.item();
+    let mut digest = work.0;
+    for _ in 0..120_000 {
+        digest = digest
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+    }
+    commands.entity(entity).insert(Digest(digest));
+}
+
+/// N compute rows, not yet settled.
+pub async fn compute_bowl(rows: usize) -> Bowl {
+    let bowl = Bowl::builder().system(crunch).build();
+    for index in 0..rows {
+        bowl.insert((Work(index as u64),)).await;
+    }
+    bowl
+}

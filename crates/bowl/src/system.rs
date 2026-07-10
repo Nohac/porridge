@@ -126,10 +126,13 @@ fn written_rows(access: &[Access]) -> Vec<(TypeId, Entity)> {
         .collect()
 }
 
-pub(crate) struct PlannedSystemRun<'a> {
+pub(crate) struct PlannedSystemRun {
     pub(crate) owner: SystemInvocation,
     pub(crate) access: Vec<Access>,
-    pub(crate) run: BoxFuture<'a, SystemRun>,
+    /// Owned and `Send`: the future captures `Arc`s (system function,
+    /// snapshot, callbacks), never borrows the registry — so the runner
+    /// may spawn it onto worker threads.
+    pub(crate) run: BoxFuture<'static, SystemRun>,
 }
 
 struct PlannedRun<State> {
@@ -1224,13 +1227,13 @@ pub(crate) trait Runnable: Send + Sync {
         memo: &'a HashMap<SystemInvocation, MemoEntry>,
     ) -> BoxFuture<'a, SystemRun>;
 
-    fn stream_runs<'a>(
-        &'a self,
+    fn stream_runs(
+        &self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
-    ) -> Vec<PlannedSystemRun<'a>>;
+    ) -> Vec<PlannedSystemRun>;
 
     fn run_settled<'a>(
         &'a self,
@@ -1482,21 +1485,21 @@ struct OnCompleteSystem<C, D> {
     _declares: ::std::marker::PhantomData<fn() -> D>,
     id: SystemId,
     system: BoxedSystem,
-    callback: C,
+    callback: Arc<C>,
 }
 
 struct OnStartSystem<C, D> {
     _declares: ::std::marker::PhantomData<fn() -> D>,
     id: SystemId,
     system: BoxedSystem,
-    callback: C,
+    callback: Arc<C>,
 }
 
 struct OnSettledSystem<C, D> {
     _declares: ::std::marker::PhantomData<fn() -> D>,
     id: SystemId,
     system: BoxedSystem,
-    callback: C,
+    callback: Arc<C>,
 }
 
 impl<C, D> Runnable for OnStartSystem<C, D>
@@ -1548,13 +1551,13 @@ where
         .boxed()
     }
 
-    fn stream_runs<'a>(
-        &'a self,
+    fn stream_runs(
+        &self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
-    ) -> Vec<PlannedSystemRun<'a>> {
+    ) -> Vec<PlannedSystemRun> {
         // Pre-plan the inner system now (planning is deterministic over the
         // captured snapshot + memo), so the run future carries the planned
         // rows instead of a memo snapshot — this is what lets the runner
@@ -1569,13 +1572,14 @@ where
             keys: Vec::new(),
         };
         let hook_owner = owner.clone();
+        let callback = Arc::clone(&self.callback);
         let run = async move {
             // The hook fires before the batch, its output prepended.
             let commands = Commands::new(
                 snapshot.spawn_slots(&hook_owner),
                 snapshot.entity_allocator(),
             );
-            self.callback.run(commands.retype());
+            callback.run(commands.retype());
             let start_output = SystemOutput {
                 owner: hook_owner,
                 commands: commands.take(),
@@ -1648,13 +1652,13 @@ where
         .boxed()
     }
 
-    fn stream_runs<'a>(
-        &'a self,
+    fn stream_runs(
+        &self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
-    ) -> Vec<PlannedSystemRun<'a>> {
+    ) -> Vec<PlannedSystemRun> {
         // Pre-planned like `OnStart`; the completion hook appends its
         // output after the batch, only when the batch produced outputs.
         let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo, hint);
@@ -1667,6 +1671,7 @@ where
             keys: Vec::new(),
         };
         let hook_owner = owner.clone();
+        let callback = Arc::clone(&self.callback);
         let run = async move {
             let runs = join_all(inner.into_iter().map(|planned| planned.run)).await;
             let mut merged = SystemRun::empty();
@@ -1683,7 +1688,7 @@ where
                     snapshot.spawn_slots(&hook_owner),
                     snapshot.entity_allocator(),
                 );
-                self.callback.run(commands.retype());
+                callback.run(commands.retype());
                 merged.outputs.push(SystemOutput {
                     owner: hook_owner,
                     commands: commands.take(),
@@ -1728,13 +1733,13 @@ where
         self.system.run(bowl, snapshot, memo)
     }
 
-    fn stream_runs<'a>(
-        &'a self,
+    fn stream_runs(
+        &self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
-    ) -> Vec<PlannedSystemRun<'a>> {
+    ) -> Vec<PlannedSystemRun> {
         self.system.stream_runs(bowl, snapshot, memo, hint)
     }
 
@@ -1801,7 +1806,7 @@ where
                 _declares: PhantomData,
                 id,
                 system,
-                callback: self.callback,
+                callback: Arc::new(self.callback),
             }),
             phase,
             name,
@@ -1839,7 +1844,7 @@ where
                 _declares: PhantomData,
                 id,
                 system,
-                callback: self.callback,
+                callback: Arc::new(self.callback),
             }),
             phase,
             name,
@@ -1877,7 +1882,7 @@ where
                 _declares: PhantomData,
                 id,
                 system,
-                callback: self.callback,
+                callback: Arc::new(self.callback),
             }),
             phase,
             name,
@@ -1926,13 +1931,13 @@ impl BoxedSystem {
         self.runnable.run(bowl, snapshot, memo)
     }
 
-    pub(crate) fn stream_runs<'a>(
-        &'a self,
+    pub(crate) fn stream_runs(
+        &self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
-    ) -> Vec<PlannedSystemRun<'a>> {
+    ) -> Vec<PlannedSystemRun> {
         self.runnable.stream_runs(bowl, snapshot, memo, hint)
     }
 
@@ -1986,7 +1991,9 @@ pub async fn cleanup_stale_derived(
 
 struct FunctionSystem<F, Marker> {
     id: SystemId,
-    function: F,
+    /// Behind `Arc` so planned run futures own their callee and stay
+    /// `'static` (spawnable).
+    function: Arc<F>,
     _marker: PhantomData<Marker>,
 }
 
@@ -2061,13 +2068,13 @@ where
         .boxed()
     }
 
-    fn stream_runs<'a>(
-        &'a self,
+    fn stream_runs(
+        &self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
-    ) -> Vec<PlannedSystemRun<'a>> {
+    ) -> Vec<PlannedSystemRun> {
         plan_invocations_hinted::<F::Param>(self.id, &snapshot, memo, hint)
             .invocations
             .into_iter()
@@ -2076,6 +2083,7 @@ where
                 let access = invocation.access.clone();
                 let bowl = bowl.clone();
                 let snapshot = Arc::clone(&snapshot);
+                let function = Arc::clone(&self.function);
                 let run = async move {
                     let writes = written_rows(&invocation.access);
                     let commands = Commands::new(
@@ -2093,7 +2101,7 @@ where
                         &commands,
                         &mut guards,
                     );
-                    self.function.run(params).await;
+                    function.run(params).await;
                     drop(guards);
 
                     let (output, memo_update) = finish_invocation(
@@ -2176,7 +2184,7 @@ where
         BoxedSystem::new(
             Arc::new(FunctionSystem {
                 id,
-                function: self,
+                function: Arc::new(self),
                 _marker: PhantomData::<Marker>,
             }),
             std::any::type_name::<F>(),
