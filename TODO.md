@@ -90,6 +90,11 @@ See:
 - Done: external component removal — `bowl.entity(e).remove::<T>()`
   mirrors targeted inserts with the same epoch semantics (deferred
   mid-epoch, `.preempting()` to force a boundary); friction 2.
+- Add external despawn: `bowl.entity(e).despawn()` removing the whole
+  entity with the same epoch semantics (the `remove_entity` machinery,
+  relationship retraction included, already exists — only the external
+  plumbing is missing). Needed for hand-rolled request entities and any
+  externally-owned lifecycle (dsql feedback).
 - Done: `Commands::insert` returns the reserved `Entity` so a system can
   link parent/child facts by entity id within one buffer. Ids reserve at
   buffer time against the invocation's previous spawn slots (shared atomic
@@ -137,6 +142,16 @@ Current shortcut:
   fully applied), so a derived entity emitted before a same-buffer write
   to its anchor is no longer born stale. A `debug_assert` in the snapshot
   path catches any apply site that forgets to flush.
+- Guard the external-writer/anchor trap (dsql feedback: the `OpenBuffer`
+  mistake): `DerivedFrom` anchors are deliberately entity-scoped, so an
+  external tracked insert onto an anchor-source entity reaps *everything*
+  anchored to it — including when the inserted component (an open-buffer
+  marker) is semantically unrelated. Remedies, graded: document the
+  existing outs (`#[component(untracked)]` markers, own-entity markers à
+  la the demand pattern); add a debug warn when an external tracked
+  insert lands on an entity that anchors derived facts (cannot be a
+  panic — a `FileText` edit is the same operation and *should*
+  invalidate); long term, revisit component-scoped anchor granularity.
 - Define stronger ownership semantics for derived outputs.
 - Decide how `DerivedFrom` and invocation-owned outputs compose:
   - invocation ownership replaces outputs from a rerun
@@ -235,6 +250,15 @@ See:
 - Improve `TakeError` reporting if missing required output becomes common.
 - Add more tests for missing required components and multi-component failure
   behavior.
+
+- Close the internal request/response gap (dsql feedback: the
+  insert→derive→take→reap lifecycle is hand-rolled five times, and
+  nothing reaps): `BoundEntity` covers *external* callers only — a system
+  spawning a request via `Commands` gets no handle and no reaper, so
+  internal request entities leak. Design an engine-owned transient-entity
+  policy (a `Transient`/TTL marker reaped at the following settle, or
+  bound-like handles for command-spawned requests), which also removes
+  the temptation to key bulk derivation off request entities.
 
 Current shortcut:
 - `BoundEntity::take<T>` is implemented and consuming.
@@ -339,6 +363,17 @@ let rows = diagnostics.collect();
   product-and-prune path; `binding_matches` remains as the correctness
   backstop on expanded tuples. dsql can now re-land its fixed-point
   resolver (revert of their revert at eca2d5f).
+- Memoize the planner itself (watermark-gated system skipping): every
+  wave currently replans every system in the phase — full row
+  enumeration, dep computation, memo comparison — even when its driving
+  stores are empty or untouched. Give each system a static store-interest
+  set (driving row types + tracked dep types + join provider types;
+  `view_sets` already exists for the ambient half) and skip planning
+  whenever no interested store's watermark moved since the system's last
+  plan. Systems over absent component types fall out as the trivial case;
+  a fully-memoized steady state (dsql's 30/160/80) makes waves near
+  no-ops. Sound because all mutation paths — including whole-entity
+  removal and the derived sweeps — now bump watermarks.
 - Add ordered/range predicates as join keys (position-in-span is the
   playground's blocker): with them, the hover candidates become tracked
   joins, move to `Evaluate`, and the finalizer flattens back to a plain
@@ -491,6 +526,14 @@ Current shortcut:
   pushed further.
 - Prefer query/output availability over explicit ordering where possible.
 - If ordering returns, make it system-level and cycle-checked.
+- Registration-time phase checking (dsql feedback): with *declared
+  outputs* (`produces::<T>()` hints — outputs are dynamic commands today,
+  which is why the same-phase flag is commit-time), `add_system` could
+  refuse a `View<T>` in the same phase as `T`'s declared producer,
+  turning the runtime panic into an unrepresentable state. Prefer
+  refuse/warn over auto-scheduling (silently moving a system between
+  phases is spooky). Declared outputs are the prerequisite and would
+  benefit scheduling generally; design them once, use twice.
 - Done: "never produce and ambiently consume in the same phase" is now
   engine-enforced in debug builds (dsql port, friction 5): a commit whose
   derived write is `View`ed by a same-phase system with matched rows
@@ -549,6 +592,12 @@ See:
   revision — the §10 ambient-staleness detection). Friction 7. Still
   open: per-entity explanations, naming *which* filter pruned a row, and
   which dep revisions were compared.
+- Add write-amplification visibility to `explain` (dsql feedback, found
+  at 58 wall-clock seconds): a `MutRef` target row with N same-generation
+  writers costs N serialized commits and their replan cascades — the
+  collision is visible in the planned access sets, so `explain` can
+  report "component T on this row has N writers" before the fold is
+  built, not after it melts.
 - Expose enough internal data to inspect:
   - system invocation keys
   - query dependencies
