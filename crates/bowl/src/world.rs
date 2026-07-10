@@ -557,6 +557,15 @@ pub struct World {
     /// as watermarks and the fingerprint index. Row matching consults this
     /// instead of probing stores. Copy-on-write against snapshots.
     presence: Option<PresenceIndex>,
+    /// Settle-scoped write log: every (store, entity) touched since the
+    /// current plan epoch began, in write order — the delta-planning
+    /// source. Cleared by the runner at settle start; per-system cursors
+    /// slice it. Behind `Arc` so planning waves take a cheap handle; not
+    /// carried into snapshots.
+    write_log: Arc<Vec<(TypeId, Entity)>>,
+    /// Bumped when the write log is cleared, so per-system cursors from a
+    /// previous settle are recognized as stale (forcing one full plan).
+    plan_epoch: u64,
 }
 
 /// Dense presence bits over a schema-closed component universe.
@@ -699,6 +708,8 @@ impl Clone for World {
             flushing_anchors: false,
             written_derived: Vec::new(),
             presence: self.presence.clone(),
+            write_log: Arc::new(Vec::new()),
+            plan_epoch: self.plan_epoch,
         }
     }
 }
@@ -737,7 +748,30 @@ impl World {
             flushing_anchors: false,
             written_derived: Vec::new(),
             presence: None,
+            write_log: Arc::new(Vec::new()),
+            plan_epoch: 0,
         }
+    }
+
+    /// Rolls the plan epoch when the write log has grown past its budget:
+    /// clears the log and invalidates every per-system delta cursor (each
+    /// then full-plans once and rejoins the deltas). Called by the runner
+    /// at evaluation start, so cursors stay valid across generations and
+    /// settles while activity is modest.
+    pub(crate) fn maybe_roll_plan_epoch(&mut self) {
+        if self.write_log.len() > 4096 {
+            self.plan_epoch += 1;
+            self.write_log = Arc::new(Vec::new());
+        }
+    }
+
+    /// The current write log and plan epoch, as a cheap shared handle.
+    pub(crate) fn plan_log(&self) -> (Arc<Vec<(TypeId, Entity)>>, u64) {
+        (Arc::clone(&self.write_log), self.plan_epoch)
+    }
+
+    fn log_write(&mut self, type_id: TypeId, entity: Entity) {
+        Arc::make_mut(&mut self.write_log).push((type_id, entity));
     }
 
     /// Installs the presence index over a schema-closed component universe.
@@ -1062,6 +1096,7 @@ impl World {
 
         let new_owner = owner.clone();
         self.presence_set(TypeId::of::<T>(), entity, true);
+        self.log_write(TypeId::of::<T>(), entity);
         let store = self.store_mut::<T>();
         store.watermark = store.watermark.max(revision.0);
         let previous = store.entries.insert(
@@ -1168,6 +1203,7 @@ impl World {
             };
 
             store.reconcile_entry(*entity, &mut self.revision);
+            Arc::make_mut(&mut self.write_log).push((*type_id, *entity));
         }
     }
 
@@ -1290,6 +1326,7 @@ impl World {
             return false;
         };
         self.presence_set(type_id, entity, false);
+        self.log_write(type_id, entity);
 
         self.mutations += 1;
         if tracked {
@@ -1371,16 +1408,21 @@ impl World {
         let mut owners = Vec::new();
         let mut unindex = Vec::new();
 
+        let mut removed_types = Vec::new();
         for (type_id, store) in self.stores.iter_mut() {
             let Some(owner) = store.remove_entity(entity, &mut self.revision) else {
                 continue;
             };
 
             self.mutations += 1;
+            removed_types.push(*type_id);
             if let Some(owner) = owner {
                 unindex.push((owner.clone(), *type_id));
                 owners.push(owner);
             }
+        }
+        for type_id in removed_types {
+            self.log_write(type_id, entity);
         }
 
         for (owner, type_id) in unindex {
@@ -1428,6 +1470,7 @@ impl World {
         let removed = store.entries.remove(&entity)?;
         store.unindex_fingerprint(entity, removed.fingerprint);
         self.presence_set(TypeId::of::<T>(), entity, false);
+        self.log_write(TypeId::of::<T>(), entity);
         let edge = removed.value.read().relationship_edge();
 
         T::on_remove(ComponentHookContext::new(entity));

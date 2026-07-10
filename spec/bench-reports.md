@@ -384,3 +384,37 @@ After both (vs the pre-round baseline):
 re-settle); the memo clone scaled with total memoized rows, so the win
 grows with bowl size. Next: bitmap dirty queues (TODO §7 stage 2), then
 the parallel runtime option.
+
+
+## Delta planning round (stage 2, entity-granular)
+
+Store-granular gating was defeated by vocabulary components: `DerivedFrom`
+and `BelongsToFile` sit in nearly every interest set and move on nearly
+every commit, so systems replanned (full row enumeration + memo compare)
+almost every wave even when the change was another system's entity — the
+playground profiler made this visible (plan time outweighed run time 3:1).
+
+Change: the world keeps a settle-scoped write log ((store, entity) in
+write order, epoch-rolled past 4096 entries) and every delta-eligible
+system — exactly one plain tracked query driving rows, bounded interest —
+keeps a cursor into it. Planning slices the log since the system's last
+plan, filters to interest types, and enumerates rows from those entities
+only (`states_hinted` → `filtered_rows_from_candidates`); fresh
+registrations, epoch rolls, conflict deferrals, and stale commits force
+one full plan and rejoin the deltas. Joins, outer joins, and always-run
+systems keep full planning. Equivalence is pinned by
+`delta_planning_matches_full_planning_run_counts` (exact run counts
+through a derivation chain, steady-state no-ops, late-joining rows).
+
+| bench                | change  |
+|----------------------|---------|
+| planner_gating/512   | −45.6%  |
+| planner_gating/64    | −23.2%  |
+| in_join_planning     | −5% … −11% |
+| identical_rerun      | −3% … −6%  |
+| incremental_settle   | flat (+6.8% at the 8-row floor: log overhead) |
+
+Cumulative planner series (`planner_gating/512`): 7.7ms → 6.0ms (memo
+clone) → 3.27ms (deltas) ≈ −58%. Playground: delta-eligible systems
+dropped to a fraction of their former run/plan counts (replicate 122→54
+runs, check_imports 36→14).

@@ -1638,12 +1638,11 @@ impl Bowl {
         };
 
         let snapshot = self.snapshot().await;
-        let memo_snapshot = Arc::new(memo.clone());
         let mut runs = systems
             .iter()
             .filter(|system| system.phase == Phase::Settle)
             .flat_map(|system| {
-                system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo_snapshot)
+                system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo, None)
             })
             .map(|planned| {
                 let owner = planned.owner;
@@ -1912,6 +1911,10 @@ impl Bowl {
                 WAVE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let snapshot_start = std::time::Instant::now();
                 let snapshot = self.snapshot().await;
+                let (plan_log, plan_epoch) = {
+                    let state = self.inner.state.lock().await;
+                    state.world.plan_log()
+                };
                 SNAPSHOT_NANOS.fetch_add(
                     snapshot_start.elapsed().as_nanos() as u64,
                     std::sync::atomic::Ordering::Relaxed,
@@ -1968,8 +1971,47 @@ impl Bowl {
                     .filter(|system| system.phase == phase && system.needs_planning(&snapshot))
                 {
                     let plan_start = std::time::Instant::now();
-                    let planned_runs =
-                        system.stream_runs(self.clone(), Arc::clone(&snapshot), memo);
+                    // Delta planning: a system whose cursor is current for
+                    // this epoch plans only the entities written since its
+                    // last plan; anything else (fresh registration, epoch
+                    // roll, resets) plans fully once and joins the deltas.
+                    let hint: Option<Vec<Entity>> = if system.delta_eligible
+                        && system
+                            .plan_epoch
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            == plan_epoch
+                    {
+                        let pos = system.log_pos.load(std::sync::atomic::Ordering::Relaxed)
+                            as usize;
+                        let interest = system
+                            .interest
+                            .as_ref()
+                            .expect("delta-eligible systems have bounded interest");
+                        let mut entities: Vec<Entity> = plan_log[pos.min(plan_log.len())..]
+                            .iter()
+                            .filter(|(type_id, _)| interest.contains(type_id))
+                            .map(|(_, entity)| *entity)
+                            .collect();
+                        entities.sort_unstable();
+                        entities.dedup();
+                        Some(entities)
+                    } else {
+                        None
+                    };
+                    let planned_runs = system.stream_runs(
+                        self.clone(),
+                        Arc::clone(&snapshot),
+                        memo,
+                        hint.as_deref(),
+                    );
+                    if system.delta_eligible {
+                        system
+                            .log_pos
+                            .store(plan_log.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                        system
+                            .plan_epoch
+                            .store(plan_epoch, std::sync::atomic::Ordering::Relaxed);
+                    }
                     system.stats.plan_nanos.fetch_add(
                         plan_start.elapsed().as_nanos() as u64,
                         std::sync::atomic::Ordering::Relaxed,
@@ -2152,6 +2194,7 @@ impl Bowl {
     )> {
         let mut state = self.inner.state.lock().await;
         let generation = state.pending_generation.take()?;
+        state.world.maybe_roll_plan_epoch();
         let inputs = std::mem::take(&mut state.pending_inputs);
 
         // Settle-phase inserts deferred from the previous settle land first:
@@ -5972,6 +6015,70 @@ mod tests {
             bowl.entity(inserted.entity()).insert((Count(2),)).await;
             let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
             assert_eq!(rows.collect().len(), 1, "re-insert must restore the bit");
+        });
+    }
+
+    static DELTA_STAGE1_RUNS: AtomicUsize = AtomicUsize::new(0);
+    static DELTA_STAGE2_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    async fn delta_stage1(query: Query<(Entity, &A)>, mut commands: Commands<(B,)>) {
+        let (entity, a) = query.item();
+        DELTA_STAGE1_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(B(a.0 + 1));
+    }
+
+    async fn delta_stage2(query: Query<(Entity, &B)>, mut commands: Commands<(Count,)>) {
+        let (entity, b) = query.item();
+        DELTA_STAGE2_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(Count(b.0 as usize + 1));
+    }
+
+    /// Delta planning must be run-for-run identical to full planning: a
+    /// derivation chain over N rows runs each stage exactly N times on the
+    /// first settle and exactly once per touched row after — no missed
+    /// reruns (under-planning) and no spurious ones (over-planning).
+    #[test]
+    fn delta_planning_matches_full_planning_run_counts() {
+        DELTA_STAGE1_RUNS.store(0, Ordering::SeqCst);
+        DELTA_STAGE2_RUNS.store(0, Ordering::SeqCst);
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(delta_stage1)
+                .system(delta_stage2)
+                .build();
+
+            let mut entities = Vec::new();
+            for index in 0..10 {
+                entities.push(bowl.insert((A(index),)).await);
+            }
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 10);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 10);
+
+            // Touch one row: exactly one rerun per stage, correct values.
+            bowl.entity(entities[3].entity()).insert((A(100),)).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 11);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 11);
+            let rows = counts.collect();
+            assert_eq!(rows.len(), 10);
+            assert!(
+                rows.iter()
+                    .any(|(entity, count)| *entity == entities[3].entity() && count.0 == 102),
+                "the touched row must re-derive through the chain"
+            );
+
+            // Untouched settles plan nothing and rerun nothing.
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 11);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 11);
+
+            // A fresh row after the steady state joins through deltas.
+            bowl.insert((A(50),)).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 12);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 12);
+            assert_eq!(counts.collect().len(), 11);
         });
     }
 
