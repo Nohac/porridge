@@ -98,13 +98,14 @@ mod system;
 mod world;
 
 pub use bowl::{
-    BoundEntity, Bowl, BowlEntity, Bundle, CommitLimit, ExplainReport, ExternalScoop,
-    InsertBuilder, InsertedEntity, RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
+    BoundEntity, Bowl, BowlBuilder, BowlEntity, Bundle, CommitLimit, ExplainReport, ExternalScoop,
+    InsertBuilder, InsertedEntity, Plugin, Registrar, RemoveBuilder, ScoopBuilder, TakeBundle,
+    TakeError,
 };
 pub use commands::{Commands, EntityCommands};
 pub use declare::{
     BundleDeclaredIn, CoveredBy, DeclarationList, DeclaredIn, IncrementOf, MatchesShape, Schema,
-    ShapeDesc, SpawnsAs,
+    ShapeDesc, ShapeHead, SpawnsAs,
 };
 pub use macros::Schema;
 pub use component::{

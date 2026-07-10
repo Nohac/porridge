@@ -218,6 +218,26 @@ macro_rules! impl_increment_of_tuple {
 
 all_tuples!(impl_increment_of_tuple, 1, 8, T);
 
+/// The leading component of a shape tuple.
+///
+/// Shape-granular consumers (replication capture, until facet queries
+/// land) key their row tracking off the shape's head; a shape must
+/// therefore lead with a required (non-`Option`) part, which the
+/// `Head: Component` bound at the use site enforces.
+pub trait ShapeHead {
+    type Head;
+}
+
+macro_rules! impl_shape_head {
+    ($H:ident $(, $T:ident)*) => {
+        impl<$H, $($T,)*> ShapeHead for ($H, $($T,)*) {
+            type Head = $H;
+        }
+    };
+}
+
+all_tuples!(impl_shape_head, 1, 8, T);
+
 /// Runtime enumeration of a declaration: the component `TypeId`s it
 /// covers, or `None` for the wildcard. This is what makes tuple-alias
 /// groups usable by the dependency graph — a closed tuple type can be

@@ -13,7 +13,7 @@ pub(crate) mod grammar;
 pub(crate) mod schema;
 pub(crate) mod service;
 
-use bowl::{Bowl, Phase, SystemExt, cleanup_stale_derived};
+use bowl::{Phase, Plugin, Registrar, Schema, ShapeDesc, SystemExt, cleanup_stale_derived};
 
 use crate::lang::{
     entities::{
@@ -22,21 +22,27 @@ use crate::lang::{
     entity::register_entity,
 };
 
-/// Assemble the language: every entity, the shared lowering walk, the
-/// services, and the cleanup system the derived-fact conventions rely on.
-/// The bowl is expected to be constructed over the language schema
-/// (`Bowl::of::<schema::LangSchema>()`) so registration-time analyses can
-/// consult the shapes.
-pub(crate) async fn register_language(db: &Bowl) {
-    register_entity::<Document>(db).await;
-    register_entity::<Import>(db).await;
-    register_entity::<Definition>(db).await;
-    register_entity::<Namespace>(db).await;
+/// The toy language as a bowl plugin: its schema fragment and every
+/// entity, the shared lowering walk, the services, and the cleanup system
+/// the derived-fact conventions rely on — shapes and systems travel
+/// together, so installing the plugin cannot desync them.
+pub(crate) struct LangPlugin;
 
-    db.add_system(entities::generate_ast).await;
+impl Plugin for LangPlugin {
+    fn shapes(&self) -> Vec<ShapeDesc> {
+        schema::LangSchema::shapes()
+    }
 
-    service::register_services(db).await;
+    fn build(&self, reg: &mut Registrar<'_>) {
+        register_entity::<Document>(reg);
+        register_entity::<Import>(reg);
+        register_entity::<Definition>(reg);
+        register_entity::<Namespace>(reg);
 
-    db.add_system(cleanup_stale_derived.run_during(Phase::Settle))
-        .await;
+        reg.system(entities::generate_ast);
+
+        service::register_services(reg);
+
+        reg.system(cleanup_stale_derived.run_during(Phase::Settle));
+    }
 }

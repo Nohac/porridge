@@ -572,20 +572,36 @@ Current shortcut:
   statically; the commit-time entity-granular flag stays the precise
   enforcement. (Registration ordering is gone: schemas are fixed at
   construction via `Bowl::of::<S>()`.)
-- Schema composition for plugins: `#[schema(extend(plugin::Shapes))]` on
-  `#[derive(Schema)]`, concatenating a plugin crate's shape fragment into
-  the app schema's `shapes()` (runtime conformance + bit universe). The
-  compile-time half already works cross-crate — `Commands<S>` spawn
-  checking is against the system's own declaration, so plugins declare
-  their own shape aliases; apps compose upward. Plugins over *app* data
-  export schema-generic systems instantiated at registration
-  (`add_system(plugin::system::<app_schema::Shape>)`, the emit_diagnostic
-  pattern scaled up), and replication-style plugins stay on the dynamic
-  boundary (delta capture + base-write apply, both type-erased) with
-  `Schema::shapes()` as the enumerable replication manifest — the closed
-  universe makes "replicate these shapes" well-defined, and a
-  daemon/client pair sharing one schema type makes the schema the wire
-  contract (see daemon-client porting notes).
+- Done: builder-only construction with plugin composition.
+  `Bowl::builder().schema::<S>().plugin(P).system(sys).build()` is the
+  only construction path — `Bowl::of`/`Bowl::new`/`add_system` are gone,
+  the system set is sealed at build (registration analyses and the
+  planner can treat the graph as total), and dynamic mid-life
+  registration is not supported (conditional subsystems are demand
+  markers gating planning, not registration). Plugins
+  (`trait Plugin { fn shapes(&self); fn build(&self, &mut Registrar) }`)
+  carry their schema fragment and systems as one unit, so fragment/system
+  desync is unrepresentable — this subsumed the earlier
+  `#[schema(extend)]` idea. Plugins over *app* data export schema-generic
+  systems the app instantiates at build. The playground dogfoods this
+  with `LangPlugin` plus a dummy replicon-style `ReplicationPlugin`
+  (`replication.rs`).
+- **Replication is shape-granular** (dogfooded): with an enforced schema,
+  component-granular replication could transit illegal partial entities
+  on the applying side, so the protocol unit is a *shape instance* — the
+  wire analogue of strict spawning; apply lands a whole shape bundle or
+  nothing. Subscriptions are shape aliases
+  (`.replicate::<lang_schema::SourceFile>()`), `Schema::shapes()` is the
+  enumerable manifest, and a daemon/client pair sharing one schema type
+  makes the schema the wire contract (see daemon-client porting notes).
+  Dogfood finding, pinned in
+  `replication_plugin_maintains_replica_records`: head-driven capture
+  (`Query<Entity, With<H::Head>>` via `ShapeHead`) carries no deps on the
+  rest of the shape, so a reaped record whose head didn't change is never
+  re-derived — shape-granular consumers need shape-granular *deps*, which
+  is exactly the facet-query slice (`Entity<H>` rows,
+  spec/declared-outputs.md layer 4). That slice upgrades the capture and
+  flips the pinned assertion.
 - Done: "never produce and ambiently consume in the same phase" is now
   engine-enforced in debug builds (dsql port, friction 5): a commit whose
   derived write is `View`ed by a same-phase system with matched rows

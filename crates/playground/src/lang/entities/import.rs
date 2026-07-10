@@ -6,7 +6,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Phase, Query, SystemExt, View, With};
+use bowl::{Commands, Component, DerivedFrom, Entity, Phase, Query, Registrar, SystemExt, View, With};
 use tracing::info;
 
 use crate::lang::{
@@ -51,8 +51,8 @@ pub(crate) struct Import;
 impl LanguageEntity for Import {
     const NAME: &'static str = "import";
 
-    async fn register(db: &Bowl) {
-        db.add_system(check_imports).await;
+    fn register(reg: &mut Registrar<'_>) {
+        reg.system(check_imports);
     }
 }
 
@@ -75,8 +75,8 @@ impl LowerStage for Import {
 }
 
 impl HoverStage for Import {
-    async fn register_hover(db: &Bowl) {
-        db.add_system(hover_imports.run_during(Phase::Complete)).await;
+    fn register_hover(reg: &mut Registrar<'_>) {
+        reg.system(hover_imports.run_during(Phase::Complete));
     }
 }
 

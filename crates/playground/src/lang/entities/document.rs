@@ -1,7 +1,7 @@
 //! Document entity: source files as they enter the bowl, and the parse that
 //! turns their text into a CST.
 
-use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Query};
+use bowl::{Commands, Component, DerivedFrom, Entity, Query, Registrar};
 use tracing::info;
 
 use crate::lang::{
@@ -28,8 +28,8 @@ pub(crate) struct Document;
 impl LanguageEntity for Document {
     const NAME: &'static str = "document";
 
-    async fn register(db: &Bowl) {
-        db.add_system(parse_file).await;
+    fn register(reg: &mut Registrar<'_>) {
+        reg.system(parse_file);
     }
 }
 
@@ -41,7 +41,7 @@ impl LowerStage for Document {
 
 impl HoverStage for Document {
     // Documents carry no hover content; the service supplies the fallback.
-    async fn register_hover(_db: &Bowl) {}
+    fn register_hover(_reg: &mut Registrar<'_>) {}
 }
 
 pub(crate) async fn parse_file(

@@ -4,8 +4,8 @@
 use std::fmt;
 
 use bowl::{
-    Bowl, Commands, Component, DerivedFrom, Entity, Phase, Query, Singleton, SystemExt, View,
-    With,
+    Commands, Component, DerivedFrom, Entity, Phase, Query, Registrar, Singleton, SystemExt,
+    View, With,
 };
 use tracing::info;
 
@@ -87,15 +87,14 @@ pub(crate) struct Definition;
 impl LanguageEntity for Definition {
     const NAME: &'static str = "definition";
 
-    async fn register(db: &Bowl) {
-        db.add_system(index_defs.run_during(Phase::Complete)).await;
+    fn register(reg: &mut Registrar<'_>) {
+        reg.system(index_defs.run_during(Phase::Complete));
         // Complete, not Evaluate: the check ambiently views the def set
         // that lowering produces, so it must sit behind the phase barrier
         // (the engine's same-phase flag catches it otherwise). Its tracked
         // `DefIndex` input commits in the same phase — tracked reads
         // replan, so that ordering is free.
-        db.add_system(check_duplicate_defs.run_during(Phase::Complete))
-            .await;
+        reg.system(check_duplicate_defs.run_during(Phase::Complete));
     }
 }
 
@@ -127,9 +126,8 @@ impl LowerStage for Definition {
 }
 
 impl HoverStage for Definition {
-    async fn register_hover(db: &Bowl) {
-        db.add_system(hover_definitions.run_during(Phase::Complete))
-            .await;
+    fn register_hover(reg: &mut Registrar<'_>) {
+        reg.system(hover_definitions.run_during(Phase::Complete));
     }
 }
 

@@ -1,4 +1,5 @@
 mod lang;
+mod replication;
 #[cfg(test)]
 mod tests;
 
@@ -33,11 +34,16 @@ impl Component for ImportDbStressTouched {}
 async fn main() {
     init_tracing();
 
-    let db = Bowl::of::<lang::schema::LangSchema>();
-
-    lang::register_language(&db).await;
-    db.add_system(touch_file_text_once).await;
-    db.add_system(seed_extra_imports_once).await;
+    let db = Bowl::builder()
+        .plugin(lang::LangPlugin)
+        .plugin(
+            replication::ReplicationPlugin::new()
+                .replicate::<lang::schema::lang_schema::SourceFile>()
+                .replicate::<lang::schema::lang_schema::AstDef>(),
+        )
+        .system(touch_file_text_once)
+        .system(seed_extra_imports_once)
+        .build();
 
     db.insert((
         Singleton::<SystemImportDb>::new(),
@@ -169,6 +175,19 @@ async fn main() {
         .await
     {
         info!(hover = %info.0);
+    }
+
+    info!("replica records maintained by the replication plugin");
+    let replicas = db
+        .scoop::<Query<(Entity, &replication::Replica)>>()
+        .await;
+    for (entity, replica) in replicas.collect() {
+        info!(
+            entity = entity.raw(),
+            source = replica.source.raw(),
+            shape = replica.shape,
+            "replica"
+        );
     }
 
     info!("qualified names derived by the namespace join");
