@@ -264,3 +264,71 @@ fn derived_relationship_attributes_maintain_the_inverse() {
         assert_eq!(squads.collect()[0].1.0, vec![m1.entity()]);
     });
 }
+
+/// `#[derive(Schema)]`: named shapes, the companion trait making each
+/// shape usable as a `Commands` declaration, and commit-time conformance.
+#[derive(Component, Hash)]
+#[component(hash)]
+struct Report(&'static str);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+struct Grade(u8);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+struct Reviewed;
+
+#[derive(bowl::Schema)]
+struct ReviewSchema {
+    report: (Report, Grade, bowl::DerivedFrom, Option<Reviewed>),
+}
+
+async fn write_report(
+    query: Query<(Entity, &Position)>,
+    // The shape doubles as the output declaration via the companion trait.
+    mut commands: bowl::Commands<review_schema::Report>,
+) {
+    let (entity, _pos) = query.item();
+    commands.insert((
+        Report("ok"),
+        Grade(5),
+        bowl::DerivedFrom::new(entity),
+        Reviewed,
+    ));
+}
+
+#[test]
+fn schema_shapes_declare_and_conform() {
+    block_on(async {
+        let db = Bowl::new();
+        db.with_schema::<ReviewSchema>().await;
+        db.add_system(write_report).await;
+
+        db.insert((Position { offset: 0 },)).await;
+        let reports = db.scoop::<Query<(Entity, &Report)>>().await;
+        assert_eq!(reports.collect().len(), 1);
+    });
+}
+
+async fn write_incomplete_report(
+    query: Query<(Entity, &Position)>,
+    mut commands: bowl::Commands<(Report, bowl::DerivedFrom)>,
+) {
+    let (entity, _pos) = query.item();
+    // Missing the required Grade: the shape check must name it.
+    commands.insert((Report("bad"), bowl::DerivedFrom::new(entity)));
+}
+
+#[test]
+#[should_panic(expected = "left required component(s) missing")]
+fn incomplete_shapes_panic_with_the_missing_component() {
+    block_on(async {
+        let db = Bowl::new();
+        db.with_schema::<ReviewSchema>().await;
+        db.add_system(write_incomplete_report).await;
+
+        db.insert((Position { offset: 0 },)).await;
+        db.scoop::<Query<(Entity, &Report)>>().await;
+    });
+}

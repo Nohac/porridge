@@ -87,17 +87,17 @@ struct LangSchema {
 - Registered via `Bowl::with_schema::<LangSchema>()`; a bowl without a
   schema skips conformance entirely.
 - **Shapes are reusable declaration types.** The derive generates a
-  companion trait (`LangSchemaShapes`) with one associated type per named
-  field, so `LangSchema::Diagnostic` names the shape tuple in type
-  position (inherent associated types are unstable; the companion trait is
-  the stable spelling). In `Commands<S>` position a shape degrades to a
-  *group* of its component types — `Option<T>` declares `T` ("may emit") —
-  so the schema is the single source of truth and most hand-written group
-  aliases disappear. Stretch, staged later: `insert_as::<S::Diagnostic>`
-  bounds a bundle both ways (all required parts, nothing outside the
-  shape), moving whole-shape spawns to compile-time conformance and
-  leaving debug-runtime checks only for incremental
-  `entity(e).insert` completion.
+  companion *module* (snake-cased schema name) with one type alias per
+  shape, so `lang_schema::Diagnostic` names the shape tuple in type
+  position. (Associated types were tried first: `Schema::Shape` shorthand
+  does not resolve on concrete types — E0223 — and a module alias whose
+  name matches one of the shape's own components would shadow itself into
+  a cycle, so the raw tuples live at the outer scope under hidden names
+  and the module re-aliases them.) In `Commands<S>` position a shape
+  degrades to a *group* of its component types — `Option<T>` declares `T`
+  ("may emit") — so the schema is the single source of truth and most
+  hand-written group aliases disappear. Stretch, staged later:
+  `insert_as::<lang_schema::Diagnostic>` bounding a bundle both ways.
 
 ## Layer 3: the graph (what declarations buy)
 
@@ -105,12 +105,16 @@ With inputs (existing registry: queries, `view_sets`, join keys) and
 outputs (layer 1) and shapes (layer 2), `add_system` can build the full
 system graph. Staged consumers, in order:
 
-1. **Registration-time same-phase refusal**: a new system's `View`
-   required-sets checked against same-phase declared producers *through
-   the schema's shapes* (a produced shape must be able to match the view
-   row — this is what keeps shared vocabulary components like `Span` from
-   false-positiving, the lesson from the commit-time flag). Wildcard
-   systems stay covered by the existing commit-time flag.
+1. **Registration-time same-phase analysis** (shipped as a *warning*, not
+   a refusal): a new system's `View` required-sets checked against
+   same-phase declared producers *through the schema's shapes* (a produced
+   shape must be able to carry the whole view row — this is what keeps
+   shared vocabulary components like `Span` from false-positiving, the
+   lesson from the commit-time flag). A warning because marker-gated
+   same-phase consumers — whose gate defers them a generation — are
+   legitimate and undetectable statically; the commit-time flag remains
+   the precise enforcement with its dynamic zero-row exemption. Requires a
+   registered schema; register `with_schema` before `add_system`.
 2. **Interest sets for planner gating**: declared outputs + input types
    give exact wake lists; demand-gated subsystems (dsql: five markers
    gating ~20 of 36 systems) skip at zero planning cost.

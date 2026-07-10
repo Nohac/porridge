@@ -102,7 +102,8 @@ pub use bowl::{
     InsertBuilder, InsertedEntity, RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
 };
 pub use commands::{Commands, EntityCommands};
-pub use declare::{BundleDeclaredIn, DeclarationList, DeclaredIn};
+pub use declare::{BundleDeclaredIn, DeclarationList, DeclaredIn, Schema, ShapeDesc};
+pub use macros::Schema;
 pub use component::{
     Component, ComponentHookContext, DerivedFrom, RelationshipEdge, RelationshipRetraction,
     RelationshipTarget, Singleton, hash_component, relationship_retractions_for,

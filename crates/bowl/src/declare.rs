@@ -141,3 +141,33 @@ macro_rules! impl_declaration_list_tuple {
 }
 
 all_tuples!(impl_declaration_list_tuple, 1, 8, T);
+
+/// A bowl-level entity schema: the set of entity *shapes* derived writes
+/// are allowed to produce. Implemented by `#[derive(Schema)]` on a
+/// named-field struct whose field types are shape tuples; register with
+/// [`Bowl::with_schema`](crate::Bowl::with_schema).
+pub trait Schema: 'static {
+    fn shapes() -> Vec<ShapeDesc>;
+}
+
+/// One named entity shape: the components an entity of this kind carries.
+/// `Option<T>` fields in the shape tuple land in `optional`.
+///
+/// Conformance (checked at commit in debug builds when a schema is
+/// registered): each derived write bundle per entity must fit inside one
+/// shape, and after the write that shape's required components must all be
+/// present on the entity — so a spawn must be complete, while incremental
+/// writes may finish a shape another commit started.
+pub struct ShapeDesc {
+    pub name: &'static str,
+    pub required: Vec<(TypeId, &'static str)>,
+    pub optional: Vec<(TypeId, &'static str)>,
+}
+
+impl ShapeDesc {
+    /// Whether `type_id` is part of this shape at all.
+    pub(crate) fn contains(&self, type_id: TypeId) -> bool {
+        self.required.iter().any(|(id, _)| *id == type_id)
+            || self.optional.iter().any(|(id, _)| *id == type_id)
+    }
+}

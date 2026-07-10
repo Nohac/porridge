@@ -2,8 +2,8 @@
 //! membership key, and the join-driven qualified names of member definitions.
 
 use bowl::{
-    Bowl, Commands, Component, DerivedFrom, Entity, Eq, Phase, Query, SystemExt, SystemParam,
-    View, Where, With,
+    Bowl, Commands, Component, DerivedFrom, Entity, Eq, Phase, Query, SystemExt, SystemParam, View,
+    Where, With,
 };
 use tracing::info;
 
@@ -96,8 +96,7 @@ async fn hover_qualified_definitions(
 
     let (request, word) = query.item();
 
-    let Some((definition, def)) = context.defs.iter().find(|(_, def)| def.name() == word.0)
-    else {
+    let Some((definition, def)) = context.defs.iter().find(|(_, def)| def.name() == word.0) else {
         return;
     };
     let Some((_, qualified)) = context
@@ -142,7 +141,8 @@ pub(crate) fn declared_path(ctx: &LowerCtx<'_>, node: NodeRef) -> Option<(String
 }
 
 fn first_rule_child(cst: &CstData, node: NodeRef, rule: Rule) -> Option<NodeRef> {
-    cst.children(node).find(|child| cst.match_rule(*child, rule))
+    cst.children(node)
+        .find(|child| cst.match_rule(*child, rule))
 }
 
 /// Join: one invocation per (namespace, member definition) pair. Members are

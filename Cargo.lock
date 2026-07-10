@@ -54,6 +54,7 @@ dependencies = [
  "async_fn_traits",
  "futures",
  "macros",
+ "tracing",
  "variadics_please",
 ]
 

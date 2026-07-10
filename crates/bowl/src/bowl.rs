@@ -20,6 +20,7 @@ use variadics_please::all_tuples;
 use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     commands::{BaseCommandOp, CommandOp, InsertBaseCommand, RemoveComponentBaseCommand},
+    declare::{Schema, ShapeDesc},
     query::{
         Access, AccessKind, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
         ExternalQueryFilter, ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
@@ -144,6 +145,9 @@ struct State {
     /// phase cannot drive its own settle forward: these queue as owned
     /// derived writes for the start of the next run.
     deferred_settle: Vec<(SystemInvocation, Box<dyn CommandOp>)>,
+    /// The registered entity schema, if any: derived writes are
+    /// shape-checked against it at commit in debug builds.
+    schema: Option<Arc<Vec<ShapeDesc>>>,
     /// Monotonic arrival sequence for deferred inputs.
     input_seq: u64,
     /// Number of callers currently inside `settle()`. Non-zero means an
@@ -821,6 +825,7 @@ impl Bowl {
                     pending_inputs: Vec::new(),
                     deferred_inputs: Vec::new(),
                     deferred_settle: Vec::new(),
+                    schema: None,
                     input_seq: 0,
                     settling: 0,
                     preempt_window: false,
@@ -965,7 +970,11 @@ impl Bowl {
     {
         let mut state = self.inner.state.lock().await;
         let id = SystemId(state.systems.len());
-        state.systems.push(system.into_system(id));
+        let system = system.into_system(id);
+        if cfg!(debug_assertions) {
+            warn_same_phase_conflicts(&state, &system);
+        }
+        state.systems.push(system);
         if state.pending_generation.is_none() {
             let next_generation = state.next_generation;
             state.pending_generation = Some(next_generation);
@@ -1011,6 +1020,17 @@ impl Bowl {
             bowl: self.clone(),
             entity,
         }
+    }
+
+    /// Registers the bowl's entity schema (`#[derive(Schema)]`). In debug
+    /// builds every derived write is then shape-checked at commit: each
+    /// write bundle per entity must fit inside one declared shape, and
+    /// after the write that shape's required components must all be
+    /// present. Register before adding systems so registration-time
+    /// analyses can consult the shapes.
+    pub async fn with_schema<S: Schema>(&self) {
+        let mut state = self.inner.state.lock().await;
+        state.schema = Some(Arc::new(S::shapes()));
     }
 
     /// Explains why `system` (matched by function-name suffix) did or did
@@ -2164,6 +2184,137 @@ fn conflicts_with_running(
     })
 }
 
+/// Registration-time same-phase analysis (debug builds, schema required
+/// for precision): when a newly registered system could produce an entity
+/// that a same-phase system's `View` matches — or vice versa — warn at
+/// `add_system`, before any commit ever races. The check goes through the
+/// schema's shapes, so shared vocabulary components on unrelated shapes do
+/// not trip it. A warning rather than a refusal because marker-gated
+/// same-phase consumers (whose gate defers them a generation) are
+/// legitimate and undetectable statically; the commit-time flag remains
+/// the precise enforcement with its dynamic zero-row exemption.
+fn warn_same_phase_conflicts(state: &State, new: &BoxedSystem) {
+    let Some(schema) = state.schema.as_ref() else {
+        return;
+    };
+    for existing in &state.systems {
+        if existing.phase != new.phase {
+            continue;
+        }
+        warn_producer_viewer_pair(schema, new, existing);
+        warn_producer_viewer_pair(schema, existing, new);
+    }
+}
+
+fn warn_producer_viewer_pair(
+    schema: &[ShapeDesc],
+    producer: &BoxedSystem,
+    viewer: &BoxedSystem,
+) {
+    let Some(declared) = producer.declared_outputs.as_ref() else {
+        return;
+    };
+    for required in viewer.view_sets.iter() {
+        if required.is_empty() {
+            continue;
+        }
+        // The producer must write a component of the view's required set
+        // (the potentially completing write), and some declared shape must
+        // be able to carry the whole required set.
+        let touches = required.iter().any(|type_id| declared.contains(type_id));
+        if !touches {
+            continue;
+        }
+        let matchable = schema.iter().any(|shape| {
+            required.iter().all(|type_id| shape.contains(*type_id))
+                && declared.iter().any(|type_id| shape.contains(*type_id))
+        });
+        if matchable {
+            tracing::warn!(
+                producer = producer.name,
+                viewer = viewer.name,
+                phase = ?producer.phase,
+                "same-phase ambient consumption: `{}` declares outputs that can \
+                 complete an entity `{}` Views in the same phase — move one across \
+                 a phase boundary or make the read tracked (marker-gated consumers \
+                 can ignore this)",
+                producer.name,
+                viewer.name,
+            );
+        }
+    }
+}
+
+/// Debug-build shape conformance for one entity's write bundle: the bundle
+/// must fit inside some declared shape, and after the write that shape's
+/// required components must all be present on the entity. Panics with the
+/// nearest shape and what is missing or extra.
+fn check_shape_conformance(
+    world: &World,
+    schema: &[ShapeDesc],
+    entity: Entity,
+    bundle: &[(TypeId, &'static str)],
+    writer: &'static str,
+) {
+    // Shapes whose component set covers the whole bundle are candidates.
+    let mut best: Option<(&ShapeDesc, usize)> = None;
+    for shape in schema {
+        let covered = bundle
+            .iter()
+            .filter(|(type_id, _)| shape.contains(*type_id))
+            .count();
+        if covered == bundle.len() {
+            // Candidate: check required completeness post-apply.
+            let missing = shape
+                .required
+                .iter()
+                .filter(|(type_id, _)| !world.has_dyn(*type_id, entity))
+                .map(|(_, name)| *name)
+                .collect::<Vec<_>>();
+            if missing.is_empty() {
+                return;
+            }
+            panic!(
+                "system `{writer}` wrote entity {} as shape `{}` but left required \
+                 component(s) missing: {}",
+                entity.raw(),
+                shape.name,
+                missing.join(", ")
+            );
+        }
+        if best.is_none_or(|(_, best_covered)| covered > best_covered) {
+            best = Some((shape, covered));
+        }
+    }
+
+    let written = bundle
+        .iter()
+        .map(|(_, name)| *name)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match best {
+        Some((shape, _)) => {
+            let extra = bundle
+                .iter()
+                .filter(|(type_id, _)| !shape.contains(*type_id))
+                .map(|(_, name)| *name)
+                .collect::<Vec<_>>();
+            panic!(
+                "system `{writer}` wrote [{written}] on entity {}, which matches no \
+                 declared shape; nearest is `{}`, which does not include: {}",
+                entity.raw(),
+                shape.name,
+                extra.join(", ")
+            );
+        }
+        None => panic!(
+            "system `{writer}` wrote [{written}] on entity {} but the registered \
+             schema declares no shapes",
+            entity.raw()
+        ),
+    }
+}
+
 #[derive(Default)]
 struct CommitProgress {
     needs_followup: bool,
@@ -2310,6 +2461,30 @@ async fn commit_system_run(
                             state.systems[writer.0].name
                         );
                     }
+                }
+            }
+
+            // Schema conformance: each entity's write bundle must fit one
+            // declared shape, and after the write that shape's required
+            // components must all be present — spawns arrive complete,
+            // incremental writes may finish a shape another commit
+            // started.
+            if let Some(schema) = state.schema.clone() {
+                let mut per_entity: HashMap<Entity, Vec<(TypeId, &'static str)>> = HashMap::new();
+                for (type_id, entity, type_name) in &written {
+                    per_entity
+                        .entry(*entity)
+                        .or_default()
+                        .push((*type_id, type_name));
+                }
+                for (entity, bundle) in per_entity {
+                    check_shape_conformance(
+                        &state.world,
+                        &schema,
+                        entity,
+                        &bundle,
+                        state.systems[writer.0].name,
+                    );
                 }
             }
 

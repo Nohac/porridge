@@ -526,14 +526,14 @@ Current shortcut:
   pushed further.
 - Prefer query/output availability over explicit ordering where possible.
 - If ordering returns, make it system-level and cycle-checked.
-- Registration-time phase checking (dsql feedback): `add_system` could
-  refuse a `View<T>` in the same phase as `T`'s declared producer,
-  turning the runtime panic into an unrepresentable state. Prefer
-  refuse/warn over auto-scheduling (silently moving a system between
-  phases is spooky). The prerequisite landed: declared outputs
-  (`Commands<S>`, spec/declared-outputs.md) — the precise check also
-  wants schema shapes (layer 2) so shared vocabulary components do not
-  false-positive, mirroring the entity-granular commit-time flag.
+- Done: registration-time phase analysis (dsql feedback) — with a schema
+  registered, `add_system` warns (debug builds) when a new system's
+  declared outputs could complete an entity that a same-phase `View`
+  matches, checked through the schema shapes so shared vocabulary
+  components do not false-positive. Shipped as a warning, not a refusal:
+  marker-gated same-phase consumers are legitimate and undetectable
+  statically; the commit-time entity-granular flag stays the precise
+  enforcement. Register `with_schema` before `add_system`.
 - Done: "never produce and ambiently consume in the same phase" is now
   engine-enforced in debug builds (dsql port, friction 5): a commit whose
   derived write is `View`ed by a same-phase system with matched rows
