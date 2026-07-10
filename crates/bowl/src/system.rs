@@ -8,6 +8,7 @@ use futures::future::{BoxFuture, FutureExt, join_all};
 use crate::{
     Bowl, Commands, DerivedFrom, Entity, Query, View,
     commands::CommandOp,
+    declare::{Anything, DeclarationList},
     query::{
         Access, AccessKind, Dep, GuardStore, QueryFilter, QueryParam, filtered_access,
         filtered_deps, filtered_rows, filtered_rows_from_candidates, store_watermark_dep,
@@ -176,7 +177,7 @@ pub trait SystemParam {
         bowl: &Bowl,
         snapshot: &'a Snapshot,
         state: &Self::State,
-        commands: &Commands,
+        commands: &Commands<Anything>,
         guards: &mut GuardStore,
     ) -> Self::Item<'a>;
     fn always_run() -> bool {
@@ -228,6 +229,12 @@ pub trait SystemParam {
     /// (a written entity races a view only if it carries the whole set)
     /// and by `explain`'s stale-view detection.
     fn view_sets(_out: &mut Vec<Vec<TypeId>>) {}
+    /// Component types this param may emit. `Some(empty)` for non-writers
+    /// (the default), `Some(list)` for a typed `Commands<S>`, `None` for
+    /// the wildcard (bare `Commands`).
+    fn declared_outputs() -> Option<Vec<TypeId>> {
+        Some(Vec::new())
+    }
     /// For outer-join params: the bound key types this state must verify
     /// have *no* matching row. Nonempty only for the absent placeholder
     /// state of an `Option<Query<..>>`.
@@ -303,7 +310,7 @@ where
         bowl: &Bowl,
         snapshot: &'a Snapshot,
         state: &Self::State,
-        _commands: &Commands,
+        _commands: &Commands<Anything>,
         guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         Query::new(Q::fetch(bowl, snapshot, state, guards))
@@ -421,7 +428,7 @@ where
         bowl: &Bowl,
         snapshot: &'a Snapshot,
         state: &Self::State,
-        _commands: &Commands,
+        _commands: &Commands<Anything>,
         guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         state
@@ -515,7 +522,7 @@ where
         bowl: &Bowl,
         snapshot: &'a Snapshot,
         _state: &Self::State,
-        _commands: &Commands,
+        _commands: &Commands<Anything>,
         _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         View::new(bowl.clone(), snapshot)
@@ -533,9 +540,12 @@ where
     }
 }
 
-impl SystemParam for Commands {
+impl<S> SystemParam for Commands<S>
+where
+    S: DeclarationList + Send + Sync + 'static,
+{
     type State = ();
-    type Item<'a> = Commands;
+    type Item<'a> = Commands<S>;
 
     fn states(_snapshot: &Snapshot) -> Vec<Self::State> {
         vec![()]
@@ -553,14 +563,20 @@ impl SystemParam for Commands {
         Vec::new()
     }
 
+    fn declared_outputs() -> Option<Vec<TypeId>> {
+        // `None` is the wildcard (bare `Commands`); a typed declaration
+        // enumerates its component set for the system graph.
+        S::declared_types()
+    }
+
     fn fetch<'a>(
         _bowl: &Bowl,
         _snapshot: &'a Snapshot,
         _state: &Self::State,
-        commands: &Commands,
+        commands: &Commands<Anything>,
         _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
-        commands.clone()
+        commands.retype()
     }
 }
 
@@ -605,7 +621,7 @@ impl SystemParam for WorldMetaView<'_> {
         _bowl: &Bowl,
         snapshot: &'a Snapshot,
         _state: &Self::State,
-        _commands: &Commands,
+        _commands: &Commands<Anything>,
         _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
         WorldMetaView { snapshot }
@@ -843,7 +859,7 @@ macro_rules! impl_system_param_tuple {
                 bowl: &Bowl,
                 snapshot: &'a Snapshot,
                 state: &Self::State,
-                commands: &Commands,
+                commands: &Commands<Anything>,
                 guards: &mut GuardStore,
             ) -> Self::Item<'a> {
                 #[allow(non_snake_case)]
@@ -857,6 +873,19 @@ macro_rules! impl_system_param_tuple {
 
             fn view_sets(out: &mut Vec<Vec<TypeId>>) {
                 $($P::view_sets(out);)*
+            }
+
+            fn declared_outputs() -> Option<Vec<TypeId>> {
+                let mut out = Vec::new();
+                $(
+                    match $P::declared_outputs() {
+                        Some(types) => out.extend(types),
+                        // Any wildcard writer makes the whole system a
+                        // wildcard.
+                        None => return None,
+                    }
+                )*
+                Some(out)
             }
         }
     };
@@ -1004,7 +1033,7 @@ fn finish_invocation(
     owner: SystemInvocation,
     deps: Vec<Dep>,
     planned_revision: u64,
-    commands: Commands,
+    commands: Commands<Anything>,
 ) -> (SystemOutput, (SystemInvocation, MemoEntry)) {
     let output = SystemOutput {
         owner: owner.clone(),
@@ -1101,15 +1130,24 @@ pub struct BoxedSystem {
     /// the components an entity must carry to appear in that view. For the
     /// same-phase production flag and `explain`'s stale-view report.
     pub(crate) view_sets: Arc<Vec<Vec<TypeId>>>,
+    /// Component types the system declared it may emit (`Commands<S>`);
+    /// `None` is the wildcard (bare `Commands` or hook-driven writers).
+    pub(crate) declared_outputs: Option<Arc<Vec<TypeId>>>,
 }
 
 impl BoxedSystem {
-    fn new(runnable: Arc<dyn Runnable>, name: &'static str, view_sets: Vec<Vec<TypeId>>) -> Self {
+    fn new(
+        runnable: Arc<dyn Runnable>,
+        name: &'static str,
+        view_sets: Vec<Vec<TypeId>>,
+        declared_outputs: Option<Vec<TypeId>>,
+    ) -> Self {
         Self {
             runnable,
             phase: Phase::Evaluate,
             name,
             view_sets: Arc::new(view_sets),
+            declared_outputs: declared_outputs.map(Arc::new),
         }
     }
 
@@ -1137,16 +1175,17 @@ pub struct OnStartMarker;
 pub struct OnCompleteMarker;
 pub struct OnSettledMarker;
 
-/// Callback run around system batches.
-pub trait SystemCallback: Send + Sync + 'static {
-    fn run(&self, commands: Commands);
+/// Callback run around system batches. The callback declares its outputs
+/// through its `Commands<S>` parameter type, exactly like a system.
+pub trait SystemCallback<S>: Send + Sync + 'static {
+    fn run(&self, commands: Commands<S>);
 }
 
-impl<F> SystemCallback for F
+impl<F, S> SystemCallback<S> for F
 where
-    F: Fn(Commands) + Send + Sync + 'static,
+    F: Fn(Commands<S>) + Send + Sync + 'static,
 {
-    fn run(&self, commands: Commands) {
+    fn run(&self, commands: Commands<S>) {
         self(commands);
     }
 }
@@ -1154,26 +1193,29 @@ where
 /// Extension methods for system configuration.
 pub trait SystemExt: Sized {
     /// Runs `callback` once before this system starts processing invocations
-    /// that are invalid for the current snapshot.
-    fn on_start<C>(self, callback: C) -> OnStart<Self, C>
+    /// that are invalid for the current snapshot. The callback's
+    /// `Commands<S>` parameter type declares its outputs, like a system's.
+    fn on_start<C, D>(self, callback: C) -> OnStart<Self, C, D>
     where
-        C: SystemCallback,
+        C: SystemCallback<D>,
     {
         OnStart {
             system: self,
             callback,
+            _declares: PhantomData,
         }
     }
 
     /// Runs `callback` once after this system has completed all invocations that
     /// were invalid for the current snapshot.
-    fn on_complete<C>(self, callback: C) -> OnComplete<Self, C>
+    fn on_complete<C, D>(self, callback: C) -> OnComplete<Self, C, D>
     where
-        C: SystemCallback,
+        C: SystemCallback<D>,
     {
         OnComplete {
             system: self,
             callback,
+            _declares: PhantomData,
         }
     }
 
@@ -1184,13 +1226,14 @@ pub trait SystemExt: Sized {
     /// Keep them idempotent: a hook that writes tracked changes every time will
     /// keep the bowl alive until the commit limit is reached, unless the limit
     /// is disabled.
-    fn on_settled<C>(self, callback: C) -> OnSettled<Self, C>
+    fn on_settled<C, D>(self, callback: C) -> OnSettled<Self, C, D>
     where
-        C: SystemCallback,
+        C: SystemCallback<D>,
     {
         OnSettled {
             system: self,
             callback,
+            _declares: PhantomData,
         }
     }
 
@@ -1207,21 +1250,24 @@ pub trait SystemExt: Sized {
 impl<S> SystemExt for S {}
 
 /// System wrapper produced by [`SystemExt::on_start`].
-pub struct OnStart<S, C> {
+pub struct OnStart<S, C, D> {
     system: S,
     callback: C,
+    _declares: PhantomData<fn() -> D>,
 }
 
 /// System wrapper produced by [`SystemExt::on_complete`].
-pub struct OnComplete<S, C> {
+pub struct OnComplete<S, C, D> {
     system: S,
     callback: C,
+    _declares: PhantomData<fn() -> D>,
 }
 
 /// System wrapper produced by [`SystemExt::on_settled`].
-pub struct OnSettled<S, C> {
+pub struct OnSettled<S, C, D> {
     system: S,
     callback: C,
+    _declares: PhantomData<fn() -> D>,
 }
 
 /// System wrapper produced by [`SystemExt::run_during`].
@@ -1230,27 +1276,31 @@ pub struct RunDuring<S> {
     phase: Phase,
 }
 
-struct OnCompleteSystem<C> {
+struct OnCompleteSystem<C, D> {
+    _declares: ::std::marker::PhantomData<fn() -> D>,
     id: SystemId,
     system: BoxedSystem,
     callback: C,
 }
 
-struct OnStartSystem<C> {
+struct OnStartSystem<C, D> {
+    _declares: ::std::marker::PhantomData<fn() -> D>,
     id: SystemId,
     system: BoxedSystem,
     callback: C,
 }
 
-struct OnSettledSystem<C> {
+struct OnSettledSystem<C, D> {
+    _declares: ::std::marker::PhantomData<fn() -> D>,
     id: SystemId,
     system: BoxedSystem,
     callback: C,
 }
 
-impl<C> Runnable for OnStartSystem<C>
+impl<C, D> Runnable for OnStartSystem<C, D>
 where
-    C: SystemCallback,
+    C: SystemCallback<D>,
+    D: Send + Sync + 'static,
 {
     fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
         self.system.has_work(snapshot, memo)
@@ -1279,7 +1329,7 @@ where
                 };
                 let commands =
                     Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
-                self.callback.run(commands.clone());
+                self.callback.run(commands.retype());
                 SystemOutput {
                     owner,
                     commands: commands.take(),
@@ -1321,9 +1371,10 @@ where
     }
 }
 
-impl<C> Runnable for OnCompleteSystem<C>
+impl<C, D> Runnable for OnCompleteSystem<C, D>
 where
-    C: SystemCallback,
+    C: SystemCallback<D>,
+    D: Send + Sync + 'static,
 {
     fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
         self.system.has_work(snapshot, memo)
@@ -1353,7 +1404,7 @@ where
             if !run.outputs.is_empty() {
                 let commands =
                     Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
-                self.callback.run(commands.clone());
+                self.callback.run(commands.retype());
                 run.outputs.push(SystemOutput {
                     owner,
                     commands: commands.take(),
@@ -1390,9 +1441,10 @@ where
     }
 }
 
-impl<C> Runnable for OnSettledSystem<C>
+impl<C, D> Runnable for OnSettledSystem<C, D>
 where
-    C: SystemCallback,
+    C: SystemCallback<D>,
+    D: Send + Sync + 'static,
 {
     fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
         self.system.has_work(snapshot, memo)
@@ -1450,7 +1502,7 @@ where
 
             let commands =
                 Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
-            self.callback.run(commands.clone());
+            self.callback.run(commands.retype());
 
             SystemRun {
                 completed: true,
@@ -1466,18 +1518,26 @@ where
     }
 }
 
-impl<S, C, M> IntoSystem<(OnCompleteMarker, M)> for OnComplete<S, C>
+impl<S, C, D, M> IntoSystem<(OnCompleteMarker, M)> for OnComplete<S, C, D>
 where
     S: IntoSystem<M>,
-    C: SystemCallback,
+    C: SystemCallback<D>,
+    D: DeclarationList + Send + Sync + 'static,
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        // The hook declares its outputs too; merge them into the
+        // system's entry.
+        let declared_outputs = merge_declarations(
+            system.declared_outputs.clone(),
+            D::declared_types(),
+        );
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
+                _declares: PhantomData,
                 id,
                 system,
                 callback: self.callback,
@@ -1485,22 +1545,31 @@ where
             phase,
             name,
             view_sets,
+            declared_outputs,
         }
     }
 }
 
-impl<S, C, M> IntoSystem<(OnStartMarker, M)> for OnStart<S, C>
+impl<S, C, D, M> IntoSystem<(OnStartMarker, M)> for OnStart<S, C, D>
 where
     S: IntoSystem<M>,
-    C: SystemCallback,
+    C: SystemCallback<D>,
+    D: DeclarationList + Send + Sync + 'static,
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        // The hook declares its outputs too; merge them into the
+        // system's entry.
+        let declared_outputs = merge_declarations(
+            system.declared_outputs.clone(),
+            D::declared_types(),
+        );
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
+                _declares: PhantomData,
                 id,
                 system,
                 callback: self.callback,
@@ -1508,22 +1577,31 @@ where
             phase,
             name,
             view_sets,
+            declared_outputs,
         }
     }
 }
 
-impl<S, C, M> IntoSystem<(OnSettledMarker, M)> for OnSettled<S, C>
+impl<S, C, D, M> IntoSystem<(OnSettledMarker, M)> for OnSettled<S, C, D>
 where
     S: IntoSystem<M>,
-    C: SystemCallback,
+    C: SystemCallback<D>,
+    D: DeclarationList + Send + Sync + 'static,
 {
     fn into_system(self, id: SystemId) -> BoxedSystem {
         let system = self.system.into_system(id);
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        // The hook declares its outputs too; merge them into the
+        // system's entry.
+        let declared_outputs = merge_declarations(
+            system.declared_outputs.clone(),
+            D::declared_types(),
+        );
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
+                _declares: PhantomData,
                 id,
                 system,
                 callback: self.callback,
@@ -1531,6 +1609,7 @@ where
             phase,
             name,
             view_sets,
+            declared_outputs,
         }
     }
 }
@@ -1545,6 +1624,20 @@ where
 }
 
 pub struct RunDuringMarker;
+
+/// Merges a hook callback's declaration into the wrapped system's entry.
+/// A wildcard on either side makes the whole system a wildcard.
+fn merge_declarations(
+    inner: Option<Arc<Vec<TypeId>>>,
+    hook: Option<Vec<TypeId>>,
+) -> Option<Arc<Vec<TypeId>>> {
+    match (inner, hook) {
+        (Some(inner), Some(hook)) => {
+            Some(Arc::new(inner.iter().copied().chain(hook).collect()))
+        }
+        _ => None,
+    }
+}
 
 impl BoxedSystem {
     pub(crate) fn run<'a>(
@@ -1576,11 +1669,11 @@ impl BoxedSystem {
 }
 
 /// Builds a completion callback that inserts `component` on `entity`.
-pub fn insert_on<T>(entity: Entity, component: T) -> impl SystemCallback
+pub fn insert_on<T>(entity: Entity, component: T) -> impl SystemCallback<(T,)>
 where
     T: crate::Component + Clone,
 {
-    move |mut commands: Commands| {
+    move |mut commands: Commands<(T,)>| {
         commands.entity(entity).insert(component.clone());
     }
 }
@@ -1597,7 +1690,8 @@ where
 pub async fn cleanup_stale_derived(
     query: Query<(Entity, &DerivedFrom)>,
     meta: WorldMetaView<'_>,
-    mut commands: Commands,
+    // Removal-only: the empty declaration says so.
+    mut commands: Commands<()>,
 ) {
     let (entity, derived_from) = query.item();
 
@@ -1794,6 +1888,7 @@ where
             }),
             std::any::type_name::<F>(),
             view_sets,
+            F::Param::declared_outputs(),
         )
     }
 }

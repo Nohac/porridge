@@ -91,6 +91,7 @@
 mod bowl;
 mod commands;
 mod component;
+mod declare;
 mod entity;
 mod query;
 mod system;
@@ -100,7 +101,9 @@ pub use bowl::{
     BoundEntity, Bowl, BowlEntity, Bundle, CommitLimit, ExplainReport, ExternalScoop,
     InsertBuilder, InsertedEntity, RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
 };
-pub use commands::Commands;
+pub use commands::{Commands, EntityCommands};
+pub use declare::{BundleDeclaredIn, DeclarationList, DeclaredIn, Schema, ShapeDesc};
+pub use macros::Schema;
 pub use component::{
     Component, ComponentHookContext, DerivedFrom, RelationshipEdge, RelationshipRetraction,
     RelationshipTarget, Singleton, hash_component, relationship_retractions_for,
@@ -123,6 +126,7 @@ pub use macros::SystemParam;
 /// Support surface for the `#[derive(SystemParam)]` macro. Not public API.
 #[doc(hidden)]
 pub mod __derive {
+    pub use crate::declare::Anything;
     pub use crate::query::{Access, Dep, GuardStore};
     pub use crate::system::SystemParam;
     pub use crate::world::Snapshot;

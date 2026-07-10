@@ -76,9 +76,7 @@ async fn main() {
 
     db.insert((
         FilePath("core.porridge".to_string()),
-        FileText(
-            "namespace app.core {\nfn boot() { return 1; }\ntype Config\n}".to_string(),
-        ),
+        FileText("namespace app.core {\nfn boot() { return 1; }\ntype Config\n}".to_string()),
     ))
     .await;
 
@@ -103,11 +101,8 @@ async fn main() {
     // above planned a single check system. Demanding them here makes the
     // next settle compute them.
     info!("demand diagnostics");
-    db.insert((
-        Singleton::<DiagnosticsDemand>::new(),
-        DiagnosticsDemand,
-    ))
-    .await;
+    db.insert((Singleton::<DiagnosticsDemand>::new(), DiagnosticsDemand))
+        .await;
 
     info!("query diagnostics");
     let diagnostics = db.scoop::<Query<(Entity, &Diagnostic)>>().await;
@@ -231,7 +226,7 @@ fn init_tracing() {
 
 async fn touch_file_text_once(
     query: Query<(Entity, MutRef<'_, FileText>), Without<StressTouched>>,
-    mut commands: Commands,
+    mut commands: Commands<(StressTouched,)>,
 ) {
     short_sleep().await;
 
@@ -246,7 +241,7 @@ async fn touch_file_text_once(
 
 async fn seed_extra_imports_once(
     query: Query<(Entity, MutRef<'_, SystemImportDb>), Without<ImportDbStressTouched>>,
-    mut commands: Commands,
+    mut commands: Commands<(ImportDbStressTouched,)>,
 ) {
     short_sleep().await;
 

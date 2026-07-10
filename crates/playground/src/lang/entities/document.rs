@@ -5,7 +5,7 @@ use bowl::{Bowl, Commands, Component, DerivedFrom, Entity, Query};
 use tracing::info;
 
 use crate::lang::{
-    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    entity::{AstFacts, HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::Diagnostic,
     grammar::parser::{CstData, NodeRef, Parser},
 };
@@ -36,7 +36,7 @@ impl LanguageEntity for Document {
 impl LowerStage for Document {
     // The document owns the file root, but everything under it is lowered by
     // the entities owning the item rules — nothing to emit here.
-    fn lower(_ctx: &LowerCtx<'_>, _node: NodeRef, _commands: &mut Commands) {}
+    fn lower(_ctx: &LowerCtx<'_>, _node: NodeRef, _commands: &mut Commands<AstFacts>) {}
 }
 
 impl HoverStage for Document {
@@ -44,7 +44,7 @@ impl HoverStage for Document {
     async fn register_hover(_db: &Bowl) {}
 }
 
-pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands) {
+pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands<(ParsedFile, DerivedFrom, Diagnostic)>) {
     let (file, text) = query.item();
 
     crate::short_sleep().await;

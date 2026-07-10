@@ -43,18 +43,18 @@ pub struct Parity(pub u64);
 #[component(hash)]
 pub struct Def(pub String);
 
-pub async fn parse(query: Query<(Entity, &Text)>, mut commands: Commands) {
+pub async fn parse(query: Query<(Entity, &Text)>, mut commands: Commands<(Parsed,)>) {
     let (entity, text) = query.item();
     commands.entity(entity).insert(Parsed(text.0.len() as u64));
 }
 
-pub async fn extract_first_line(query: Query<(Entity, &Text)>, mut commands: Commands) {
+pub async fn extract_first_line(query: Query<(Entity, &Text)>, mut commands: Commands<(FirstLine,)>) {
     let (entity, text) = query.item();
     let line = text.0.lines().next().unwrap_or("").to_string();
     commands.entity(entity).insert(FirstLine(line));
 }
 
-pub async fn diag_long_files(query: Query<(Entity, &Parsed)>, mut commands: Commands) {
+pub async fn diag_long_files(query: Query<(Entity, &Parsed)>, mut commands: Commands<(DerivedFrom, Diag)>) {
     let (entity, parsed) = query.item();
     if parsed.0 > 60 {
         commands.insert((
@@ -64,7 +64,7 @@ pub async fn diag_long_files(query: Query<(Entity, &Parsed)>, mut commands: Comm
     }
 }
 
-pub async fn derive_parity(query: Query<(Entity, &Src)>, mut commands: Commands) {
+pub async fn derive_parity(query: Query<(Entity, &Src)>, mut commands: Commands<(Parity,)>) {
     let (entity, src) = query.item();
     commands.entity(entity).insert(Parity(src.0 % 2));
 }
@@ -72,7 +72,7 @@ pub async fn derive_parity(query: Query<(Entity, &Src)>, mut commands: Commands)
 pub async fn check_duplicate_defs(
     query: Query<(Entity, &Def)>,
     defs: View<'_, (Entity, &Def)>,
-    mut commands: Commands,
+    mut commands: Commands<(DerivedFrom, Diag)>,
 ) {
     let (entity, def) = query.item();
 
@@ -155,7 +155,7 @@ pub async fn bump_all_sources(bowl: &Bowl) {
 #[component(hash)]
 pub struct ParityNote(pub u64);
 
-pub async fn spawn_parity_note(query: Query<(Entity, &Src)>, mut commands: Commands) {
+pub async fn spawn_parity_note(query: Query<(Entity, &Src)>, mut commands: Commands<(DerivedFrom, ParityNote)>) {
     let (entity, src) = query.item();
     commands.insert((DerivedFrom::new(entity), ParityNote(src.0 % 2)));
 }
@@ -225,7 +225,7 @@ pub struct PairMark(pub u64);
 pub async fn pair_items(
     groups: Query<(Entity, &GroupTag, &GroupMembers)>,
     member: Query<(Entity, &Item), Where<In<GroupMembers>>>,
-    mut commands: Commands,
+    mut commands: Commands<(PairMark,)>,
 ) {
     let (_group, tag, _members) = groups.item();
     let (item_entity, item) = member.item();

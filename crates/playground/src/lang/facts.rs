@@ -1,7 +1,11 @@
 //! Cross-cutting facts shared by every language entity: diagnostics, spans,
 //! file anchoring, and the demand marker.
 
-use bowl::{Commands, Component, DerivedFrom, Entity};
+use bowl::{BundleDeclaredIn, Commands, Component, DerivedFrom, Entity};
+
+/// The diagnostic entity's component group: what every check/lint system
+/// declares in its `Commands<..>` output set (spec/declared-outputs.md).
+pub(crate) type DiagnosticParts = (Diagnostic, Severity, DerivedFrom);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Span {
@@ -36,11 +40,16 @@ pub(crate) struct BelongsToFile(pub(crate) Entity);
 #[component(hash)]
 pub(crate) struct DiagnosticsDemand;
 
-pub(crate) fn emit_diagnostic(
-    commands: &mut Commands,
+/// Generic over the caller's output declaration: any `Commands<S>` whose
+/// declaration covers the diagnostic bundle works — the infectious bound
+/// is the contract (helpers that emit must say what they emit).
+pub(crate) fn emit_diagnostic<S, M>(
+    commands: &mut Commands<S>,
     derived_from: DerivedFrom,
     severity: Severity,
     message: impl Into<String>,
-) {
+) where
+    (DerivedFrom, Severity, Diagnostic): BundleDeclaredIn<S, M>,
+{
     commands.insert((derived_from, severity, Diagnostic(message.into())));
 }

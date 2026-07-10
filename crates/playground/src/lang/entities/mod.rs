@@ -15,7 +15,7 @@ use bowl::{Commands, Entity, Query};
 use tracing::info;
 
 use crate::lang::{
-    entity::{LowerCtx, LowerStage},
+    entity::{AstFacts, LowerCtx, LowerStage},
     facts::Span,
     grammar::{
         lexer::Token,
@@ -27,7 +27,7 @@ use document::{Document, FileText, ParsedFile};
 use import::Import;
 use namespace::Namespace;
 
-fn lower_rule(ctx: &LowerCtx<'_>, rule: Rule, node: NodeRef, commands: &mut Commands) {
+fn lower_rule(ctx: &LowerCtx<'_>, rule: Rule, node: NodeRef, commands: &mut Commands<AstFacts>) {
     match rule {
         Rule::File => Document::lower(ctx, node, commands),
         Rule::ImportDecl => Import::lower(ctx, node, commands),
@@ -55,7 +55,7 @@ fn lower_rule(ctx: &LowerCtx<'_>, rule: Rule, node: NodeRef, commands: &mut Comm
 
 pub(crate) async fn generate_ast(
     query: Query<(Entity, &ParsedFile, &FileText)>,
-    mut commands: Commands,
+    mut commands: Commands<AstFacts>,
 ) {
     let (file, parsed, text) = query.item();
 
@@ -72,7 +72,7 @@ pub(crate) async fn generate_ast(
     walk(&ctx, NodeRef::ROOT, &mut commands);
 }
 
-fn walk(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands) {
+fn walk(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands<AstFacts>) {
     if let Node::Rule(rule, _) = ctx.cst.get(node) {
         lower_rule(ctx, rule, node, commands);
 

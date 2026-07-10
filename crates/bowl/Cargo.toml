@@ -7,4 +7,5 @@ edition = "2024"
 async_fn_traits = "0.1.1"
 futures = "0.3.31"
 macros = { path = "../macros" }
+tracing = "0.1"
 variadics_please = "2.0.0"

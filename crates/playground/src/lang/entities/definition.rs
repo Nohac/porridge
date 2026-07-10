@@ -11,10 +11,10 @@ use tracing::info;
 
 use crate::lang::{
     entities::{document::FileText, first_token_text, namespace::NamespacePath, node_span},
-    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
-    facts::{BelongsToFile, DiagnosticsDemand, Severity, Span, emit_diagnostic},
+    entity::{AstFacts, HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    facts::{BelongsToFile, DiagnosticParts, DiagnosticsDemand, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef, parser::Rule},
-    service::{HoverCandidate, HoverRequest, HoverWord, RequestKey, priority},
+    service::{CandidateParts, HoverCandidate, HoverRequest, HoverWord, RequestKey, priority},
 };
 
 #[derive(Debug, Component, Hash)]
@@ -100,7 +100,7 @@ impl LanguageEntity for Definition {
 }
 
 impl LowerStage for Definition {
-    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands) {
+    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands<AstFacts>) {
         let Some(name) = first_token_text(ctx.cst, ctx.source, node, Token::Name) else {
             return;
         };
@@ -137,7 +137,7 @@ impl HoverStage for Definition {
 async fn hover_definitions(
     query: Query<(Entity, &HoverWord), With<HoverRequest>>,
     defs: View<'_, (Entity, &AstDef)>,
-    mut commands: Commands,
+    mut commands: Commands<CandidateParts>,
 ) {
     crate::short_sleep().await;
 
@@ -174,7 +174,7 @@ async fn index_defs(
     query: Query<(Entity, &FileText)>,
     defs: View<'_, (Entity, &AstDef)>,
     paths: View<'_, (Entity, &NamespacePath)>,
-    mut commands: Commands,
+    mut commands: Commands<(Singleton<DefIndex>, DefIndex)>,
 ) {
     let _ = query.item();
     crate::short_sleep().await;
@@ -206,7 +206,7 @@ pub(crate) async fn check_duplicate_defs(
     _index: Query<(Entity, &DefIndex)>,
     defs: View<'_, (Entity, &AstDef)>,
     paths: View<'_, (Entity, &NamespacePath)>,
-    mut commands: Commands,
+    mut commands: Commands<(DiagnosticParts,)>,
 ) {
     let (entity, def) = query.item();
 

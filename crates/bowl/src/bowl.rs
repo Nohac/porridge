@@ -20,6 +20,7 @@ use variadics_please::all_tuples;
 use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     commands::{BaseCommandOp, CommandOp, InsertBaseCommand, RemoveComponentBaseCommand},
+    declare::{Schema, ShapeDesc},
     query::{
         Access, AccessKind, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
         ExternalQueryFilter, ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
@@ -144,6 +145,9 @@ struct State {
     /// phase cannot drive its own settle forward: these queue as owned
     /// derived writes for the start of the next run.
     deferred_settle: Vec<(SystemInvocation, Box<dyn CommandOp>)>,
+    /// The registered entity schema, if any: derived writes are
+    /// shape-checked against it at commit in debug builds.
+    schema: Option<Arc<Vec<ShapeDesc>>>,
     /// Monotonic arrival sequence for deferred inputs.
     input_seq: u64,
     /// Number of callers currently inside `settle()`. Non-zero means an
@@ -821,6 +825,7 @@ impl Bowl {
                     pending_inputs: Vec::new(),
                     deferred_inputs: Vec::new(),
                     deferred_settle: Vec::new(),
+                    schema: None,
                     input_seq: 0,
                     settling: 0,
                     preempt_window: false,
@@ -965,7 +970,11 @@ impl Bowl {
     {
         let mut state = self.inner.state.lock().await;
         let id = SystemId(state.systems.len());
-        state.systems.push(system.into_system(id));
+        let system = system.into_system(id);
+        if cfg!(debug_assertions) {
+            warn_same_phase_conflicts(&state, &system);
+        }
+        state.systems.push(system);
         if state.pending_generation.is_none() {
             let next_generation = state.next_generation;
             state.pending_generation = Some(next_generation);
@@ -1011,6 +1020,17 @@ impl Bowl {
             bowl: self.clone(),
             entity,
         }
+    }
+
+    /// Registers the bowl's entity schema (`#[derive(Schema)]`). In debug
+    /// builds every derived write is then shape-checked at commit: each
+    /// write bundle per entity must fit inside one declared shape, and
+    /// after the write that shape's required components must all be
+    /// present. Register before adding systems so registration-time
+    /// analyses can consult the shapes.
+    pub async fn with_schema<S: Schema>(&self) {
+        let mut state = self.inner.state.lock().await;
+        state.schema = Some(Arc::new(S::shapes()));
     }
 
     /// Explains why `system` (matched by function-name suffix) did or did
@@ -1852,6 +1872,11 @@ impl Bowl {
             input.apply(&mut state.world);
         }
         state.world.flush_derived_from();
+        // Deferred settle inserts are recorded as derived writes; drain
+        // them here so the next commit's debug checks (same-phase flag,
+        // declared-output honesty) do not misattribute them to that
+        // commit's writer.
+        let _ = state.world.take_written_derived();
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
@@ -2159,6 +2184,137 @@ fn conflicts_with_running(
     })
 }
 
+/// Registration-time same-phase analysis (debug builds, schema required
+/// for precision): when a newly registered system could produce an entity
+/// that a same-phase system's `View` matches — or vice versa — warn at
+/// `add_system`, before any commit ever races. The check goes through the
+/// schema's shapes, so shared vocabulary components on unrelated shapes do
+/// not trip it. A warning rather than a refusal because marker-gated
+/// same-phase consumers (whose gate defers them a generation) are
+/// legitimate and undetectable statically; the commit-time flag remains
+/// the precise enforcement with its dynamic zero-row exemption.
+fn warn_same_phase_conflicts(state: &State, new: &BoxedSystem) {
+    let Some(schema) = state.schema.as_ref() else {
+        return;
+    };
+    for existing in &state.systems {
+        if existing.phase != new.phase {
+            continue;
+        }
+        warn_producer_viewer_pair(schema, new, existing);
+        warn_producer_viewer_pair(schema, existing, new);
+    }
+}
+
+fn warn_producer_viewer_pair(
+    schema: &[ShapeDesc],
+    producer: &BoxedSystem,
+    viewer: &BoxedSystem,
+) {
+    let Some(declared) = producer.declared_outputs.as_ref() else {
+        return;
+    };
+    for required in viewer.view_sets.iter() {
+        if required.is_empty() {
+            continue;
+        }
+        // The producer must write a component of the view's required set
+        // (the potentially completing write), and some declared shape must
+        // be able to carry the whole required set.
+        let touches = required.iter().any(|type_id| declared.contains(type_id));
+        if !touches {
+            continue;
+        }
+        let matchable = schema.iter().any(|shape| {
+            required.iter().all(|type_id| shape.contains(*type_id))
+                && declared.iter().any(|type_id| shape.contains(*type_id))
+        });
+        if matchable {
+            tracing::warn!(
+                producer = producer.name,
+                viewer = viewer.name,
+                phase = ?producer.phase,
+                "same-phase ambient consumption: `{}` declares outputs that can \
+                 complete an entity `{}` Views in the same phase — move one across \
+                 a phase boundary or make the read tracked (marker-gated consumers \
+                 can ignore this)",
+                producer.name,
+                viewer.name,
+            );
+        }
+    }
+}
+
+/// Debug-build shape conformance for one entity's write bundle: the bundle
+/// must fit inside some declared shape, and after the write that shape's
+/// required components must all be present on the entity. Panics with the
+/// nearest shape and what is missing or extra.
+fn check_shape_conformance(
+    world: &World,
+    schema: &[ShapeDesc],
+    entity: Entity,
+    bundle: &[(TypeId, &'static str)],
+    writer: &'static str,
+) {
+    // Shapes whose component set covers the whole bundle are candidates.
+    let mut best: Option<(&ShapeDesc, usize)> = None;
+    for shape in schema {
+        let covered = bundle
+            .iter()
+            .filter(|(type_id, _)| shape.contains(*type_id))
+            .count();
+        if covered == bundle.len() {
+            // Candidate: check required completeness post-apply.
+            let missing = shape
+                .required
+                .iter()
+                .filter(|(type_id, _)| !world.has_dyn(*type_id, entity))
+                .map(|(_, name)| *name)
+                .collect::<Vec<_>>();
+            if missing.is_empty() {
+                return;
+            }
+            panic!(
+                "system `{writer}` wrote entity {} as shape `{}` but left required \
+                 component(s) missing: {}",
+                entity.raw(),
+                shape.name,
+                missing.join(", ")
+            );
+        }
+        if best.is_none_or(|(_, best_covered)| covered > best_covered) {
+            best = Some((shape, covered));
+        }
+    }
+
+    let written = bundle
+        .iter()
+        .map(|(_, name)| *name)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match best {
+        Some((shape, _)) => {
+            let extra = bundle
+                .iter()
+                .filter(|(type_id, _)| !shape.contains(*type_id))
+                .map(|(_, name)| *name)
+                .collect::<Vec<_>>();
+            panic!(
+                "system `{writer}` wrote [{written}] on entity {}, which matches no \
+                 declared shape; nearest is `{}`, which does not include: {}",
+                entity.raw(),
+                shape.name,
+                extra.join(", ")
+            );
+        }
+        None => panic!(
+            "system `{writer}` wrote [{written}] on entity {} but the registered \
+             schema declares no shapes",
+            entity.raw()
+        ),
+    }
+}
+
 #[derive(Default)]
 struct CommitProgress {
     needs_followup: bool,
@@ -2286,6 +2442,52 @@ async fn commit_system_run(
         // generation cannot have raced anything).
         if cfg!(debug_assertions) {
             let written = state.world.take_written_derived();
+
+            // Honesty backstop for declared outputs: typed `Commands<S>`
+            // makes undeclared emission a compile error, so this guards
+            // only future dynamic emission paths and declaration-registry
+            // drift. Wildcard systems (`declared_outputs == None`) skip.
+            if let Some(declared) = state
+                .systems
+                .get(writer.0)
+                .and_then(|system| system.declared_outputs.clone())
+            {
+                for (type_id, _entity, type_name) in &written {
+                    if !declared.contains(type_id) {
+                        panic!(
+                            "system `{}` emitted undeclared component `{type_name}`: \
+                             add it (or a group containing it) to the system's \
+                             `Commands<..>` declaration",
+                            state.systems[writer.0].name
+                        );
+                    }
+                }
+            }
+
+            // Schema conformance: each entity's write bundle must fit one
+            // declared shape, and after the write that shape's required
+            // components must all be present — spawns arrive complete,
+            // incremental writes may finish a shape another commit
+            // started.
+            if let Some(schema) = state.schema.clone() {
+                let mut per_entity: HashMap<Entity, Vec<(TypeId, &'static str)>> = HashMap::new();
+                for (type_id, entity, type_name) in &written {
+                    per_entity
+                        .entry(*entity)
+                        .or_default()
+                        .push((*type_id, type_name));
+                }
+                for (entity, bundle) in per_entity {
+                    check_shape_conformance(
+                        &state.world,
+                        &schema,
+                        entity,
+                        &bundle,
+                        state.systems[writer.0].name,
+                    );
+                }
+            }
+
             if let Some(phase) = phase {
                 for (type_id, entity, type_name) in written {
                     for (index, system) in state.systems.iter().enumerate() {
@@ -2487,6 +2689,8 @@ mod tests {
 
     use futures::executor::block_on;
 
+    use crate::declare::Anything;
+
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
         Entity, Eq, Gte, In, Mut, MutRef, Named, Phase, Query, RelationshipEdge,
@@ -2600,13 +2804,13 @@ mod tests {
         }
     }
 
-    async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_b_with_hook_log(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b_with_hook_log(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         SYSTEM_HOOK_LOG
             .lock()
@@ -2615,18 +2819,18 @@ mod tests {
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_b_uncounted(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b_uncounted(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_c(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_c(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         CLEAN_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(C(a.0 + 1));
     }
 
-    async fn make_c_from_b(query: Query<(Entity, &B)>, mut commands: Commands) {
+    async fn make_c_from_b(query: Query<(Entity, &B)>, mut commands: Commands<Anything>) {
         let (entity, b) = query.item();
         commands.entity(entity).insert(C(b.0 + 1));
     }
@@ -2634,7 +2838,7 @@ mod tests {
     async fn count_bs(
         query: Query<(Entity, &A)>,
         bs: View<'_, (Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(bs.len()));
@@ -2643,23 +2847,23 @@ mod tests {
     async fn count_cs(
         query: Query<(Entity, &A)>,
         cs: View<'_, (Entity, &C)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(cs.len()));
     }
 
-    async fn spawn_b(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn spawn_b(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, a) = query.item();
         commands.insert((B(a.0 + 1),));
     }
 
-    async fn spawn_a_from_a(query: Query<Entity, With<A>>, mut commands: Commands) {
+    async fn spawn_a_from_a(query: Query<Entity, With<A>>, mut commands: Commands<Anything>) {
         let _entity = query.item();
         commands.insert((A(0),));
     }
 
-    async fn count_tagged_a(query: Query<(Entity, &A), With<Request>>, mut commands: Commands) {
+    async fn count_tagged_a(query: Query<(Entity, &A), With<Request>>, mut commands: Commands<Anything>) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(1));
     }
@@ -2667,7 +2871,7 @@ mod tests {
     async fn sum_a_b(
         a_query: Query<(Entity, &A)>,
         b_query: Query<(Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (a_entity, a) = a_query.item();
         let (b_entity, b) = b_query.item();
@@ -2679,24 +2883,24 @@ mod tests {
         a_query: Query<(Entity, &A)>,
         c_query: Query<(Entity, &C)>,
         bs: View<'_, (Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = a_query.item();
         let (_ready, _c) = c_query.item();
         commands.entity(entity).insert(Count(bs.len()));
     }
 
-    async fn write_singleton_count(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn write_singleton_count(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, a) = query.item();
         commands.insert((Singleton::<Count>::new(), Count(a.0 as usize)));
     }
 
-    async fn copy_rank_to_count(query: Query<(Entity, &Rank)>, mut commands: Commands) {
+    async fn copy_rank_to_count(query: Query<(Entity, &Rank)>, mut commands: Commands<Anything>) {
         let (entity, rank) = query.item();
         commands.entity(entity).insert(Count(rank.0 as usize));
     }
 
-    async fn copy_rank_to_count_counted(query: Query<(Entity, &Rank)>, mut commands: Commands) {
+    async fn copy_rank_to_count_counted(query: Query<(Entity, &Rank)>, mut commands: Commands<Anything>) {
         let (entity, rank) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(Count(rank.0 as usize));
@@ -2704,7 +2908,7 @@ mod tests {
 
     async fn copy_fingerprinted_rank_to_count(
         query: Query<(Entity, &FingerprintedRank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, rank) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
@@ -2736,7 +2940,7 @@ mod tests {
         ACTIVE_WRITERS.fetch_sub(1, Ordering::SeqCst);
     }
 
-    async fn startup_phase(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn startup_phase(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, _a) = query.item();
         PHASE_LOG
             .lock()
@@ -2765,12 +2969,12 @@ mod tests {
         }
     }
 
-    async fn remove_hooked_entity(query: Query<(Entity, &Hooked)>, mut commands: Commands) {
+    async fn remove_hooked_entity(query: Query<(Entity, &Hooked)>, mut commands: Commands<Anything>) {
         let (entity, _hooked) = query.item();
         commands.remove(entity);
     }
 
-    async fn mark_b_processed(query: Query<(Entity, &B)>, mut commands: Commands) {
+    async fn mark_b_processed(query: Query<(Entity, &B)>, mut commands: Commands<Anything>) {
         let (entity, _b) = query.item();
         commands.entity(entity).insert(D(1));
     }
@@ -2778,7 +2982,7 @@ mod tests {
     async fn count_after_note(
         _: Query<Entity, With<Note>>,
         query: Query<(Entity, &A)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(1));
@@ -2788,7 +2992,7 @@ mod tests {
         _: Query<Entity, With<Note>>,
         query: Query<(Entity, &D)>,
         processed: View<'_, (Entity, &D)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _d) = query.item();
         commands.entity(entity).insert(Count(processed.len()));
@@ -2798,7 +3002,7 @@ mod tests {
         _: Query<Entity, With<UntrackedMarker>>,
         query: Query<(Entity, &Request)>,
         processed: View<'_, (Entity, &D)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _request) = query.item();
         commands
@@ -2808,7 +3012,7 @@ mod tests {
 
     async fn cleanup_untracked_marker(
         query: Query<Entity, With<UntrackedMarker>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         commands.remove(query.item());
     }
@@ -2816,7 +3020,7 @@ mod tests {
     async fn mixed_param_system(
         a_query: Query<(Entity, &A)>,
         bs: View<'_, (Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
         c_query: Query<(Entity, &C)>,
         d_query: Query<(Entity, &D)>,
         counts: View<'_, (Entity, &Count)>,
@@ -2831,14 +3035,14 @@ mod tests {
             + counts.len() as u32));
     }
 
-    async fn answer_request(query: Query<(Entity, &Request)>, mut commands: Commands) {
+    async fn answer_request(query: Query<(Entity, &Request)>, mut commands: Commands<Anything>) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
     }
 
     async fn answer_request_with_non_clone(
         query: Query<(Entity, &Request)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(NonCloneAnswer(42));
@@ -2847,7 +3051,7 @@ mod tests {
     async fn make_derived_from_answer_from_view(
         query: Query<(Entity, &Request)>,
         values: View<'_, (Entity, &MutableA)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_request, _request_marker) = query.item();
         let (entity, a) = values.iter().next().unwrap();
@@ -2858,7 +3062,7 @@ mod tests {
         query: Query<(Entity, &Request)>,
         values: View<'_, (Entity, &MutableA)>,
         labels: View<'_, (Entity, &Label)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_request, _request_marker) = query.item();
         let (value_entity, value) = values.iter().next().unwrap();
@@ -2872,7 +3076,7 @@ mod tests {
     struct Doomed;
     impl Component for Doomed {}
 
-    async fn make_b_after_yield(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b_after_yield(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         yield_once().await;
         let (entity, a) = query.item();
         commands.entity(entity).insert(B(a.0 + 1));
@@ -2921,7 +3125,7 @@ mod tests {
 
     async fn increment_once(
         query: Query<(Entity, MutRef<'_, MutableA>), Without<Note>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, mut a) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
@@ -2973,7 +3177,7 @@ mod tests {
         });
     }
 
-    async fn remove_doomed(query: Query<Entity, With<Doomed>>, mut commands: Commands) {
+    async fn remove_doomed(query: Query<Entity, With<Doomed>>, mut commands: Commands<Anything>) {
         commands.remove(query.item());
     }
 
@@ -2998,7 +3202,7 @@ mod tests {
         });
     }
 
-    async fn spawn_b_note_from_a(query: Query<(Entity, &MutableA)>, mut commands: Commands) {
+    async fn spawn_b_note_from_a(query: Query<(Entity, &MutableA)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         commands.insert((DerivedFrom::new(entity), B(a.0 % 2)));
     }
@@ -3811,7 +4015,7 @@ mod tests {
     fn cleanup_runs_after_normal_phases_settle() {
         block_on(async {
             let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted.on_complete(|mut commands: Commands| {
+            bowl.add_system(make_b_uncounted.on_complete(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
             }))
             .await;
@@ -3834,7 +4038,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
             }))
             .await;
@@ -3861,7 +4065,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
             }))
             .await;
@@ -3884,7 +4088,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
             }))
             .await;
@@ -3919,13 +4123,13 @@ mod tests {
             let bowl = Bowl::new();
             bowl.add_system(
                 make_b_with_hook_log
-                    .on_start(|_commands: Commands| {
+                    .on_start(|_commands: Commands<Anything>| {
                         SYSTEM_HOOK_LOG
                             .lock()
                             .expect("system hook log lock poisoned")
                             .push("start");
                     })
-                    .on_complete(|_commands: Commands| {
+                    .on_complete(|_commands: Commands<Anything>| {
                         SYSTEM_HOOK_LOG
                             .lock()
                             .expect("system hook log lock poisoned")
@@ -3975,7 +4179,7 @@ mod tests {
         });
     }
 
-    async fn answer_request_with_note(query: Query<(Entity, &Request)>, mut commands: Commands) {
+    async fn answer_request_with_note(query: Query<(Entity, &Request)>, mut commands: Commands<Anything>) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
         commands.entity(entity).insert(Note);
@@ -4048,7 +4252,7 @@ mod tests {
 
     async fn def_startup_retract(
         query: Query<Entity, With<EpochEphemeral>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         commands.remove(query.item());
     }
@@ -4083,7 +4287,7 @@ mod tests {
 
         let bowl = Bowl::new();
         let handle = block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands| {
+            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
             .await;
@@ -4152,7 +4356,7 @@ mod tests {
     static PI_STARTED: AtomicUsize = AtomicUsize::new(0);
     static PI_COMPLETED: AtomicUsize = AtomicUsize::new(0);
 
-    async fn pi_reader(query: Query<(Entity, &D)>, mut commands: Commands) {
+    async fn pi_reader(query: Query<(Entity, &D)>, mut commands: Commands<Anything>) {
         let (entity, d) = query.item();
         PI_STARTED.fetch_add(1, Ordering::SeqCst);
         while PI_HOLD.load(Ordering::SeqCst) {
@@ -4238,7 +4442,7 @@ mod tests {
     static LS_HOLD: AtomicBool = AtomicBool::new(false);
     static LS_STARTED: AtomicUsize = AtomicUsize::new(0);
 
-    async fn ls_derive(query: Query<(Entity, &D)>, mut commands: Commands) {
+    async fn ls_derive(query: Query<(Entity, &D)>, mut commands: Commands<Anything>) {
         let (entity, d) = query.item();
         LS_STARTED.fetch_add(1, Ordering::SeqCst);
         while LS_HOLD.load(Ordering::SeqCst) {
@@ -4458,7 +4662,7 @@ mod tests {
     async fn join_pairs(
         namespaces: Query<(Entity, &A, &FingerprintedRank)>,
         members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         JOIN_PAIR_RUNS.fetch_add(1, Ordering::SeqCst);
         let (namespace, a, _rank) = namespaces.item();
@@ -4526,7 +4730,7 @@ mod tests {
     async fn join_pairs_uncounted(
         namespaces: Query<(Entity, &A, &FingerprintedRank)>,
         members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (namespace, a, _rank) = namespaces.item();
         let (member, b) = members.item();
@@ -4568,7 +4772,7 @@ mod tests {
     async fn self_keyed_join(
         namespaces: Query<(Entity, &A, &FingerprintedRank)>,
         members: Query<(Entity, &B, &FingerprintedRank), Where<Eq<FingerprintedRank>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (namespace, a, _) = namespaces.item();
         let (member, b, rank) = members.item();
@@ -4604,7 +4808,7 @@ mod tests {
     async fn compound_key_join(
         namespaces: Query<(Entity, &A, &FingerprintedRank, &KeyB)>,
         members: Query<(Entity, &B), Where<And<Eq<FingerprintedRank>, Eq<KeyB>>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (namespace, a, _, _) = namespaces.item();
         let (member, b) = members.item();
@@ -4638,7 +4842,7 @@ mod tests {
 
     async fn and_filtered_derive(
         query: Query<(Entity, &A), And<With<Note>, Without<C>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, a) = query.item();
         commands.insert((DerivedFrom::new(entity), Sum(a.0)));
@@ -4661,7 +4865,7 @@ mod tests {
 
     async fn missing_provider_join(
         members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
-        mut _commands: Commands,
+        mut _commands: Commands<Anything>,
     ) {
         let _ = members.item();
     }
@@ -4707,14 +4911,14 @@ mod tests {
         });
     }
 
-    async fn derive_ranked_from_a(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn derive_ranked_from_a(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (source, _a) = query.item();
         commands.insert((DerivedFrom::new(source), FingerprintedRank(5)));
     }
 
     async fn derive_sum_from_ranked(
         query: Query<(Entity, &FingerprintedRank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (ranked, rank) = query.item();
         commands.insert((DerivedFrom::new(ranked), Sum(rank.0 + 1)));
@@ -4809,14 +5013,14 @@ mod tests {
         }
     }
 
-    async fn epoch_derive(query: Query<(Entity, &EpochSrc)>, mut commands: Commands) {
+    async fn epoch_derive(query: Query<(Entity, &EpochSrc)>, mut commands: Commands<Anything>) {
         let (entity, src) = query.item();
         commands.insert((DerivedFrom::new(entity), EpochDef(src.0.clone())));
     }
 
     async fn cleanup_epoch_ephemeral(
         query: Query<Entity, With<EpochEphemeral>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         commands.remove(query.item());
     }
@@ -4824,7 +5028,7 @@ mod tests {
     static FREEZE_RUNS: AtomicUsize = AtomicUsize::new(0);
     static FREEZE_HOLD: AtomicBool = AtomicBool::new(true);
 
-    async fn freeze_derive(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn freeze_derive(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         FREEZE_RUNS.fetch_add(1, Ordering::SeqCst);
         while FREEZE_HOLD.load(Ordering::SeqCst) {
@@ -4921,7 +5125,7 @@ mod tests {
 
         let bowl = Bowl::new();
         block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands| {
+            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
             .await;
@@ -4991,7 +5195,7 @@ mod tests {
 
     async fn preempt_startup_retract(
         query: Query<Entity, With<EpochEphemeral>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         PREEMPT_STARTUP_CLEANUPS.fetch_add(1, Ordering::SeqCst);
         commands.remove(query.item());
@@ -5018,7 +5222,7 @@ mod tests {
 
         let bowl = Bowl::new();
         let handle = block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands| {
+            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
             .await;
@@ -5109,7 +5313,7 @@ mod tests {
     // Each test pins one failure point reported from the ~10k-line dsql
     // port. They are expected to FAIL until the corresponding fix lands.
 
-    async fn diagnose_then_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn diagnose_then_stamp(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (file, _source) = query.item();
         // The natural writing order: emit the diagnostic first...
         commands.insert((Note, DerivedFrom::new(file)));
@@ -5161,7 +5365,7 @@ mod tests {
     struct ParentLink(Entity);
     impl Component for ParentLink {}
 
-    async fn lower_linked_pair(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn lower_linked_pair(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_source, _a) = query.item();
         let parent = commands.insert((B(7),));
         commands.insert((C(1), ParentLink(parent)));
@@ -5227,7 +5431,7 @@ mod tests {
         });
     }
 
-    async fn produce_in_cleanup(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn produce_in_cleanup(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, _a) = query.item();
         commands.insert((C(9),));
     }
@@ -5235,7 +5439,7 @@ mod tests {
     async fn finalize_in_cleanup(
         query: Query<(Entity, &B)>,
         candidates: View<'_, (Entity, &C)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _b) = query.item();
         commands.entity(entity).insert(Count(candidates.len()));
@@ -5265,7 +5469,7 @@ mod tests {
 
     async fn count_optional_b(
         query: Query<(Entity, &A, Option<&B>)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a, b) = query.item();
         commands
@@ -5317,7 +5521,101 @@ mod tests {
         });
     }
 
-    async fn restock_oranges(query: Query<(Entity, &A)>, mut commands: Commands) {
+    type NoteParts = (Note, Count);
+
+    async fn declared_writer(
+        query: Query<(Entity, &A)>,
+        mut commands: Commands<(NoteParts, B)>,
+    ) {
+        let (entity, _a) = query.item();
+        commands.insert((Note,));
+        commands.entity(entity).insert(Count(7));
+        commands.entity(entity).insert(B(2));
+    }
+
+    /// Typed `Commands<S>`: declared writes (directly or through a group
+    /// alias) compile and behave exactly like the wildcard; the declared
+    /// set reaches the registry. Emitting an undeclared component is a
+    /// compile error, which a test cannot demonstrate — the runtime
+    /// honesty backstop is pinned separately.
+    #[test]
+    fn declared_outputs_permit_declared_writes() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(declared_writer).await;
+            bowl.insert((A(1),)).await;
+
+            let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            assert_eq!(notes.collect().len(), 1);
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(counts.collect()[0].1.0, 7);
+        });
+    }
+
+    /// A test-only param that *lies*: it declares only `Note` but hands the
+    /// system a wildcard buffer. The commit-time honesty backstop must
+    /// catch the undeclared emission (this is the guard for future dynamic
+    /// emission paths — typed `Commands` cannot get here).
+    struct LyingCommands(Commands<Anything>);
+
+    impl crate::system::SystemParam for LyingCommands {
+        type State = ();
+        type Item<'a> = LyingCommands;
+
+        fn states(_snapshot: &crate::world::Snapshot) -> Vec<Self::State> {
+            vec![()]
+        }
+
+        fn keys(_state: &Self::State) -> Vec<Entity> {
+            Vec::new()
+        }
+
+        fn deps(
+            _snapshot: &crate::world::Snapshot,
+            _state: &Self::State,
+        ) -> Vec<crate::query::Dep> {
+            Vec::new()
+        }
+
+        fn access(
+            _snapshot: &crate::world::Snapshot,
+            _state: &Self::State,
+        ) -> Vec<crate::query::Access> {
+            Vec::new()
+        }
+
+        fn declared_outputs() -> Option<Vec<std::any::TypeId>> {
+            Some(vec![std::any::TypeId::of::<Note>()])
+        }
+
+        fn fetch<'a>(
+            _bowl: &Bowl,
+            _snapshot: &'a crate::world::Snapshot,
+            _state: &Self::State,
+            commands: &Commands<Anything>,
+            _guards: &mut crate::query::GuardStore,
+        ) -> Self::Item<'a> {
+            LyingCommands(commands.clone())
+        }
+    }
+
+    async fn dishonest_writer(query: Query<(Entity, &A)>, mut lying: LyingCommands) {
+        let (_entity, _a) = query.item();
+        lying.0.insert((C(1),));
+    }
+
+    #[test]
+    #[should_panic(expected = "emitted undeclared component")]
+    fn undeclared_emission_panics_in_debug() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(dishonest_writer).await;
+            bowl.insert((A(1),)).await;
+            bowl.scoop::<Query<(Entity, &C)>>().await;
+        });
+    }
+
+    async fn restock_oranges(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, _a) = query.item();
         // An "orange with a price tag": Rank is shared vocabulary that many
         // kinds of entities carry.
@@ -5327,7 +5625,7 @@ mod tests {
     async fn count_priced_ds(
         query: Query<(Entity, &B)>,
         priced: View<'_, (Entity, &D, &Rank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _b) = query.item();
         commands.entity(entity).insert(Count(priced.len()));
@@ -5359,7 +5657,7 @@ mod tests {
         });
     }
 
-    async fn sticker_d(query: Query<(Entity, &Rank), Without<D>>, mut commands: Commands) {
+    async fn sticker_d(query: Query<(Entity, &Rank), Without<D>>, mut commands: Commands<Anything>) {
         let (entity, _rank) = query.item();
         // The write itself is only {D}, but it *completes* the (D, Rank)
         // row on an entity that already carried Rank.
@@ -5388,7 +5686,7 @@ mod tests {
     async fn resolve_or_default(
         query: Query<(Entity, &FingerprintedRank), With<Request>>,
         partner: Option<Query<(Entity, &D), Where<Eq<FingerprintedRank>>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (request, _key) = query.item();
         match partner {
@@ -5585,7 +5883,7 @@ mod tests {
         });
     }
 
-    async fn remove_noted(query: Query<Entity, With<Note>>, mut commands: Commands) {
+    async fn remove_noted(query: Query<Entity, With<Note>>, mut commands: Commands<Anything>) {
         commands.remove(query.item());
     }
 
@@ -5618,7 +5916,7 @@ mod tests {
     async fn tag_members(
         parents: Query<(Entity, &A, &Members)>,
         member: Query<(Entity, &B), Where<In<Members>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_parent, _a, _members) = parents.item();
         let (member_entity, _b) = member.item();
@@ -5658,7 +5956,7 @@ mod tests {
 
     async fn spawn_member_when_ranked(
         query: Query<(Entity, &ParentLink, &FingerprintedRank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_entity, link, rank) = query.item();
         if rank.0 == 1 {
@@ -5696,7 +5994,7 @@ mod tests {
         });
     }
 
-    async fn settle_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn settle_stamp(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, _a) = query.item();
         commands.insert((Note,));
     }
@@ -5733,7 +6031,7 @@ mod tests {
     async fn demand_gated_check(
         query: Query<(Entity, &A)>,
         _demand: Query<Entity, With<Note>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(1));

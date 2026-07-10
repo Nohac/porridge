@@ -114,6 +114,214 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     .expect("generated component impl should parse")
 }
 
+/// Derives an entity schema from a named-field struct whose field types
+/// are shape tuples (`Option<T>` marks optional parts):
+///
+/// ```text
+/// #[derive(Schema)]
+/// struct LangSchema {
+///     diagnostic: (Diagnostic, Severity, DerivedFrom, Option<Span>),
+/// }
+/// ```
+///
+/// Generates the `bowl::Schema` impl (runtime shape metadata with type
+/// names for humane conformance errors) and a companion module
+/// (`lang_schema`) with one type alias per shape, so
+/// `lang_schema::Diagnostic` is usable in `Commands<..>` declarations.
+#[proc_macro_derive(Schema)]
+pub fn derive_schema(input: TokenStream) -> TokenStream {
+    let Some(name) = type_name(input.clone()) else {
+        return compile_error("Schema can only be derived for structs");
+    };
+
+    let Some(fields) = named_fields(input) else {
+        return compile_error("Schema requires a struct with named fields (one per shape)");
+    };
+    if fields.is_empty() {
+        return compile_error("Schema requires at least one shape field");
+    }
+
+    let mut assoc_impls = String::new();
+    let mut module_aliases = String::new();
+    let mut shape_descs = String::new();
+
+    for (field_name, elements) in &fields {
+        if elements.is_empty() {
+            return compile_error("a schema shape cannot be empty");
+        }
+        let assoc = pascal_case(field_name);
+        let full_tuple = elements
+            .iter()
+            .map(|(ty, optional)| {
+                if *optional {
+                    format!("::core::option::Option<{ty}>")
+                } else {
+                    ty.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        // The raw tuple alias lives at the outer scope (where the element
+        // types resolve) under a collision-proof name; the companion
+        // module re-aliases it, so a shape named like one of its own
+        // components cannot shadow it into a cycle.
+        assoc_impls.push_str(&format!(
+            "#[doc(hidden)]
+             pub type __{name}{assoc} = ({full_tuple},);"
+        ));
+        module_aliases.push_str(&format!("pub type {assoc} = super::__{name}{assoc};"));
+
+        let mut required = String::new();
+        let mut optional = String::new();
+        for (ty, is_optional) in elements {
+            let entry = format!(
+                "(::std::any::TypeId::of::<{ty}>(), ::std::any::type_name::<{ty}>()),"
+            );
+            if *is_optional {
+                optional.push_str(&entry);
+            } else {
+                required.push_str(&entry);
+            }
+        }
+        shape_descs.push_str(&format!(
+            "::bowl::ShapeDesc {{
+                name: \"{field_name}\",
+                required: ::std::vec![{required}],
+                optional: ::std::vec![{optional}],
+            }},"
+        ));
+    }
+
+    let module = snake_case(&name);
+    format!(
+        "impl ::bowl::Schema for {name} {{
+            fn shapes() -> ::std::vec::Vec<::bowl::ShapeDesc> {{
+                ::std::vec![{shape_descs}]
+            }}
+        }}
+
+        {assoc_impls}
+
+        /// Companion module naming `{name}`'s shapes as reusable type
+        /// aliases for `Commands<..>` declarations.
+        pub mod {module} {{
+            {module_aliases}
+        }}"
+    )
+    .parse()
+    .expect("generated schema impl should parse")
+}
+
+/// Parses `struct S {{ a: (T, Option<U>), .. }}` into
+/// `[(field, [(type, optional)])]`.
+fn named_fields(input: TokenStream) -> Option<Vec<(String, Vec<(String, bool)>)>> {
+    let mut tokens = input.into_iter();
+    let body = loop {
+        match tokens.next()? {
+            TokenTree::Group(group) if group.delimiter() == Delimiter::Brace => {
+                break group.stream();
+            }
+            _ => continue,
+        }
+    };
+
+    let mut fields = Vec::new();
+    let mut tokens = body.into_iter().peekable();
+    while let Some(token) = tokens.next() {
+        let TokenTree::Ident(field) = token else {
+            continue;
+        };
+        match tokens.next() {
+            Some(TokenTree::Punct(colon)) if colon.as_char() == ':' => {}
+            _ => continue,
+        }
+        let Some(TokenTree::Group(tuple)) = tokens.next() else {
+            return None;
+        };
+        if tuple.delimiter() != Delimiter::Parenthesis {
+            return None;
+        }
+
+        let mut elements = Vec::new();
+        let mut current = String::new();
+        let mut depth = 0usize;
+        for token in tuple.stream() {
+            match &token {
+                TokenTree::Punct(punct) if punct.as_char() == ',' && depth == 0 => {
+                    if !current.is_empty() {
+                        elements.push(std::mem::take(&mut current));
+                    }
+                }
+                TokenTree::Punct(punct) if punct.as_char() == '<' => {
+                    depth += 1;
+                    current.push('<');
+                }
+                TokenTree::Punct(punct) if punct.as_char() == '>' => {
+                    depth = depth.saturating_sub(1);
+                    current.push('>');
+                }
+                other => current.push_str(&other.to_string()),
+            }
+        }
+        if !current.is_empty() {
+            elements.push(current);
+        }
+
+        let elements = elements
+            .into_iter()
+            .map(|element| {
+                if let Some(inner) = element
+                    .strip_prefix("Option<")
+                    .and_then(|rest| rest.strip_suffix('>'))
+                {
+                    (inner.to_string(), true)
+                } else {
+                    (element, false)
+                }
+            })
+            .collect();
+        fields.push((field.to_string(), elements));
+
+        // Skip the trailing comma between fields.
+        if let Some(TokenTree::Punct(punct)) = tokens.peek() {
+            if punct.as_char() == ',' {
+                tokens.next();
+            }
+        }
+    }
+
+    Some(fields)
+}
+
+fn snake_case(pascal: &str) -> String {
+    let mut out = String::new();
+    for (index, ch) in pascal.chars().enumerate() {
+        if ch.is_uppercase() {
+            if index > 0 {
+                out.push('_');
+            }
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn pascal_case(snake: &str) -> String {
+    snake
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
 fn has_hash_attribute(input: TokenStream) -> bool {
     component_attribute_contains(input, "hash")
 }
@@ -304,6 +512,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     let mut always_run_body = String::from("false");
     let mut validate_body = String::new();
     let mut view_types_body = String::new();
+    let mut declared_outputs_body = String::new();
 
     for (index, field) in bundle.fields.iter().enumerate() {
         let static_ty = field.ty_with_lifetime(&bundle.lifetime, "'static");
@@ -343,6 +552,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
         ));
         view_types_body.push_str(&format!(
             "<{static_ty} as ::bowl::__derive::SystemParam>::view_sets(out);"
+        ));
+        declared_outputs_body.push_str(&format!(
+            "match <{static_ty} as ::bowl::__derive::SystemParam>::declared_outputs() {{
+                ::core::option::Option::Some(types) => out.extend(types),
+                ::core::option::Option::None => return ::core::option::Option::None,
+            }}"
         ));
     }
 
@@ -384,7 +599,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 bowl: &::bowl::__derive::Bowl,
                 snapshot: &'__item ::bowl::__derive::Snapshot,
                 state: &Self::State,
-                commands: &::bowl::__derive::Commands,
+                commands: &::bowl::__derive::Commands<::bowl::__derive::Anything>,
                 guards: &mut ::bowl::__derive::GuardStore,
             ) -> Self::Item<'__item> {{
                 {name} {{
@@ -403,6 +618,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
 
             fn view_sets(out: &mut ::std::vec::Vec<::std::vec::Vec<::std::any::TypeId>>) {{
                 {view_types_body}
+            }}
+
+            fn declared_outputs() -> ::core::option::Option<::std::vec::Vec<::std::any::TypeId>> {{
+                let mut out = ::std::vec::Vec::new();
+                {declared_outputs_body}
+                ::core::option::Option::Some(out)
             }}
         }}"
     )
