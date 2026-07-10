@@ -17,10 +17,29 @@
 //! systems (see [`HoverStage`]) and a service finalizer picks the winning
 //! candidate by priority (`service::hover`).
 
-use bowl::{Bowl, Commands, Entity};
+use bowl::{Bowl, Commands, DerivedFrom, Entity};
 use tracing::info;
 
-use crate::lang::grammar::parser::{CstData, NodeRef};
+use crate::lang::{
+    entities::{
+        definition::AstDef,
+        import::ImportDecl,
+        namespace::{NamespaceDecl, NamespacePath},
+    },
+    facts::BelongsToFile,
+    grammar::parser::{CstData, NodeRef},
+};
+
+/// Everything the lowering walk may emit — the shared output declaration
+/// for [`LowerStage`] and `generate_ast` (spec/declared-outputs.md).
+pub(crate) type AstFacts = (
+    AstDef,
+    ImportDecl,
+    NamespaceDecl,
+    NamespacePath,
+    BelongsToFile,
+    DerivedFrom,
+);
 
 pub(crate) trait LanguageEntity {
     const NAME: &'static str;
@@ -42,7 +61,7 @@ pub(crate) struct LowerCtx<'a> {
 /// Syntax stage: lower an owned CST rule node into fact components.
 /// Rule ownership is assigned in `entities::lower_rule`.
 pub(crate) trait LowerStage: LanguageEntity {
-    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands);
+    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands<AstFacts>);
 }
 
 /// Service stage: register systems that answer hover requests by inserting

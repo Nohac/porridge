@@ -14,7 +14,8 @@
 mod hover;
 
 pub(crate) use hover::{
-    HoverCandidate, HoverFile, HoverInfo, HoverRequest, HoverWord, Position, RequestKey, priority,
+    CandidateParts, HoverCandidate, HoverFile, HoverInfo, HoverRequest, HoverWord, Position,
+    RequestKey, priority,
 };
 
 use bowl::{Bowl, Phase, SystemExt};

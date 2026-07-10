@@ -11,10 +11,10 @@ use tracing::info;
 
 use crate::lang::{
     entities::{node_span, token_texts},
-    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    entity::{AstFacts, HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{BelongsToFile, DiagnosticParts, DiagnosticsDemand, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef},
-    service::{HoverCandidate, HoverFile, HoverRequest, Position, RequestKey, priority},
+    service::{CandidateParts, HoverCandidate, HoverFile, HoverRequest, Position, RequestKey, priority},
 };
 
 #[derive(Component, Hash)]
@@ -57,7 +57,7 @@ impl LanguageEntity for Import {
 }
 
 impl LowerStage for Import {
-    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands) {
+    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands<AstFacts>) {
         let names = token_texts(ctx.cst, ctx.source, node, Token::Name);
         if names.is_empty() {
             return;
@@ -86,7 +86,7 @@ async fn hover_imports(
     query: Query<(Entity, &HoverFile, &Position), With<HoverRequest>>,
     imports: View<'_, (Entity, &BelongsToFile, &ImportDecl)>,
     import_db: View<'_, (Entity, &SystemImportDb)>,
-    mut commands: Commands,
+    mut commands: Commands<CandidateParts>,
 ) {
     crate::short_sleep().await;
 

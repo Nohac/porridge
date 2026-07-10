@@ -223,7 +223,7 @@ struct Callsign(&'static str);
 async fn roster(
     squads: bowl::Query<(Entity, &Squad)>,
     member: bowl::Query<(Entity, &Callsign), Where<In<Squad>>>,
-    mut commands: bowl::Commands,
+    mut commands: bowl::Commands<(Rostered,)>,
 ) {
     let (_squad, _members) = squads.item();
     let (member_entity, _callsign) = member.item();

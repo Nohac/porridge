@@ -2514,6 +2514,8 @@ mod tests {
 
     use futures::executor::block_on;
 
+    use crate::declare::Anything;
+
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
         Entity, Eq, Gte, In, Mut, MutRef, Named, Phase, Query, RelationshipEdge,
@@ -2627,13 +2629,13 @@ mod tests {
         }
     }
 
-    async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_b_with_hook_log(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b_with_hook_log(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         SYSTEM_HOOK_LOG
             .lock()
@@ -2642,18 +2644,18 @@ mod tests {
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_b_uncounted(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b_uncounted(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         commands.entity(entity).insert(B(a.0 + 1));
     }
 
-    async fn make_c(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_c(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         CLEAN_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(C(a.0 + 1));
     }
 
-    async fn make_c_from_b(query: Query<(Entity, &B)>, mut commands: Commands) {
+    async fn make_c_from_b(query: Query<(Entity, &B)>, mut commands: Commands<Anything>) {
         let (entity, b) = query.item();
         commands.entity(entity).insert(C(b.0 + 1));
     }
@@ -2661,7 +2663,7 @@ mod tests {
     async fn count_bs(
         query: Query<(Entity, &A)>,
         bs: View<'_, (Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(bs.len()));
@@ -2670,23 +2672,23 @@ mod tests {
     async fn count_cs(
         query: Query<(Entity, &A)>,
         cs: View<'_, (Entity, &C)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(cs.len()));
     }
 
-    async fn spawn_b(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn spawn_b(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, a) = query.item();
         commands.insert((B(a.0 + 1),));
     }
 
-    async fn spawn_a_from_a(query: Query<Entity, With<A>>, mut commands: Commands) {
+    async fn spawn_a_from_a(query: Query<Entity, With<A>>, mut commands: Commands<Anything>) {
         let _entity = query.item();
         commands.insert((A(0),));
     }
 
-    async fn count_tagged_a(query: Query<(Entity, &A), With<Request>>, mut commands: Commands) {
+    async fn count_tagged_a(query: Query<(Entity, &A), With<Request>>, mut commands: Commands<Anything>) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(1));
     }
@@ -2694,7 +2696,7 @@ mod tests {
     async fn sum_a_b(
         a_query: Query<(Entity, &A)>,
         b_query: Query<(Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (a_entity, a) = a_query.item();
         let (b_entity, b) = b_query.item();
@@ -2706,24 +2708,24 @@ mod tests {
         a_query: Query<(Entity, &A)>,
         c_query: Query<(Entity, &C)>,
         bs: View<'_, (Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = a_query.item();
         let (_ready, _c) = c_query.item();
         commands.entity(entity).insert(Count(bs.len()));
     }
 
-    async fn write_singleton_count(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn write_singleton_count(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, a) = query.item();
         commands.insert((Singleton::<Count>::new(), Count(a.0 as usize)));
     }
 
-    async fn copy_rank_to_count(query: Query<(Entity, &Rank)>, mut commands: Commands) {
+    async fn copy_rank_to_count(query: Query<(Entity, &Rank)>, mut commands: Commands<Anything>) {
         let (entity, rank) = query.item();
         commands.entity(entity).insert(Count(rank.0 as usize));
     }
 
-    async fn copy_rank_to_count_counted(query: Query<(Entity, &Rank)>, mut commands: Commands) {
+    async fn copy_rank_to_count_counted(query: Query<(Entity, &Rank)>, mut commands: Commands<Anything>) {
         let (entity, rank) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(Count(rank.0 as usize));
@@ -2731,7 +2733,7 @@ mod tests {
 
     async fn copy_fingerprinted_rank_to_count(
         query: Query<(Entity, &FingerprintedRank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, rank) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
@@ -2763,7 +2765,7 @@ mod tests {
         ACTIVE_WRITERS.fetch_sub(1, Ordering::SeqCst);
     }
 
-    async fn startup_phase(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn startup_phase(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, _a) = query.item();
         PHASE_LOG
             .lock()
@@ -2792,12 +2794,12 @@ mod tests {
         }
     }
 
-    async fn remove_hooked_entity(query: Query<(Entity, &Hooked)>, mut commands: Commands) {
+    async fn remove_hooked_entity(query: Query<(Entity, &Hooked)>, mut commands: Commands<Anything>) {
         let (entity, _hooked) = query.item();
         commands.remove(entity);
     }
 
-    async fn mark_b_processed(query: Query<(Entity, &B)>, mut commands: Commands) {
+    async fn mark_b_processed(query: Query<(Entity, &B)>, mut commands: Commands<Anything>) {
         let (entity, _b) = query.item();
         commands.entity(entity).insert(D(1));
     }
@@ -2805,7 +2807,7 @@ mod tests {
     async fn count_after_note(
         _: Query<Entity, With<Note>>,
         query: Query<(Entity, &A)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(1));
@@ -2815,7 +2817,7 @@ mod tests {
         _: Query<Entity, With<Note>>,
         query: Query<(Entity, &D)>,
         processed: View<'_, (Entity, &D)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _d) = query.item();
         commands.entity(entity).insert(Count(processed.len()));
@@ -2825,7 +2827,7 @@ mod tests {
         _: Query<Entity, With<UntrackedMarker>>,
         query: Query<(Entity, &Request)>,
         processed: View<'_, (Entity, &D)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _request) = query.item();
         commands
@@ -2835,7 +2837,7 @@ mod tests {
 
     async fn cleanup_untracked_marker(
         query: Query<Entity, With<UntrackedMarker>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         commands.remove(query.item());
     }
@@ -2843,7 +2845,7 @@ mod tests {
     async fn mixed_param_system(
         a_query: Query<(Entity, &A)>,
         bs: View<'_, (Entity, &B)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
         c_query: Query<(Entity, &C)>,
         d_query: Query<(Entity, &D)>,
         counts: View<'_, (Entity, &Count)>,
@@ -2858,14 +2860,14 @@ mod tests {
             + counts.len() as u32));
     }
 
-    async fn answer_request(query: Query<(Entity, &Request)>, mut commands: Commands) {
+    async fn answer_request(query: Query<(Entity, &Request)>, mut commands: Commands<Anything>) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
     }
 
     async fn answer_request_with_non_clone(
         query: Query<(Entity, &Request)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(NonCloneAnswer(42));
@@ -2874,7 +2876,7 @@ mod tests {
     async fn make_derived_from_answer_from_view(
         query: Query<(Entity, &Request)>,
         values: View<'_, (Entity, &MutableA)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_request, _request_marker) = query.item();
         let (entity, a) = values.iter().next().unwrap();
@@ -2885,7 +2887,7 @@ mod tests {
         query: Query<(Entity, &Request)>,
         values: View<'_, (Entity, &MutableA)>,
         labels: View<'_, (Entity, &Label)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_request, _request_marker) = query.item();
         let (value_entity, value) = values.iter().next().unwrap();
@@ -2899,7 +2901,7 @@ mod tests {
     struct Doomed;
     impl Component for Doomed {}
 
-    async fn make_b_after_yield(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn make_b_after_yield(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         yield_once().await;
         let (entity, a) = query.item();
         commands.entity(entity).insert(B(a.0 + 1));
@@ -2948,7 +2950,7 @@ mod tests {
 
     async fn increment_once(
         query: Query<(Entity, MutRef<'_, MutableA>), Without<Note>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, mut a) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
@@ -3000,7 +3002,7 @@ mod tests {
         });
     }
 
-    async fn remove_doomed(query: Query<Entity, With<Doomed>>, mut commands: Commands) {
+    async fn remove_doomed(query: Query<Entity, With<Doomed>>, mut commands: Commands<Anything>) {
         commands.remove(query.item());
     }
 
@@ -3025,7 +3027,7 @@ mod tests {
         });
     }
 
-    async fn spawn_b_note_from_a(query: Query<(Entity, &MutableA)>, mut commands: Commands) {
+    async fn spawn_b_note_from_a(query: Query<(Entity, &MutableA)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         commands.insert((DerivedFrom::new(entity), B(a.0 % 2)));
     }
@@ -3838,7 +3840,7 @@ mod tests {
     fn cleanup_runs_after_normal_phases_settle() {
         block_on(async {
             let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted.on_complete(|mut commands: Commands| {
+            bowl.add_system(make_b_uncounted.on_complete(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
             }))
             .await;
@@ -3861,7 +3863,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
             }))
             .await;
@@ -3888,7 +3890,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
             }))
             .await;
@@ -3911,7 +3913,7 @@ mod tests {
         block_on(async {
             let bowl = Bowl::new();
             bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands| {
+            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
             }))
             .await;
@@ -3946,13 +3948,13 @@ mod tests {
             let bowl = Bowl::new();
             bowl.add_system(
                 make_b_with_hook_log
-                    .on_start(|_commands: Commands| {
+                    .on_start(|_commands: Commands<Anything>| {
                         SYSTEM_HOOK_LOG
                             .lock()
                             .expect("system hook log lock poisoned")
                             .push("start");
                     })
-                    .on_complete(|_commands: Commands| {
+                    .on_complete(|_commands: Commands<Anything>| {
                         SYSTEM_HOOK_LOG
                             .lock()
                             .expect("system hook log lock poisoned")
@@ -4002,7 +4004,7 @@ mod tests {
         });
     }
 
-    async fn answer_request_with_note(query: Query<(Entity, &Request)>, mut commands: Commands) {
+    async fn answer_request_with_note(query: Query<(Entity, &Request)>, mut commands: Commands<Anything>) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
         commands.entity(entity).insert(Note);
@@ -4075,7 +4077,7 @@ mod tests {
 
     async fn def_startup_retract(
         query: Query<Entity, With<EpochEphemeral>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         commands.remove(query.item());
     }
@@ -4110,7 +4112,7 @@ mod tests {
 
         let bowl = Bowl::new();
         let handle = block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands| {
+            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
             .await;
@@ -4179,7 +4181,7 @@ mod tests {
     static PI_STARTED: AtomicUsize = AtomicUsize::new(0);
     static PI_COMPLETED: AtomicUsize = AtomicUsize::new(0);
 
-    async fn pi_reader(query: Query<(Entity, &D)>, mut commands: Commands) {
+    async fn pi_reader(query: Query<(Entity, &D)>, mut commands: Commands<Anything>) {
         let (entity, d) = query.item();
         PI_STARTED.fetch_add(1, Ordering::SeqCst);
         while PI_HOLD.load(Ordering::SeqCst) {
@@ -4265,7 +4267,7 @@ mod tests {
     static LS_HOLD: AtomicBool = AtomicBool::new(false);
     static LS_STARTED: AtomicUsize = AtomicUsize::new(0);
 
-    async fn ls_derive(query: Query<(Entity, &D)>, mut commands: Commands) {
+    async fn ls_derive(query: Query<(Entity, &D)>, mut commands: Commands<Anything>) {
         let (entity, d) = query.item();
         LS_STARTED.fetch_add(1, Ordering::SeqCst);
         while LS_HOLD.load(Ordering::SeqCst) {
@@ -4485,7 +4487,7 @@ mod tests {
     async fn join_pairs(
         namespaces: Query<(Entity, &A, &FingerprintedRank)>,
         members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         JOIN_PAIR_RUNS.fetch_add(1, Ordering::SeqCst);
         let (namespace, a, _rank) = namespaces.item();
@@ -4553,7 +4555,7 @@ mod tests {
     async fn join_pairs_uncounted(
         namespaces: Query<(Entity, &A, &FingerprintedRank)>,
         members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (namespace, a, _rank) = namespaces.item();
         let (member, b) = members.item();
@@ -4595,7 +4597,7 @@ mod tests {
     async fn self_keyed_join(
         namespaces: Query<(Entity, &A, &FingerprintedRank)>,
         members: Query<(Entity, &B, &FingerprintedRank), Where<Eq<FingerprintedRank>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (namespace, a, _) = namespaces.item();
         let (member, b, rank) = members.item();
@@ -4631,7 +4633,7 @@ mod tests {
     async fn compound_key_join(
         namespaces: Query<(Entity, &A, &FingerprintedRank, &KeyB)>,
         members: Query<(Entity, &B), Where<And<Eq<FingerprintedRank>, Eq<KeyB>>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (namespace, a, _, _) = namespaces.item();
         let (member, b) = members.item();
@@ -4665,7 +4667,7 @@ mod tests {
 
     async fn and_filtered_derive(
         query: Query<(Entity, &A), And<With<Note>, Without<C>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, a) = query.item();
         commands.insert((DerivedFrom::new(entity), Sum(a.0)));
@@ -4688,7 +4690,7 @@ mod tests {
 
     async fn missing_provider_join(
         members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
-        mut _commands: Commands,
+        mut _commands: Commands<Anything>,
     ) {
         let _ = members.item();
     }
@@ -4734,14 +4736,14 @@ mod tests {
         });
     }
 
-    async fn derive_ranked_from_a(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn derive_ranked_from_a(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (source, _a) = query.item();
         commands.insert((DerivedFrom::new(source), FingerprintedRank(5)));
     }
 
     async fn derive_sum_from_ranked(
         query: Query<(Entity, &FingerprintedRank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (ranked, rank) = query.item();
         commands.insert((DerivedFrom::new(ranked), Sum(rank.0 + 1)));
@@ -4836,14 +4838,14 @@ mod tests {
         }
     }
 
-    async fn epoch_derive(query: Query<(Entity, &EpochSrc)>, mut commands: Commands) {
+    async fn epoch_derive(query: Query<(Entity, &EpochSrc)>, mut commands: Commands<Anything>) {
         let (entity, src) = query.item();
         commands.insert((DerivedFrom::new(entity), EpochDef(src.0.clone())));
     }
 
     async fn cleanup_epoch_ephemeral(
         query: Query<Entity, With<EpochEphemeral>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         commands.remove(query.item());
     }
@@ -4851,7 +4853,7 @@ mod tests {
     static FREEZE_RUNS: AtomicUsize = AtomicUsize::new(0);
     static FREEZE_HOLD: AtomicBool = AtomicBool::new(true);
 
-    async fn freeze_derive(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn freeze_derive(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
         FREEZE_RUNS.fetch_add(1, Ordering::SeqCst);
         while FREEZE_HOLD.load(Ordering::SeqCst) {
@@ -4948,7 +4950,7 @@ mod tests {
 
         let bowl = Bowl::new();
         block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands| {
+            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
             .await;
@@ -5018,7 +5020,7 @@ mod tests {
 
     async fn preempt_startup_retract(
         query: Query<Entity, With<EpochEphemeral>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         PREEMPT_STARTUP_CLEANUPS.fetch_add(1, Ordering::SeqCst);
         commands.remove(query.item());
@@ -5045,7 +5047,7 @@ mod tests {
 
         let bowl = Bowl::new();
         let handle = block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands| {
+            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
             .await;
@@ -5136,7 +5138,7 @@ mod tests {
     // Each test pins one failure point reported from the ~10k-line dsql
     // port. They are expected to FAIL until the corresponding fix lands.
 
-    async fn diagnose_then_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn diagnose_then_stamp(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (file, _source) = query.item();
         // The natural writing order: emit the diagnostic first...
         commands.insert((Note, DerivedFrom::new(file)));
@@ -5188,7 +5190,7 @@ mod tests {
     struct ParentLink(Entity);
     impl Component for ParentLink {}
 
-    async fn lower_linked_pair(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn lower_linked_pair(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_source, _a) = query.item();
         let parent = commands.insert((B(7),));
         commands.insert((C(1), ParentLink(parent)));
@@ -5254,7 +5256,7 @@ mod tests {
         });
     }
 
-    async fn produce_in_cleanup(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn produce_in_cleanup(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, _a) = query.item();
         commands.insert((C(9),));
     }
@@ -5262,7 +5264,7 @@ mod tests {
     async fn finalize_in_cleanup(
         query: Query<(Entity, &B)>,
         candidates: View<'_, (Entity, &C)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _b) = query.item();
         commands.entity(entity).insert(Count(candidates.len()));
@@ -5292,7 +5294,7 @@ mod tests {
 
     async fn count_optional_b(
         query: Query<(Entity, &A, Option<&B>)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a, b) = query.item();
         commands
@@ -5379,7 +5381,7 @@ mod tests {
     /// system a wildcard buffer. The commit-time honesty backstop must
     /// catch the undeclared emission (this is the guard for future dynamic
     /// emission paths — typed `Commands` cannot get here).
-    struct LyingCommands(Commands);
+    struct LyingCommands(Commands<Anything>);
 
     impl crate::system::SystemParam for LyingCommands {
         type State = ();
@@ -5415,7 +5417,7 @@ mod tests {
             _bowl: &Bowl,
             _snapshot: &'a crate::world::Snapshot,
             _state: &Self::State,
-            commands: &Commands,
+            commands: &Commands<Anything>,
             _guards: &mut crate::query::GuardStore,
         ) -> Self::Item<'a> {
             LyingCommands(commands.clone())
@@ -5438,7 +5440,7 @@ mod tests {
         });
     }
 
-    async fn restock_oranges(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn restock_oranges(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, _a) = query.item();
         // An "orange with a price tag": Rank is shared vocabulary that many
         // kinds of entities carry.
@@ -5448,7 +5450,7 @@ mod tests {
     async fn count_priced_ds(
         query: Query<(Entity, &B)>,
         priced: View<'_, (Entity, &D, &Rank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _b) = query.item();
         commands.entity(entity).insert(Count(priced.len()));
@@ -5480,7 +5482,7 @@ mod tests {
         });
     }
 
-    async fn sticker_d(query: Query<(Entity, &Rank), Without<D>>, mut commands: Commands) {
+    async fn sticker_d(query: Query<(Entity, &Rank), Without<D>>, mut commands: Commands<Anything>) {
         let (entity, _rank) = query.item();
         // The write itself is only {D}, but it *completes* the (D, Rank)
         // row on an entity that already carried Rank.
@@ -5509,7 +5511,7 @@ mod tests {
     async fn resolve_or_default(
         query: Query<(Entity, &FingerprintedRank), With<Request>>,
         partner: Option<Query<(Entity, &D), Where<Eq<FingerprintedRank>>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (request, _key) = query.item();
         match partner {
@@ -5706,7 +5708,7 @@ mod tests {
         });
     }
 
-    async fn remove_noted(query: Query<Entity, With<Note>>, mut commands: Commands) {
+    async fn remove_noted(query: Query<Entity, With<Note>>, mut commands: Commands<Anything>) {
         commands.remove(query.item());
     }
 
@@ -5739,7 +5741,7 @@ mod tests {
     async fn tag_members(
         parents: Query<(Entity, &A, &Members)>,
         member: Query<(Entity, &B), Where<In<Members>>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_parent, _a, _members) = parents.item();
         let (member_entity, _b) = member.item();
@@ -5779,7 +5781,7 @@ mod tests {
 
     async fn spawn_member_when_ranked(
         query: Query<(Entity, &ParentLink, &FingerprintedRank)>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (_entity, link, rank) = query.item();
         if rank.0 == 1 {
@@ -5817,7 +5819,7 @@ mod tests {
         });
     }
 
-    async fn settle_stamp(query: Query<(Entity, &A)>, mut commands: Commands) {
+    async fn settle_stamp(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, _a) = query.item();
         commands.insert((Note,));
     }
@@ -5854,7 +5856,7 @@ mod tests {
     async fn demand_gated_check(
         query: Query<(Entity, &A)>,
         _demand: Query<Entity, With<Note>>,
-        mut commands: Commands,
+        mut commands: Commands<Anything>,
     ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(1));

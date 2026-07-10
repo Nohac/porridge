@@ -20,9 +20,15 @@ whole subsystems). Every design decision below is checked against it.
 2. **A wrong declaration must be impossible or loud.** Compile-time where
    the type system reaches (bundle membership), debug-runtime where it
    cannot (entity shapes, incremental inserts), never trusted silently.
-3. **Adoption is per-system.** Bare `Commands` remains legal and means
-   "declares everything" (a wildcard edge in the graph). Checks degrade
-   conservatively around wildcards.
+3. **No silent wildcard.** There is no public undeclared `Commands`: bare
+   `Commands` does not compile, every system declares its output set (an
+   empty declaration, `Commands<()>`, marks a removal-only writer), and
+   hooks declare through their closure's `Commands<S>` parameter — merged
+   into the wrapped system's registry entry. A crate-internal wildcard
+   (`Anything`) exists only for the runner's raw per-invocation buffer and
+   engine tests; a system that genuinely needs breadth declares a wide
+   group *explicitly*, so looseness is always spelled, grep-able, and
+   visible in the graph.
 
 ## Layer 1: typed `Commands<S>` (declared output types)
 
@@ -35,8 +41,7 @@ async fn check_imports(
 ) { ... }
 ```
 
-- `Commands<S = Anything>`: the default keeps every existing signature
-  compiling; `Anything` is the wildcard.
+- `Commands<S>` has no default: declaring is not optional.
 - `S` is a tuple mixing bare component types and group aliases. Groups are
   ordinary tuple aliases — closed, nestable, *enumerable at runtime* by a
   trait walked over the tuple (unlike trait-impl membership, which cannot

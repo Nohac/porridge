@@ -102,6 +102,13 @@ impl DeclarationList for Anything {
     }
 }
 
+/// The empty declaration: a removal-only writer.
+impl DeclarationList for () {
+    fn declared_types() -> Option<Vec<TypeId>> {
+        Some(Vec::new())
+    }
+}
+
 impl<C: Component> DeclarationList for C {
     fn declared_types() -> Option<Vec<TypeId>> {
         Some(vec![TypeId::of::<C>()])

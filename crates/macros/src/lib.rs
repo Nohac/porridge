@@ -391,7 +391,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 bowl: &::bowl::__derive::Bowl,
                 snapshot: &'__item ::bowl::__derive::Snapshot,
                 state: &Self::State,
-                commands: &::bowl::__derive::Commands,
+                commands: &::bowl::__derive::Commands<::bowl::__derive::Anything>,
                 guards: &mut ::bowl::__derive::GuardStore,
             ) -> Self::Item<'__item> {{
                 {name} {{

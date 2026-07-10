@@ -226,7 +226,7 @@ fn init_tracing() {
 
 async fn touch_file_text_once(
     query: Query<(Entity, MutRef<'_, FileText>), Without<StressTouched>>,
-    mut commands: Commands,
+    mut commands: Commands<(StressTouched,)>,
 ) {
     short_sleep().await;
 
@@ -241,7 +241,7 @@ async fn touch_file_text_once(
 
 async fn seed_extra_imports_once(
     query: Query<(Entity, MutRef<'_, SystemImportDb>), Without<ImportDbStressTouched>>,
-    mut commands: Commands,
+    mut commands: Commands<(ImportDbStressTouched,)>,
 ) {
     short_sleep().await;
 

@@ -32,7 +32,7 @@
 //! settle-phase inserts defer to the next run). Tracked joins dissolve the
 //! ordering problem outright.
 
-use bowl::{Commands, Component, Entity, Eq, MutRef, Query, Where, With};
+use bowl::{Commands, Component, DerivedFrom, Entity, Eq, MutRef, Query, Where, With};
 use tracing::info;
 
 use crate::lang::entities::document::{FilePath, FileText};
@@ -75,12 +75,17 @@ pub(crate) struct HoverWord(pub(crate) String);
 
 /// One entity's answer for one hover request, addressed by an equal
 /// [`RequestKey`]; see [`priority`] for the bands.
+///
+/// `CandidateParts` is the output declaration every candidate system uses.
 #[derive(Component, Hash)]
 #[component(hash)]
 pub(crate) struct HoverCandidate {
     pub(crate) priority: u8,
     pub(crate) text: String,
 }
+
+/// The candidate bundle every entity hover system declares and emits.
+pub(crate) type CandidateParts = (HoverCandidate, RequestKey, DerivedFrom);
 
 /// Priority bands for hover answers: the more position-specific, the
 /// higher. The zero and fallback bands are the enrichment scaffold every
@@ -107,7 +112,7 @@ pub(crate) mod priority {
 pub(crate) async fn resolve_hover_requests(
     query: Query<(Entity, &FilePath, &Position), With<HoverRequest>>,
     file: Option<Query<(Entity, &FileText), Where<Eq<FilePath>>>>,
-    mut commands: Commands,
+    mut commands: Commands<(RequestKey, HoverRank, HoverInfo, HoverFile, HoverWord)>,
 ) {
     crate::short_sleep().await;
 

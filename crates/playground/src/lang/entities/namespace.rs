@@ -9,13 +9,13 @@ use tracing::info;
 
 use crate::lang::{
     entities::{definition::AstDef, node_span, token_texts},
-    entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
+    entity::{AstFacts, HoverStage, LanguageEntity, LowerCtx, LowerStage},
     facts::{BelongsToFile, Span},
     grammar::{
         lexer::Token,
         parser::{CstData, NodeRef, Rule},
     },
-    service::{HoverCandidate, HoverRequest, HoverWord, RequestKey, priority},
+    service::{CandidateParts, HoverCandidate, HoverRequest, HoverWord, RequestKey, priority},
 };
 
 #[derive(Component, Hash)]
@@ -52,7 +52,7 @@ impl LanguageEntity for Namespace {
 }
 
 impl LowerStage for Namespace {
-    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands) {
+    fn lower(ctx: &LowerCtx<'_>, node: NodeRef, commands: &mut Commands<AstFacts>) {
         let Some((path, path_node)) = declared_path(ctx, node) else {
             return;
         };
@@ -90,7 +90,7 @@ struct QualifiedDefs<'a> {
 async fn hover_qualified_definitions(
     query: Query<(Entity, &HoverWord), With<HoverRequest>>,
     context: QualifiedDefs<'_>,
-    mut commands: Commands,
+    mut commands: Commands<CandidateParts>,
 ) {
     crate::short_sleep().await;
 
@@ -151,7 +151,7 @@ fn first_rule_child(cst: &CstData, node: NodeRef, rule: Rule) -> Option<NodeRef>
 pub(crate) async fn qualify_members(
     namespaces: Query<(Entity, &NamespaceDecl, &NamespacePath)>,
     members: Query<(Entity, &AstDef), Where<Eq<NamespacePath>>>,
-    mut commands: Commands,
+    mut commands: Commands<(QualifiedName, DerivedFrom)>,
 ) {
     let (namespace, decl, _path) = namespaces.item();
     let (definition, def) = members.item();

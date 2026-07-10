@@ -28,11 +28,10 @@ use crate::{
 /// The type parameter is the system's *output declaration*: a tuple of
 /// component types and/or group aliases (which are themselves tuple
 /// aliases). `insert` bounds every bundle to the declared set, so emitting
-/// an undeclared component does not compile. The default,
-/// [`Anything`](crate::Anything), is the wildcard — bare `Commands` keeps
-/// today's dynamic behavior and shows up as a wildcard edge in the system
-/// graph. See `spec/declared-outputs.md`.
-pub struct Commands<S = Anything> {
+/// an undeclared component does not compile. There is no default and no
+/// public wildcard: every system declares, and `Commands<()>` marks a
+/// removal-only writer. See `spec/declared-outputs.md`.
+pub struct Commands<S> {
     pub(crate) inner: Arc<Mutex<CommandBuffer>>,
     _declares: PhantomData<fn() -> S>,
 }
@@ -58,7 +57,7 @@ pub(crate) struct CommandBuffer {
     allocator: Arc<AtomicU64>,
 }
 
-impl Commands {
+impl Commands<Anything> {
     /// Creates an invocation-local command buffer that reserves spawn ids
     /// from `spawn_slots` first and `allocator` after.
     pub(crate) fn new(spawn_slots: Vec<Entity>, allocator: Arc<AtomicU64>) -> Self {
@@ -142,7 +141,7 @@ impl<S> Commands<S> {
 }
 
 /// Command builder scoped to one entity.
-pub struct EntityCommands<'a, S = Anything> {
+pub struct EntityCommands<'a, S> {
     commands: &'a mut Commands<S>,
     entity: Entity,
 }
