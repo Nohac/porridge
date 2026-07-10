@@ -231,11 +231,30 @@ async fn main() {
         count = hover_facts.collect().len(),
         "hover facts after request"
     );
-    if std::env::var_os("BOWL_COUNTERS").is_some() {
+    // End-of-run engine diagnostics: per-system explain reports plus the
+    // settle counters, so a slow run explains itself.
+    eprintln!(
+        "\n== explain ==  settles: {}  generations: {}",
+        bowl::bowl_debug_settles(),
+        bowl::bowl_debug_generations()
+    );
+    eprintln!(
+        "{:<58} {:>9} {:>8} {:>9} {:>11}",
+        "system", "phase", "matched", "memoized", "stale_views"
+    );
+    for (name, report) in db.explain_all().await {
+        // Strip module paths (also inside generics) for a readable table.
+        let name = strip_module_paths(name);
         eprintln!(
-            "settles: {} generations: {}",
-            bowl::bowl_debug_settles(),
-            bowl::bowl_debug_generations()
+            "{:<58} {:>9} {:>8} {:>9} {:>11}",
+            name,
+            report
+                .phase
+                .map(|phase| format!("{phase:?}"))
+                .unwrap_or_default(),
+            report.matched_rows,
+            report.memoized_rows,
+            report.stale_views
         );
     }
 }
@@ -438,6 +457,24 @@ async fn mutate_file_by_path(db: Bowl, path: String) {
             "external file mut"
         );
     }
+}
+
+/// `a::b::f<(x::y::T, z::U)>` → `f<(T, U)>`.
+fn strip_module_paths(name: &str) -> String {
+    let mut out = String::new();
+    for chunk in name.split("::") {
+        // Keep only the trailing identifier of each `::` chain: erase the
+        // identifier we just appended when another segment follows.
+        while out
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            out.pop();
+        }
+        out.push_str(chunk);
+    }
+    out
 }
 
 pub(crate) async fn short_sleep() {

@@ -1166,6 +1166,20 @@ impl Bowl {
     /// rows memoized, the wrong phase, the wrong system name entirely — or
     /// ambient staleness, where the system's `View`s moved but its tracked
     /// deps did not ([`ExplainReport::stale_views`]).
+    /// [`Bowl::explain`] for every registered system, in registration
+    /// order, with each system's name — the end-of-run diagnostic dump.
+    pub async fn explain_all(&self) -> Vec<(&'static str, ExplainReport)> {
+        let names: Vec<&'static str> = {
+            let state = self.inner.state.lock().await;
+            state.systems.iter().map(|system| system.name).collect()
+        };
+        let mut reports = Vec::with_capacity(names.len());
+        for name in names {
+            reports.push((name, self.explain(name).await));
+        }
+        reports
+    }
+
     pub async fn explain(&self, system: &str) -> ExplainReport {
         let (target, memo, snapshot) = {
             let mut state = self.inner.state.lock().await;

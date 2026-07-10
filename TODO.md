@@ -449,8 +449,15 @@ let rows = diagnostics.collect();
   *count* times per-settle *fixed cost*, not row scale. Dirty queues cut
   the planning slice of that fixed cost; the rest is per-phase snapshot
   clones, state-lock round-trips, `always_run` Settle-phase planning
-  (`cleanup_stale_derived` has `WorldMetaView`, so it enumerates all
-  `DerivedFrom` rows every settle), and the debug-only commit checks.
+  (`cleanup_stale_derived` has `WorldMetaView`, so it *runs* — not just
+  plans — every `DerivedFrom` row every settle: the playground's explain
+  dump shows 96 matched / 0 memoized × 37 settles ≈ 3.5k invocations per
+  run doing nothing but `is_current` checks), and the debug-only commit
+  checks. The cleanup fix is its own item: anchor-revision staleness is
+  cheap to detect engine-side (compare captured anchor revisions against
+  entity revisions — a per-settle sweep over the `DerivedFrom` store,
+  no system invocations, no memo traffic), or give the system real memo
+  deps on its anchors instead of `always_run`.
   Fixed-cost thread worth its own pass after stage 2: snapshot reuse
   across phases when the world hasn't changed, a cheaper `is_current`
   path for cleanup, and a true no-op-settle early-out.
