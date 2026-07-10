@@ -18,8 +18,8 @@ use std::time::Duration;
 
 use benches::{
     Def, PairMark, Parity, ParityNote, Path, Text, W1, W2, W3, bump_all_sources, defs_bowl,
-    file_name, file_pipeline_bowl, in_join_bowl, parity_bowl, scan_bowl, settle_files,
-    spawn_parity_bowl, touch_file, touch_group, wide_row_bowl,
+    file_name, file_pipeline_bowl, fleet_bowl, in_join_bowl, parity_bowl, scan_bowl,
+    settle_files, spawn_parity_bowl, touch_file, touch_group, touch_slot0, wide_row_bowl,
 };
 use bowl::{Entity, Eq, Query, Where};
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -225,6 +225,26 @@ fn view_scaling(c: &mut Criterion) {
     group.finish();
 }
 
+/// One touched slot among 32 disjoint systems: the planner-gating case.
+/// Ungated, every wave replans all 32 systems; gated, one.
+fn planner_gating(c: &mut Criterion) {
+    let mut group = c.benchmark_group("planner_gating");
+    group.sample_size(20);
+
+    for rows in [64usize, 512] {
+        let (bowl, target) = block_on(fleet_bowl(rows));
+        let mut bump = 0u64;
+        group.bench_with_input(BenchmarkId::from_parameter(rows), &rows, |b, _| {
+            b.iter(|| {
+                bump += 1;
+                black_box(block_on(touch_slot0(&bowl, target, bump)))
+            })
+        });
+    }
+
+    group.finish();
+}
+
 fn in_join_planning(c: &mut Criterion) {
     let mut group = c.benchmark_group("in_join_planning");
     group.sample_size(10);
@@ -264,6 +284,6 @@ criterion_group!(
     config = Criterion::default()
         .measurement_time(Duration::from_secs(2))
         .warm_up_time(Duration::from_millis(300));
-    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, presence_scan, where_eq, view_scaling, in_join_planning
+    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, presence_scan, where_eq, view_scaling, in_join_planning, planner_gating
 );
 criterion_main!(engine);

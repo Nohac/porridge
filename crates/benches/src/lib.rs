@@ -299,3 +299,46 @@ pub async fn in_join_bowl(groups: usize, members_per_group: usize) -> (Bowl, Vec
 pub async fn touch_group(bowl: &Bowl, group: Entity, bump: u64) {
     bowl.entity(group).insert((GroupTag(bump),)).await;
 }
+
+/// Fleet fixtures for planner gating: 32 systems over 32 disjoint
+/// component types. A settle that touches one slot should plan one
+/// system, not thirty-two.
+pub struct Slot<const N: usize>(pub u64);
+
+impl<const N: usize> Component for Slot<N> {}
+
+pub async fn observe_slot<const N: usize>(query: Query<(Entity, &Slot<N>)>) {
+    let (_entity, _slot) = query.item();
+}
+
+macro_rules! fleet_builder {
+    ($($n:literal),*) => {{
+        let builder = Bowl::builder();
+        $(let builder = builder.system(observe_slot::<$n>);)*
+        builder.build()
+    }};
+}
+
+macro_rules! fleet_insert {
+    ($bowl:expr, $rows:expr; $($n:literal),*) => {
+        $(for index in 0..$rows {
+            $bowl.insert((Slot::<$n>(index as u64),)).await;
+        })*
+    };
+}
+
+/// 32 slot systems, `rows` entities per slot, settled.
+pub async fn fleet_bowl(rows: usize) -> (Bowl, Entity) {
+    let bowl = fleet_builder!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+    fleet_insert!(bowl, rows; 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+    let inserted = bowl.insert((Slot::<0>(999),)).await;
+    let target = inserted.entity();
+    bowl.scoop::<Query<(Entity, &Slot<0>)>>().await;
+    (bowl, target)
+}
+
+/// Touches slot 0 only; 31 of 32 systems have no reason to plan.
+pub async fn touch_slot0(bowl: &Bowl, target: Entity, bump: u64) {
+    bowl.entity(target).insert((Slot::<0>(bump),)).await;
+    bowl.scoop::<Query<(Entity, &Slot<0>)>>().await;
+}
