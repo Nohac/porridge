@@ -424,8 +424,10 @@ let rows = diagnostics.collect();
   and an all-skip wave skips the whole wave setup (snapshot + memo
   clone). Marks reset on conflict deferral and stale commits. New
   `planner_gating` bench (32 disjoint systems, one touched).
-- **Found: the per-wave memo clone is the dominant settle cost at
-  scale** (`Arc::new(memo.clone())` in `run_phase_streaming`; at 16k
+- **Done: the per-wave memo clone is eliminated** (was the dominant
+  settle cost at scale — incremental_settle −23…−28%, cold_settle
+  −9…−12%, planner_gating −22…−26%; see spec/bench-reports.md). Original
+  finding, kept for the record: (`Arc::new(memo.clone())` in `run_phase_streaming`; at 16k
   memo entries — `planner_gating/512` — it is milliseconds per settle
   and buries what gating saves; it is also why gating first *regressed*
   `in_join_planning`: fast empty waves → more waves → more clones,
