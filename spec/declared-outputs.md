@@ -93,7 +93,12 @@ struct LangSchema {
   does not resolve on concrete types — E0223 — and a module alias whose
   name matches one of the shape's own components would shadow itself into
   a cycle, so the raw tuples live at the outer scope under hidden names
-  and the module re-aliases them.) In `Commands<S>` position a shape
+  and the module re-aliases them. Inherent associated types —
+  `impl LangSchema { type Diagnostic = ...; }`, the syntax that would make
+  the module unnecessary — are unstable (rust-lang/rust#8995; the
+  lazy-normalization blocker landed early 2026), and when they stabilize
+  the derive switches its output so `LangSchema::Diagnostic` works
+  without touching user code.) In `Commands<S>` position a shape
   degrades to a *group* of its component types — `Option<T>` declares `T`
   ("may emit") — so the schema is the single source of truth and most
   hand-written group aliases disappear. Stretch, staged later:
@@ -124,6 +129,79 @@ system graph. Staged consumers, in order:
    hand-roll today.
 4. **Event-driven scheduling**: a commit of `T` wakes exactly the
    consumers of `T` (the streaming-evaluation endgame).
+
+## Layer 4: typed entities (facets) — decided design
+
+The end state agreed for the schema arc; supersedes untyped `Entity` in
+user-facing APIs (bare `Entity` remains engine-internal and at the dynamic
+boundary, where replication/external adapters apply components by runtime
+`TypeId`).
+
+- **Facet semantics.** `Entity<H>` means *conforms at least to shape `H`*,
+  not "is exactly H": entities are multi-faceted on purpose (a request
+  entity carries base request components plus the derived answer shape).
+  Two typed handles to the same id may coexist; each bounds what flows
+  through *it*. Exclusive table-row semantics were considered and
+  rejected — they would forbid ride-along modeling (dsql's resolution
+  facts on syntax entities) and force entity-per-shape joins.
+- **Acquisition.** Spawns: `commands.insert(bundle)` becomes *strict* —
+  the bundle must match one shape declared in `S` (bundle ⊆ shape, all
+  required parts present, unions: at least one variant — exactly-one
+  stays a runtime check, negative trait bounds do not exist) — and
+  returns `Entity<H>` for the matched shape. Loose group declarations
+  redeclare at shape granularity. Queries: facet-anchored tuples.
+- **Facet-anchored queries with presence-typing.**
+  `Query<(Entity<H>, &A, Option<&B>, MutRef<'_, C>)>`: the facet drives
+  row matching (H's required set), and the shape's optionality dictates
+  each sibling part's form — `&T`/`MutRef<T>` legal iff `T` required in
+  `H`, `Option<&T>` iff optional (or a union member), anything outside
+  `H` rejected. This makes "bare reference silently narrows matching"
+  unrepresentable. Free-form component tuples with untyped `Entity`
+  remain as the *vocabulary read* (cross-shape reads like spans and file
+  anchors are semantically cross-cutting; reads cannot produce ill-shaped
+  data). One facet per row tuple in v1.
+
+  *Coherence constraint found during implementation:* presence-typing on
+  plain tuples cannot be a compile-time trait bound — it would need a
+  second blanket `QueryParam` impl for tuples containing `Entity<H>`,
+  which overlaps the generic tuple impl (rustc's coherence does not use
+  negative reasoning). So the tuple form validates at `add_system`
+  (loud panic, same precedent as join-provider rules), and *compile-time*
+  presence-typing arrives with the derive-generated shape rows
+  (`Query<my_schema::DiagnosticRow>`), where the generated nominal type
+  carries the correct `Option`-ness by construction. The facet part
+  itself contributes row matching but **no** revision deps: siblings'
+  reads stay the memo deps, so an unread required part changing value
+  does not rerun the row (component-granular incrementality preserved);
+  appearance/disappearance is handled by planning re-enumeration.
+- **Increments.** `commands.entity(e)` with `e: Entity<H>` allows
+  inserting only `H`'s `Option<T>` parts (required parts exist by
+  construction) plus union variants; the untyped-handle path keeps
+  membership semantics with the runtime conformance backstop. Typed
+  handles are snapshot-sound, not transaction-sound: the claim is made
+  against the invocation's snapshot, commits reconcile, the debug check
+  covers the window.
+- **Union slots.** A shape element `OneOf<G>` (G a group alias) declares
+  a sum: exactly one member present. The explicit marker exists because
+  the macro cannot distinguish an alias from a component at token level;
+  it also reads well. In `Commands` position the same alias stays a plain
+  may-emit group. Enables typed heterogeneous references
+  (`ChildOf(Entity<schema::SyntaxNode>)`).
+- **`Bowl<Schema>`.** The schema moves into the bowl's type; `add_system`
+  requires each system's declaration to be covered by the schema at
+  compile time, retiring the last runtime registry check. Reusable
+  plugins become schema-generic with capability bounds.
+- **Reads stay component-granular.** Locking reads to whole shapes would
+  coarsen memo deps to table granularity (`SELECT *`-only); shape rows
+  are derive-generated sugar over per-component deps, never a
+  replacement.
+
+Build order: (1) strict spawn returning `Entity<H>`; (2) facet handles +
+optionals-only increments; (3) facet-anchored queries with
+presence-typing; (4) union slots (`OneOf`); (5) `Bowl<Schema>` +
+compile-time declaration coverage; (6) sweep untyped `Entity` from the
+public surface; (7) derive-generated shape rows / union enum readers as
+sugar.
 
 ## Implementation order
 

@@ -18,7 +18,7 @@ use crate::lang::{
 };
 
 async fn language_bowl() -> Bowl {
-    let db = Bowl::new();
+    let db = Bowl::of::<lang::schema::LangSchema>();
     lang::register_language(&db).await;
     db.insert((
         Singleton::<SystemImportDb>::new(),
@@ -286,23 +286,25 @@ struct ReviewSchema {
 
 async fn write_report(
     query: Query<(Entity, &Position)>,
-    // The shape doubles as the output declaration via the companion trait.
-    mut commands: bowl::Commands<review_schema::Report>,
+    // The shape doubles as the output declaration via the companion alias.
+    mut commands: bowl::Commands<(review_schema::Report,)>,
 ) {
     let (entity, _pos) = query.item();
-    commands.insert((
+    // Strict spawn: the bundle matches the shape (optional part included
+    // here) and the returned handle carries the facet.
+    let report: bowl::Entity<review_schema::Report> = commands.insert((
         Report("ok"),
         Grade(5),
         bowl::DerivedFrom::new(entity),
         Reviewed,
     ));
+    let _ = report.untyped();
 }
 
 #[test]
 fn schema_shapes_declare_and_conform() {
     block_on(async {
-        let db = Bowl::new();
-        db.with_schema::<ReviewSchema>().await;
+        let db = Bowl::of::<ReviewSchema>();
         db.add_system(write_report).await;
 
         db.insert((Position { offset: 0 },)).await;
@@ -316,16 +318,20 @@ async fn write_incomplete_report(
     mut commands: bowl::Commands<(Report, bowl::DerivedFrom)>,
 ) {
     let (entity, _pos) = query.item();
-    // Missing the required Grade: the shape check must name it.
-    commands.insert((Report("bad"), bowl::DerivedFrom::new(entity)));
+    // Strict spawning makes an incomplete spawn a compile error, so the
+    // runtime conformance check guards the door that stays open:
+    // incremental writes onto an existing entity that fit a shape but
+    // never complete it. Missing the required Grade: the check must name
+    // it.
+    commands.entity(entity).insert(Report("bad"));
+    commands.entity(entity).insert(bowl::DerivedFrom::new(entity));
 }
 
 #[test]
 #[should_panic(expected = "left required component(s) missing")]
 fn incomplete_shapes_panic_with_the_missing_component() {
     block_on(async {
-        let db = Bowl::new();
-        db.with_schema::<ReviewSchema>().await;
+        let db = Bowl::of::<ReviewSchema>();
         db.add_system(write_incomplete_report).await;
 
         db.insert((Position { offset: 0 },)).await;

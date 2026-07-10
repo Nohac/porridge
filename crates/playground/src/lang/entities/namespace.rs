@@ -90,7 +90,7 @@ struct QualifiedDefs<'a> {
 async fn hover_qualified_definitions(
     query: Query<(Entity, &HoverWord), With<HoverRequest>>,
     context: QualifiedDefs<'_>,
-    mut commands: Commands<CandidateParts>,
+    mut commands: Commands<(CandidateParts,)>,
 ) {
     crate::short_sleep().await;
 
@@ -151,7 +151,7 @@ fn first_rule_child(cst: &CstData, node: NodeRef, rule: Rule) -> Option<NodeRef>
 pub(crate) async fn qualify_members(
     namespaces: Query<(Entity, &NamespaceDecl, &NamespacePath)>,
     members: Query<(Entity, &AstDef), Where<Eq<NamespacePath>>>,
-    mut commands: Commands<(QualifiedName, DerivedFrom)>,
+    mut commands: Commands<(crate::lang::schema::lang_schema::QualifiedName,)>,
 ) {
     let (namespace, decl, _path) = namespaces.item();
     let (definition, def) = members.item();

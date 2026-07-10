@@ -919,7 +919,7 @@ impl QueryParam for Entity {
     type Item<'a> = Entity;
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
-        (0..snapshot.next_entity_raw()).map(Entity).collect()
+        (0..snapshot.next_entity_raw()).map(Entity::from_raw).collect()
     }
 
     fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
@@ -1078,6 +1078,17 @@ impl<T: Component> QueryParam for (MutRef<'_, T>,) {
 
 /// One entry in an entity query tuple.
 #[doc(hidden)]
+/// How a query part's row matching relates to component presence, for the
+/// bitmap fast path on schema bowls.
+pub enum PresenceReq {
+    /// Matching is not expressible as presence; probe the stores.
+    Opaque,
+    /// The part never constrains the row (optional parts).
+    Free,
+    /// The part requires exactly this component present.
+    Requires(TypeId),
+}
+
 pub trait QueryPart {
     type Item<'a>: Send;
 
@@ -1089,6 +1100,12 @@ pub trait QueryPart {
     /// Entities this part could match, ascending.
     fn candidates(snapshot: &Snapshot) -> Vec<Entity>;
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
+    /// This part's presence requirement, when `matches` is pure presence.
+    /// Must agree with `matches` exactly; parts whose matching does more
+    /// keep the `Opaque` default and the row falls back to probing.
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Opaque
+    }
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
     fn access_all() -> Access;
@@ -1138,6 +1155,10 @@ impl<T: Component> QueryPart for &T {
 
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
         snapshot.has::<T>(entity)
+    }
+
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Requires(TypeId::of::<T>())
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1200,11 +1221,15 @@ impl<T: Component> QueryPart for Option<&T> {
     fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
         // Only reachable when every part is optional: fall back to the
         // dense id scan, like the bare `Entity` param.
-        (0..snapshot.next_entity_raw()).map(Entity).collect()
+        (0..snapshot.next_entity_raw()).map(Entity::from_raw).collect()
     }
 
     fn matches(_snapshot: &Snapshot, _entity: Entity) -> bool {
         true
+    }
+
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Free
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1252,6 +1277,10 @@ impl<T: Component> QueryPart for MutRef<'_, T> {
         snapshot.has::<T>(entity)
     }
 
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Requires(TypeId::of::<T>())
+    }
+
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
         component_dep_if_tracked::<T>(snapshot, entity)
             .into_iter()
@@ -1280,6 +1309,31 @@ impl<T: Component> QueryPart for MutRef<'_, T> {
         );
         MutRef::new(entity, value)
     }
+}
+
+/// Drops candidates that don't match every part of an entity-tuple query.
+/// On schema bowls, when every part's matching is pure presence, one
+/// bitmap mask check per candidate replaces the per-part store probing.
+macro_rules! retain_matching_parts {
+    ($snapshot:ident, $candidates:ident, $($P:ident),*) => {{
+        let mask = $snapshot.presence().and_then(|presence| {
+            let mut required = Vec::new();
+            $(match $P::presence_requirement() {
+                PresenceReq::Opaque => return None,
+                PresenceReq::Free => {}
+                PresenceReq::Requires(type_id) => required.push(type_id),
+            })*
+            presence.mask(&required)
+        });
+        match (mask, $snapshot.presence()) {
+            (Some(mask), Some(presence)) => {
+                $candidates.retain(|entity| presence.matches(*entity, &mask));
+            }
+            _ => {
+                $candidates.retain(|entity| true $(&& $P::matches($snapshot, *entity))*);
+            }
+        }
+    }};
 }
 
 macro_rules! impl_entity_query_param {
@@ -1318,7 +1372,7 @@ macro_rules! impl_entity_query_param {
                 // A single part's candidates are exactly its matches; only
                 // multi-part queries need to probe the non-primary stores.
                 if PARTS > 1 {
-                    candidates.retain(|entity| true $(&& $P::matches(snapshot, *entity))*);
+                    retain_matching_parts!(snapshot, candidates, $($P),*);
                 }
 
                 candidates
@@ -1327,7 +1381,7 @@ macro_rules! impl_entity_query_param {
             fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
                 match hint {
                     Some(mut candidates) => {
-                        candidates.retain(|entity| true $(&& $P::matches(snapshot, *entity))*);
+                        retain_matching_parts!(snapshot, candidates, $($P),*);
                         candidates
                     }
                     None => Self::rows(snapshot),
@@ -1344,6 +1398,7 @@ macro_rules! impl_entity_query_param {
                 $(deps.extend($P::deps(snapshot, *state));)*
                 deps
             }
+
 
             fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
                 let mut access = Vec::new();
@@ -2124,7 +2179,7 @@ fn optional_component_dep<T: Component>(snapshot: &Snapshot, entity: Entity) -> 
 pub(crate) fn store_watermark_dep(snapshot: &Snapshot, type_id: TypeId) -> Dep {
     Dep {
         type_id,
-        entity: Entity(0),
+        entity: Entity::from_raw(0),
         revision: Some(Revision(snapshot.store_watermark(type_id))),
         store_scoped: true,
     }

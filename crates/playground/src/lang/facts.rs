@@ -1,11 +1,12 @@
 //! Cross-cutting facts shared by every language entity: diagnostics, spans,
 //! file anchoring, and the demand marker.
 
-use bowl::{BundleDeclaredIn, Commands, Component, DerivedFrom, Entity};
+use bowl::{Commands, Component, DerivedFrom, Entity, SpawnsAs};
 
-/// The diagnostic entity's component group: what every check/lint system
-/// declares in its `Commands<..>` output set (spec/declared-outputs.md).
-pub(crate) type DiagnosticParts = (Diagnostic, Severity, DerivedFrom);
+/// The diagnostic entity's shape, defined in the bowl schema: what every
+/// check/lint system declares in its `Commands<..>` output set
+/// (spec/declared-outputs.md).
+pub(crate) type DiagnosticParts = crate::lang::schema::lang_schema::Diagnostic;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Span {
@@ -40,16 +41,16 @@ pub(crate) struct BelongsToFile(pub(crate) Entity);
 #[component(hash)]
 pub(crate) struct DiagnosticsDemand;
 
-/// Generic over the caller's output declaration: any `Commands<S>` whose
-/// declaration covers the diagnostic bundle works — the infectious bound
-/// is the contract (helpers that emit must say what they emit).
+/// Generic over the caller's output declaration: any `Commands<S>`
+/// declaring a shape the diagnostic bundle matches works — the infectious
+/// bound is the contract (helpers that emit must say what they emit).
 pub(crate) fn emit_diagnostic<S, M>(
     commands: &mut Commands<S>,
     derived_from: DerivedFrom,
     severity: Severity,
     message: impl Into<String>,
 ) where
-    (DerivedFrom, Severity, Diagnostic): BundleDeclaredIn<S, M>,
+    (DerivedFrom, Severity, Diagnostic): SpawnsAs<S, M>,
 {
     commands.insert((derived_from, severity, Diagnostic(message.into())));
 }

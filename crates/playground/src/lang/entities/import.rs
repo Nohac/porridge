@@ -86,7 +86,7 @@ async fn hover_imports(
     query: Query<(Entity, &HoverFile, &Position), With<HoverRequest>>,
     imports: View<'_, (Entity, &BelongsToFile, &ImportDecl)>,
     import_db: View<'_, (Entity, &SystemImportDb)>,
-    mut commands: Commands<CandidateParts>,
+    mut commands: Commands<(CandidateParts,)>,
 ) {
     crate::short_sleep().await;
 

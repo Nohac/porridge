@@ -806,7 +806,42 @@ impl Default for Bowl {
 }
 
 impl Bowl {
-    /// Creates an empty async bowl.
+    /// Creates an empty async bowl with entity schema `S`
+    /// (`#[derive(Schema)]`).
+    ///
+    /// The schema is fixed at construction — before any store or system
+    /// exists — so registration-time analyses can rely on it and the
+    /// component universe is closed for presence indexing. In debug builds
+    /// every derived write is shape-checked at commit: each write bundle
+    /// per entity must fit inside one declared shape, and after the write
+    /// that shape's required components must all be present.
+    pub fn of<S: Schema>() -> Self {
+        let bowl = Self::new();
+        {
+            let mut state = bowl
+                .inner
+                .state
+                .try_lock()
+                .expect("freshly constructed bowl state is uncontended");
+            let shapes = S::shapes();
+            // The schema closes the component universe, so presence bits
+            // can be laid out once, before any store exists.
+            let mut universe = Vec::new();
+            for shape in &shapes {
+                for (type_id, _) in shape.required.iter().chain(&shape.optional) {
+                    if !universe.contains(type_id) {
+                        universe.push(*type_id);
+                    }
+                }
+            }
+            state.world.init_presence(universe);
+            state.schema = Some(Arc::new(shapes));
+        }
+        bowl
+    }
+
+    /// Creates an empty async bowl without an entity schema — conformance
+    /// and schema-driven analyses are skipped. Prefer [`Bowl::of`].
     ///
     /// The initial completed generation is `0`; the first inserted input is
     /// assigned to generation `1`.
@@ -1020,17 +1055,6 @@ impl Bowl {
             bowl: self.clone(),
             entity,
         }
-    }
-
-    /// Registers the bowl's entity schema (`#[derive(Schema)]`). In debug
-    /// builds every derived write is then shape-checked at commit: each
-    /// write bundle per entity must fit inside one declared shape, and
-    /// after the write that shape's required components must all be
-    /// present. Register before adding systems so registration-time
-    /// analyses can consult the shapes.
-    pub async fn with_schema<S: Schema>(&self) {
-        let mut state = self.inner.state.lock().await;
-        state.schema = Some(Arc::new(S::shapes()));
     }
 
     /// Explains why `system` (matched by function-name suffix) did or did
@@ -2257,7 +2281,10 @@ fn check_shape_conformance(
     writer: &'static str,
 ) {
     // Shapes whose component set covers the whole bundle are candidates.
+    // Shapes may overlap, so an incomplete candidate is only a failure if
+    // no other candidate completes; the panic names the nearest one.
     let mut best: Option<(&ShapeDesc, usize)> = None;
+    let mut nearest_incomplete: Option<(&ShapeDesc, Vec<&'static str>)> = None;
     for shape in schema {
         let covered = bundle
             .iter()
@@ -2274,17 +2301,27 @@ fn check_shape_conformance(
             if missing.is_empty() {
                 return;
             }
-            panic!(
-                "system `{writer}` wrote entity {} as shape `{}` but left required \
-                 component(s) missing: {}",
-                entity.raw(),
-                shape.name,
-                missing.join(", ")
-            );
+            if nearest_incomplete
+                .as_ref()
+                .is_none_or(|(_, best_missing)| missing.len() < best_missing.len())
+            {
+                nearest_incomplete = Some((shape, missing));
+            }
+            continue;
         }
         if best.is_none_or(|(_, best_covered)| covered > best_covered) {
             best = Some((shape, covered));
         }
+    }
+
+    if let Some((shape, missing)) = nearest_incomplete {
+        panic!(
+            "system `{writer}` wrote entity {} as shape `{}` but left required \
+             component(s) missing: {}",
+            entity.raw(),
+            shape.name,
+            missing.join(", ")
+        );
     }
 
     let written = bundle
@@ -5528,16 +5565,21 @@ mod tests {
         mut commands: Commands<(NoteParts, B)>,
     ) {
         let (entity, _a) = query.item();
-        commands.insert((Note,));
-        commands.entity(entity).insert(Count(7));
+        let note: Entity<NoteParts> = commands.insert((Note, Count(7)));
+        // Required parts can't be rewritten through the facet — the
+        // untyped handle keeps plain membership semantics.
+        commands.entity(note.untyped()).insert(Count(7));
         commands.entity(entity).insert(B(2));
     }
 
     /// Typed `Commands<S>`: declared writes (directly or through a group
     /// alias) compile and behave exactly like the wildcard; the declared
-    /// set reaches the registry. Emitting an undeclared component is a
-    /// compile error, which a test cannot demonstrate — the runtime
-    /// honesty backstop is pinned separately.
+    /// set reaches the registry. Spawns are strict — the bundle matches the
+    /// `NoteParts` shape and the returned handle is the typed facet, which
+    /// the entity builder accepts directly. Emitting an undeclared
+    /// component or spawning a partial shape is a compile error, which a
+    /// test cannot demonstrate — the runtime honesty backstop is pinned
+    /// separately.
     #[test]
     fn declared_outputs_permit_declared_writes() {
         block_on(async {
@@ -5549,6 +5591,125 @@ mod tests {
             assert_eq!(notes.collect().len(), 1);
             let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
             assert_eq!(counts.collect()[0].1.0, 7);
+        });
+    }
+
+    type OptionalShape = (Note, Option<Count>);
+
+    async fn spawn_with_and_without_optional(
+        query: Query<(Entity, &A)>,
+        mut commands: Commands<(OptionalShape,)>,
+    ) {
+        let (entity, _a) = query.item();
+        // Both bundles match the same shape: optional parts are exempt
+        // from the completeness half of strict matching.
+        let bare: Entity<OptionalShape> = commands.insert((Note,));
+        let full: Entity<OptionalShape> = commands.insert((Note, Count(3)));
+        // Facet handles compare across facets by identity and flow into
+        // untyped positions explicitly.
+        assert_ne!(bare, full);
+        assert_eq!(bare, bare.untyped());
+        commands.entity(full).insert(Count(3));
+        let _ = (entity, bare.untyped(), full.raw());
+    }
+
+    /// Strict spawns with `Option<T>` shape parts: a bundle matches with
+    /// or without the optional, both spawns land, and the typed facet
+    /// handle behaves as a plain id (comparison, `untyped`, builders).
+    #[test]
+    fn strict_spawns_match_shapes_with_and_without_optionals() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(spawn_with_and_without_optional).await;
+            bowl.insert((A(1),)).await;
+
+            let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            assert_eq!(notes.collect().len(), 2);
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(counts.collect().len(), 1);
+        });
+    }
+
+    /// Schema with overlapping shapes: `wide` covers everything `narrow`
+    /// does plus `B`.
+    struct OverlappingSchema;
+
+    impl crate::declare::Schema for OverlappingSchema {
+        fn shapes() -> Vec<crate::declare::ShapeDesc> {
+            use std::any::{TypeId, type_name};
+            vec![
+                crate::declare::ShapeDesc {
+                    name: "wide",
+                    required: vec![
+                        (TypeId::of::<Note>(), type_name::<Note>()),
+                        (TypeId::of::<Count>(), type_name::<Count>()),
+                        (TypeId::of::<B>(), type_name::<B>()),
+                    ],
+                    optional: Vec::new(),
+                },
+                crate::declare::ShapeDesc {
+                    name: "narrow",
+                    required: vec![
+                        (TypeId::of::<Note>(), type_name::<Note>()),
+                        (TypeId::of::<Count>(), type_name::<Count>()),
+                    ],
+                    optional: Vec::new(),
+                },
+            ]
+        }
+    }
+
+    async fn spawn_narrow(
+        query: Query<(Entity, &A)>,
+        mut commands: Commands<((Note, Count),)>,
+    ) {
+        let (_entity, _a) = query.item();
+        commands.insert((Note, Count(1)));
+    }
+
+    /// Shapes may overlap: a bundle that is covered-but-incomplete for one
+    /// shape (`wide`, iterated first) must still pass when a later shape
+    /// (`narrow`) completes — an incomplete candidate is only a failure if
+    /// no candidate passes.
+    #[test]
+    fn conformance_accepts_any_passing_candidate_among_overlapping_shapes() {
+        block_on(async {
+            let bowl = Bowl::of::<OverlappingSchema>();
+            bowl.add_system(spawn_narrow).await;
+            bowl.insert((A(1),)).await;
+
+            let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            assert_eq!(notes.collect().len(), 1);
+        });
+    }
+
+    /// On a schema bowl multi-part row matching goes through the presence
+    /// bitmaps, so every transition must keep the bits exact: base insert
+    /// sets them, targeted removal clears them, re-insert restores them.
+    /// (Equivalence with store probing is what the assertion checks — the
+    /// probing path is the same query on a schema-less bowl.)
+    #[test]
+    fn presence_masks_track_insert_and_removal_transitions() {
+        block_on(async {
+            let bowl = Bowl::of::<OverlappingSchema>();
+            let inserted = bowl.insert((Note, Count(1))).await;
+
+            let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
+            assert_eq!(rows.collect().len(), 1);
+
+            bowl.entity(inserted.entity()).remove::<Count>().await;
+            let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
+            assert_eq!(
+                rows.collect().len(),
+                0,
+                "a removed component must clear its presence bit"
+            );
+            let notes = bowl.scoop::<Query<(Entity, &Note)>>().await;
+            assert_eq!(notes.collect().len(), 1, "the other bit must survive");
+
+            bowl.entity(inserted.entity()).insert((Count(2),)).await;
+            let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
+            assert_eq!(rows.collect().len(), 1, "re-insert must restore the bit");
         });
     }
 

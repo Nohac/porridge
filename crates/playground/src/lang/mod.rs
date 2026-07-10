@@ -10,6 +10,7 @@ pub(crate) mod entities;
 pub(crate) mod entity;
 pub(crate) mod facts;
 pub(crate) mod grammar;
+pub(crate) mod schema;
 pub(crate) mod service;
 
 use bowl::{Bowl, Phase, SystemExt, cleanup_stale_derived};
@@ -23,6 +24,9 @@ use crate::lang::{
 
 /// Assemble the language: every entity, the shared lowering walk, the
 /// services, and the cleanup system the derived-fact conventions rely on.
+/// The bowl is expected to be constructed over the language schema
+/// (`Bowl::of::<schema::LangSchema>()`) so registration-time analyses can
+/// consult the shapes.
 pub(crate) async fn register_language(db: &Bowl) {
     register_entity::<Document>(db).await;
     register_entity::<Import>(db).await;

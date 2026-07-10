@@ -137,7 +137,7 @@ impl HoverStage for Definition {
 async fn hover_definitions(
     query: Query<(Entity, &HoverWord), With<HoverRequest>>,
     defs: View<'_, (Entity, &AstDef)>,
-    mut commands: Commands<CandidateParts>,
+    mut commands: Commands<(CandidateParts,)>,
 ) {
     crate::short_sleep().await;
 
@@ -174,7 +174,7 @@ async fn index_defs(
     query: Query<(Entity, &FileText)>,
     defs: View<'_, (Entity, &AstDef)>,
     paths: View<'_, (Entity, &NamespacePath)>,
-    mut commands: Commands<(Singleton<DefIndex>, DefIndex)>,
+    mut commands: Commands<(crate::lang::schema::lang_schema::DefIndex,)>,
 ) {
     let _ = query.item();
     crate::short_sleep().await;

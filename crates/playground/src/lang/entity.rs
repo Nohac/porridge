@@ -17,28 +17,21 @@
 //! systems (see [`HoverStage`]) and a service finalizer picks the winning
 //! candidate by priority (`service::hover`).
 
-use bowl::{Bowl, Commands, DerivedFrom, Entity};
+use bowl::{Bowl, Commands, Entity};
 use tracing::info;
 
 use crate::lang::{
-    entities::{
-        definition::AstDef,
-        import::ImportDecl,
-        namespace::{NamespaceDecl, NamespacePath},
-    },
-    facts::BelongsToFile,
     grammar::parser::{CstData, NodeRef},
+    schema::lang_schema,
 };
 
 /// Everything the lowering walk may emit — the shared output declaration
-/// for [`LowerStage`] and `generate_ast` (spec/declared-outputs.md).
+/// for [`LowerStage`] and `generate_ast`: a subset selection out of the
+/// bowl schema, where the shapes are defined (spec/declared-outputs.md).
 pub(crate) type AstFacts = (
-    AstDef,
-    ImportDecl,
-    NamespaceDecl,
-    NamespacePath,
-    BelongsToFile,
-    DerivedFrom,
+    lang_schema::AstDef,
+    lang_schema::Import,
+    lang_schema::Namespace,
 );
 
 pub(crate) trait LanguageEntity {

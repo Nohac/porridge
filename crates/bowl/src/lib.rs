@@ -102,13 +102,16 @@ pub use bowl::{
     InsertBuilder, InsertedEntity, RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
 };
 pub use commands::{Commands, EntityCommands};
-pub use declare::{BundleDeclaredIn, DeclarationList, DeclaredIn, Schema, ShapeDesc};
+pub use declare::{
+    BundleDeclaredIn, CoveredBy, DeclarationList, DeclaredIn, IncrementOf, MatchesShape, Schema,
+    ShapeDesc, SpawnsAs,
+};
 pub use macros::Schema;
 pub use component::{
     Component, ComponentHookContext, DerivedFrom, RelationshipEdge, RelationshipRetraction,
     RelationshipTarget, Singleton, hash_component, relationship_retractions_for,
 };
-pub use entity::Entity;
+pub use entity::{Entity, Untyped};
 pub use macros::Component;
 pub use query::{
     And, ArgBundle, Cow, CowQueryParam, EntityMutResult, Eq, ExternalFilter, ExternalQueryFilter,

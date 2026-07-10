@@ -8,7 +8,8 @@ use std::{
 
 use crate::{
     Bundle, Component, Entity,
-    declare::{Anything, BundleDeclaredIn, DeclaredIn},
+    declare::{Anything, DeclaredIn, IncrementOf, SpawnsAs},
+    entity::Untyped,
     world::{SystemInvocation, World},
 };
 
@@ -85,10 +86,16 @@ impl<S> Commands<S> {
     }
 
     /// Returns a builder for writing components to an existing entity.
-    pub fn entity(&mut self, entity: Entity) -> EntityCommands<'_, S> {
+    ///
+    /// The handle's facet carries into the builder: through `Entity<H>`
+    /// only the shape's `Option<T>` parts may be inserted (required parts
+    /// are complete at spawn), while the untyped handle keeps plain
+    /// membership semantics against `S`.
+    pub fn entity<H>(&mut self, entity: Entity<H>) -> EntityCommands<'_, S, H> {
         EntityCommands {
             commands: self,
-            entity,
+            entity: entity.untyped(),
+            _facet: PhantomData,
         }
     }
 
@@ -96,36 +103,41 @@ impl<S> Commands<S> {
     /// reserved id, so sibling commands in the same buffer can link to it
     /// (parent/child facts during lowering).
     ///
+    /// Spawning is *strict*: the bundle must fully match one shape declared
+    /// in `S` — every required (non-`Option`) part present, nothing outside
+    /// the shape — and the returned handle is typed with the matched facet,
+    /// `Entity<Shape>`. Partial entities cannot be spawned; optional parts
+    /// are added later through `entity(..)`.
+    ///
     /// Reservation reuses the invocation's previous spawn ids slot by slot,
     /// so idempotent reruns keep their entity identity; only genuinely new
     /// slots allocate. The id is guaranteed only for fresh spawns: a
     /// `Singleton<T>` bundle resolves to the already-existing singleton
     /// entity when the buffer applies.
-    ///
-    /// Every component of the bundle must be declared in `S` (trivially
-    /// true for the wildcard default).
-    pub fn insert<B, M>(&mut self, bundle: B) -> Entity
+    pub fn insert<B, M>(&mut self, bundle: B) -> Entity<B::Shape>
     where
-        B: Bundle + BundleDeclaredIn<S, M>,
+        B: Bundle + SpawnsAs<S, M>,
     {
         let mut buffer = self.inner.lock().expect("command buffer lock poisoned");
         let reserved = buffer
             .spawn_slots
             .get(buffer.spawn_cursor)
             .copied()
-            .unwrap_or_else(|| Entity(buffer.allocator.fetch_add(1, Ordering::Relaxed)));
+            .unwrap_or_else(|| Entity::from_raw(buffer.allocator.fetch_add(1, Ordering::Relaxed)));
         buffer.spawn_cursor += 1;
         buffer.ops.push(Box::new(SpawnCommand { bundle, reserved }));
-        reserved
+        reserved.retype()
     }
 
     /// Buffers removing an entity and all attached components.
-    pub fn remove(&mut self, entity: Entity) {
+    pub fn remove<H>(&mut self, entity: Entity<H>) {
         self.inner
             .lock()
             .expect("command buffer lock poisoned")
             .ops
-            .push(Box::new(RemoveEntityCommand { entity }));
+            .push(Box::new(RemoveEntityCommand {
+                entity: entity.untyped(),
+            }));
     }
 
     /// Drains buffered command operations after the system invocation returns.
@@ -140,22 +152,26 @@ impl<S> Commands<S> {
     }
 }
 
-/// Command builder scoped to one entity.
-pub struct EntityCommands<'a, S> {
+/// Command builder scoped to one entity. The facet parameter `H` bounds
+/// what may be written: `Untyped` (the default) means plain declaration
+/// membership, a shape facet restricts inserts to its optional parts.
+pub struct EntityCommands<'a, S, H = Untyped> {
     commands: &'a mut Commands<S>,
     entity: Entity,
+    _facet: PhantomData<fn() -> H>,
 }
 
-impl<S> EntityCommands<'_, S> {
+impl<S, H> EntityCommands<'_, S, H> {
     /// Buffers insertion of a derived component on this entity.
     ///
     /// The component is owned by the current system invocation. When that
     /// invocation reruns, previous derived outputs with the same owner are
     /// removed before the new commands are applied. The component must be
-    /// declared in `S`.
-    pub fn insert<T, M>(&mut self, value: T)
+    /// declared in `S` and, through a facet handle, be an `Option<T>` part
+    /// of the facet's shape.
+    pub fn insert<T, M, M2>(&mut self, value: T)
     where
-        T: Component + DeclaredIn<S, M>,
+        T: Component + DeclaredIn<S, M> + IncrementOf<H, M2>,
     {
         self.commands
             .inner

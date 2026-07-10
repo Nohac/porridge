@@ -232,12 +232,13 @@ struct DerivedAnchor {
 }
 
 impl DerivedFrom {
-    /// Marks this entity as derived from one source entity.
+    /// Marks this entity as derived from one source entity. Accepts any
+    /// facet handle; anchoring is by identity.
     ///
     /// The actual revision is resolved by the bowl when the component is
     /// inserted, so callers do not need to traffic in revision values.
-    pub fn new(entity: Entity) -> Self {
-        Self::many([entity])
+    pub fn new<H>(entity: Entity<H>) -> Self {
+        Self::many([entity.untyped()])
     }
 
     /// Marks this entity as derived from every source entity in `entities`.

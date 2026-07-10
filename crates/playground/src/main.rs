@@ -33,7 +33,7 @@ impl Component for ImportDbStressTouched {}
 async fn main() {
     init_tracing();
 
-    let db = Bowl::new();
+    let db = Bowl::of::<lang::schema::LangSchema>();
 
     lang::register_language(&db).await;
     db.add_system(touch_file_text_once).await;
@@ -226,7 +226,7 @@ fn init_tracing() {
 
 async fn touch_file_text_once(
     query: Query<(Entity, MutRef<'_, FileText>), Without<StressTouched>>,
-    mut commands: Commands<(StressTouched,)>,
+    mut commands: Commands<(crate::lang::schema::lang_schema::StressTouched,)>,
 ) {
     short_sleep().await;
 
@@ -241,7 +241,7 @@ async fn touch_file_text_once(
 
 async fn seed_extra_imports_once(
     query: Query<(Entity, MutRef<'_, SystemImportDb>), Without<ImportDbStressTouched>>,
-    mut commands: Commands<(ImportDbStressTouched,)>,
+    mut commands: Commands<(crate::lang::schema::lang_schema::ImportDbStressTouched,)>,
 ) {
     short_sleep().await;
 

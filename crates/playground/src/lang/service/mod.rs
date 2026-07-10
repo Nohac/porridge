@@ -14,6 +14,7 @@
 mod hover;
 
 pub(crate) use hover::{
+    HoverRank,
     CandidateParts, HoverCandidate, HoverFile, HoverInfo, HoverRequest, HoverWord, Position,
     RequestKey, priority,
 };

@@ -43,6 +43,40 @@ pub struct Parity(pub u64);
 #[component(hash)]
 pub struct Def(pub String);
 
+/// Wide-row fixtures for the presence-bitmap fast path: a three-part
+/// tracked row, benchable on a schema bowl (mask matching) and a
+/// schema-less one (per-part store probing) with identical data.
+#[derive(Component, Hash, Clone)]
+#[component(hash)]
+pub struct W1(pub u64);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct W2(pub u64);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct W3(pub u64);
+
+#[derive(bowl::Schema)]
+pub struct WideSchema {
+    wide: (W1, W2, W3),
+}
+
+/// N entities carrying the full wide row.
+pub async fn wide_row_bowl(rows: usize, schema: bool) -> Bowl {
+    let bowl = if schema {
+        Bowl::of::<WideSchema>()
+    } else {
+        Bowl::new()
+    };
+    for index in 0..rows {
+        bowl.insert((W1(index as u64), W2(index as u64), W3(index as u64)))
+            .await;
+    }
+    bowl
+}
+
 pub async fn parse(query: Query<(Entity, &Text)>, mut commands: Commands<(Parsed,)>) {
     let (entity, text) = query.item();
     commands.entity(entity).insert(Parsed(text.0.len() as u64));
@@ -54,7 +88,7 @@ pub async fn extract_first_line(query: Query<(Entity, &Text)>, mut commands: Com
     commands.entity(entity).insert(FirstLine(line));
 }
 
-pub async fn diag_long_files(query: Query<(Entity, &Parsed)>, mut commands: Commands<(DerivedFrom, Diag)>) {
+pub async fn diag_long_files(query: Query<(Entity, &Parsed)>, mut commands: Commands<((DerivedFrom, Diag),)>) {
     let (entity, parsed) = query.item();
     if parsed.0 > 60 {
         commands.insert((
@@ -72,7 +106,7 @@ pub async fn derive_parity(query: Query<(Entity, &Src)>, mut commands: Commands<
 pub async fn check_duplicate_defs(
     query: Query<(Entity, &Def)>,
     defs: View<'_, (Entity, &Def)>,
-    mut commands: Commands<(DerivedFrom, Diag)>,
+    mut commands: Commands<((DerivedFrom, Diag),)>,
 ) {
     let (entity, def) = query.item();
 
@@ -155,7 +189,7 @@ pub async fn bump_all_sources(bowl: &Bowl) {
 #[component(hash)]
 pub struct ParityNote(pub u64);
 
-pub async fn spawn_parity_note(query: Query<(Entity, &Src)>, mut commands: Commands<(DerivedFrom, ParityNote)>) {
+pub async fn spawn_parity_note(query: Query<(Entity, &Src)>, mut commands: Commands<((DerivedFrom, ParityNote),)>) {
     let (entity, src) = query.item();
     commands.insert((DerivedFrom::new(entity), ParityNote(src.0 % 2)));
 }

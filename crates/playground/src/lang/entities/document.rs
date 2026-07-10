@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::lang::{
     entity::{AstFacts, HoverStage, LanguageEntity, LowerCtx, LowerStage},
-    facts::Diagnostic,
+    facts::{Diagnostic, Severity},
     grammar::parser::{CstData, NodeRef, Parser},
 };
 
@@ -44,7 +44,13 @@ impl HoverStage for Document {
     async fn register_hover(_db: &Bowl) {}
 }
 
-pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: Commands<(ParsedFile, DerivedFrom, Diagnostic)>) {
+pub(crate) async fn parse_file(
+    query: Query<(Entity, &FileText)>,
+    mut commands: Commands<(
+        crate::lang::schema::lang_schema::ParsedFile,
+        crate::lang::schema::lang_schema::Diagnostic,
+    )>,
+) {
     let (file, text) = query.item();
 
     crate::short_sleep().await;
@@ -58,7 +64,13 @@ pub(crate) async fn parse_file(query: Query<(Entity, &FileText)>, mut commands: 
         cst: cst.into_data(),
     });
 
+    // Parse failures are errors: the schema's diagnostic shape made the
+    // previously missing severity explicit.
     for diag in diags {
-        commands.insert((DerivedFrom::new(file), Diagnostic(diag.message)));
+        commands.insert((
+            DerivedFrom::new(file),
+            Severity::Error,
+            Diagnostic(diag.message),
+        ));
     }
 }
