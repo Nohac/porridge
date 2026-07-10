@@ -115,6 +115,9 @@ struct Inner {
     /// Wakes the runner's in-flight await when a mutator registers, so the
     /// preemption boundary is reached promptly.
     preempt_signal: futures::task::AtomicWaker,
+    /// Wakes the runner's open window when the last preempt waiter
+    /// finishes applying.
+    preempt_done: futures::task::AtomicWaker,
 }
 
 /// World counters identifying the state a snapshot was taken at.
@@ -172,6 +175,10 @@ struct State {
     /// so a waiter locks the state once per wait, not once per generation
     /// (the broadcast version produced ~100 herd acquisitions per settle).
     waiters: Vec<(u64, oneshot::Sender<()>)>,
+    /// External mutators waiting for a preemption boundary. Notified when
+    /// a window opens or a generation completes, instead of spin-polling
+    /// the state lock every yield.
+    boundary_waiters: Vec<oneshot::Sender<()>>,
     settled_revision: u64,
     /// Snapshot retained at the last settle for `last_settled` scoops.
     /// Invalidated by destructive takes (a retained snapshot pins every
@@ -1135,6 +1142,7 @@ impl Bowl {
                     preempt_window: false,
                     preempt_restart: false,
                     waiters: Vec::new(),
+                    boundary_waiters: Vec::new(),
                     settled_revision: 0,
                     settled_snapshot: None,
                     settle_watchers: Vec::new(),
@@ -1148,6 +1156,7 @@ impl Bowl {
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
                 preempt_waiters: std::sync::atomic::AtomicUsize::new(0),
                 preempt_signal: futures::task::AtomicWaker::new(),
+                preempt_done: futures::task::AtomicWaker::new(),
             }),
         }
     }
@@ -1188,7 +1197,7 @@ impl Bowl {
         let mut f = f;
         let mut waiter = PreemptWaiter::new(self, deferred);
         loop {
-            {
+            let boundary = {
                 let mut state = lock_state(&self.inner.state).await;
                 if state.world.revision::<T>(entity) != original_revision {
                     waiter.finish();
@@ -1205,16 +1214,25 @@ impl Bowl {
                             waiter.finish();
                             return None;
                         }
-                        TryUpdate::Busy(back) => f = back,
+                        // A held cell releases without touching the state
+                        // lock; keep the yield path for busy retries.
+                        TryUpdate::Busy(back) => {
+                            f = back;
+                            None
+                        }
                     }
+                } else {
+                    let (sender, receiver) = oneshot::channel();
+                    state.boundary_waiters.push(sender);
+                    Some(receiver)
                 }
+            };
+            match boundary {
+                Some(receiver) => {
+                    let _ = receiver.await;
+                }
+                None => yield_once().await,
             }
-
-            // The cell is held by a reader or writer, or an epoch is driving
-            // and the runner has not reached the preemption boundary yet.
-            // Retry after yielding; the state lock is not held while we
-            // wait, so guard holders that need it cannot deadlock with us.
-            yield_once().await;
         }
     }
 
@@ -1231,7 +1249,7 @@ impl Bowl {
         let mut f = f;
         let mut waiter = PreemptWaiter::new(self, deferred);
         loop {
-            {
+            let boundary = {
                 let mut state = lock_state(&self.inner.state).await;
                 if waiter.boundary_reached(&mut state) {
                     match apply_component_mutation::<T, F, R>(&mut state, entity, f) {
@@ -1243,12 +1261,25 @@ impl Bowl {
                             waiter.finish();
                             return None;
                         }
-                        TryUpdate::Busy(back) => f = back,
+                        // A held cell releases without touching the state
+                        // lock, so busy-retry keeps the yield path.
+                        TryUpdate::Busy(back) => {
+                            f = back;
+                            None
+                        }
                     }
+                } else {
+                    let (sender, receiver) = oneshot::channel();
+                    state.boundary_waiters.push(sender);
+                    Some(receiver)
                 }
+            };
+            match boundary {
+                Some(receiver) => {
+                    let _ = receiver.await;
+                }
+                None => yield_once().await,
             }
-
-            yield_once().await;
         }
     }
 
@@ -1471,7 +1502,7 @@ impl Bowl {
         // generation drains this retraction instead of the next epoch.
         let mut waiter = PreemptWaiter::new(self, false);
         loop {
-            {
+            let boundary = {
                 let mut state = lock_state(&self.inner.state).await;
                 if waiter.boundary_reached(&mut state) {
                     waiter.finish();
@@ -1480,8 +1511,11 @@ impl Bowl {
                     state.pending_generation.get_or_insert(next_generation);
                     return;
                 }
-            }
-            yield_once().await;
+                let (sender, receiver) = oneshot::channel();
+                state.boundary_waiters.push(sender);
+                receiver
+            };
+            let _ = boundary.await;
         }
     }
 
@@ -1544,7 +1578,7 @@ impl Bowl {
         // of the next epoch.
         let mut waiter = PreemptWaiter::new(self, false);
         loop {
-            {
+            let boundary = {
                 let mut state = lock_state(&self.inner.state).await;
                 if waiter.boundary_reached(&mut state) {
                     waiter.finish();
@@ -1557,8 +1591,11 @@ impl Bowl {
                         generation,
                     };
                 }
-            }
-            yield_once().await;
+                let (sender, receiver) = oneshot::channel();
+                state.boundary_waiters.push(sender);
+                receiver
+            };
+            let _ = boundary.await;
         }
     }
 
@@ -1965,6 +2002,10 @@ impl Bowl {
                 GENERATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             state.running_generation = None;
+            // A completed generation is a natural mutation boundary.
+            for boundary in state.boundary_waiters.drain(..) {
+                let _ = boundary.send(());
+            }
             let mut satisfied = Vec::new();
             state.waiters.retain_mut(|(target, sender)| {
                 if *target <= generation {
@@ -2314,16 +2355,25 @@ impl Bowl {
         {
             let mut state = lock_state(&self.inner.state).await;
             state.preempt_window = true;
+            for boundary in state.boundary_waiters.drain(..) {
+                let _ = boundary.send(());
+            }
         }
 
-        while self
-            .inner
-            .preempt_waiters
-            .load(atomic::Ordering::SeqCst)
-            > 0
-        {
-            yield_once().await;
-        }
+        // Wait for every registered preempt waiter to apply, woken by
+        // `PreemptWaiter::finish`/`Drop` instead of spin-polling.
+        futures::future::poll_fn(|context| {
+            if self.inner.preempt_waiters.load(atomic::Ordering::SeqCst) == 0 {
+                return std::task::Poll::Ready(());
+            }
+            self.inner.preempt_done.register(context.waker());
+            if self.inner.preempt_waiters.load(atomic::Ordering::SeqCst) == 0 {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        })
+        .await;
 
         let mut state = lock_state(&self.inner.state).await;
         state.preempt_window = false;
@@ -2469,6 +2519,7 @@ impl PreemptWaiter {
                 .inner
                 .preempt_waiters
                 .fetch_sub(1, atomic::Ordering::SeqCst);
+            self.bowl.inner.preempt_done.wake();
         }
     }
 }
@@ -2519,6 +2570,14 @@ impl Drop for EpochGuard {
         state.settling -= 1;
         if state.settling == 0 {
             promote_deferred_inputs(&mut state, u64::MAX);
+        }
+        // The epoch's end is a mutation boundary too: a mutator that
+        // registered during the Settle phase (no generation completion
+        // follows it) must be woken here or it would starve.
+        let boundary_waiters: Vec<_> = state.boundary_waiters.drain(..).collect();
+        drop(state);
+        for boundary in boundary_waiters {
+            let _ = boundary.send(());
         }
     }
 }
