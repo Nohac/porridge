@@ -470,8 +470,19 @@ let rows = diagnostics.collect();
   Fixed-cost thread worth its own pass after stage 2: snapshot reuse
   across phases when the world hasn't changed, a cheaper `is_current`
   path for cleanup, and a true no-op-settle early-out.
-- **Stage 2 execution plan (bitmap dirty queues)** — planning becomes
-  delta application:
+- **Done (stage 2, first cut): entity-granular delta planning.** The
+  world keeps a settle-scoped write log with per-system cursors;
+  delta-eligible systems (exactly one plain tracked query, bounded
+  interest) plan only entities written since their last plan
+  (`states_hinted`); resets/epoch rolls force one full plan. Joins,
+  outer joins, always-run, and custom params keep full planning.
+  planner_gating/512 −45.6% (cumulative planner series −58%);
+  equivalence pinned by exact-run-count test. Still open: extending
+  eligibility to pair-driven joins (provider-side hints), the
+  presence-mask reverse index (the original bitmap formulation —
+  today's filter is interest-type based, masks would make transition →
+  system lookup O(1)), and With/Without mask bits. Original plan, for
+  the record:
   1. Registration builds the reverse index: for each system with a
      bounded interest set, its presence mask(s) (schema bowls); store
      `mask → Vec<SystemId>` sorted for lookup.

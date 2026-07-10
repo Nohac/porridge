@@ -160,11 +160,36 @@ struct PlannedInvocation<State> {
 /// drive per-row execution while ambient params like `View` and `Commands`
 /// participate in the same machinery without special role flags.
 #[doc(hidden)]
+/// How a param relates to delta (dirty-entity) planning.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DeltaShape {
+    /// Contributes a singleton state, never entity rows (`View`,
+    /// `Commands`): compatible with a sibling driver's hint.
+    Inert,
+    /// Drives entity rows and can enumerate them from a dirty-entity hint
+    /// (a plain tracked `Query`).
+    Driver,
+    /// Cannot be hinted (joins, outer joins, always-run params, custom
+    /// params): the owning system always plans fully.
+    Opaque,
+}
+
 pub trait SystemParam {
     type State: Clone + Send;
     type Item<'a>: Send;
 
     fn states(snapshot: &Snapshot) -> Vec<Self::State>;
+    /// `states` restricted to candidate entities whose stores were written
+    /// since the system's last plan. Only consulted when the whole param
+    /// tuple is delta-eligible (exactly one `Driver`, rest `Inert`).
+    fn states_hinted(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Self::State> {
+        let _ = hint;
+        Self::states(snapshot)
+    }
+    /// This param's relation to delta planning; conservative default.
+    fn delta_shape() -> DeltaShape {
+        DeltaShape::Opaque
+    }
     fn keys(state: &Self::State) -> Vec<Entity>;
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
@@ -305,6 +330,22 @@ where
 
     fn states(snapshot: &Snapshot) -> Vec<Self::State> {
         filtered_rows::<Q, Filter>(snapshot)
+    }
+
+    fn states_hinted(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Self::State> {
+        filtered_rows_from_candidates::<Q, Filter>(snapshot, hint.to_vec())
+    }
+
+    fn delta_shape() -> DeltaShape {
+        // Bound joins enumerate from providers, not hints; everything else
+        // about a plain tracked query is hintable.
+        if <Filter as QueryFilter<Q>>::bound_key_types().is_empty()
+            && <Filter as QueryFilter<Q>>::in_key_types().is_empty()
+        {
+            DeltaShape::Driver
+        } else {
+            DeltaShape::Opaque
+        }
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
@@ -502,6 +543,10 @@ where
     type State = ();
     type Item<'a> = View<'a, Q, Filter>;
 
+    fn delta_shape() -> DeltaShape {
+        DeltaShape::Inert
+    }
+
     // Ambient by design: view movement never invalidates, so it never
     // requires replanning either.
     fn interest_types() -> Option<Vec<TypeId>> {
@@ -565,6 +610,10 @@ where
 {
     type State = ();
     type Item<'a> = Commands<S>;
+
+    fn delta_shape() -> DeltaShape {
+        DeltaShape::Inert
+    }
 
     fn interest_types() -> Option<Vec<TypeId>> {
         Some(Vec::new())
@@ -666,6 +715,31 @@ macro_rules! impl_system_param_tuple {
                 let mut interest = Vec::new();
                 $(interest.extend($P::interest_types()?);)*
                 Some(interest)
+            }
+
+            fn delta_shape() -> DeltaShape {
+                let mut drivers = 0usize;
+                $(match $P::delta_shape() {
+                    DeltaShape::Opaque => return DeltaShape::Opaque,
+                    DeltaShape::Driver => drivers += 1,
+                    DeltaShape::Inert => {}
+                })*
+                if drivers == 1 {
+                    DeltaShape::Driver
+                } else {
+                    DeltaShape::Opaque
+                }
+            }
+
+            fn states_hinted(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Self::State> {
+                // Only reachable when delta-eligible: exactly one driver,
+                // no pair-expandable params, no bound pruning needed.
+                let mut states = Vec::new();
+                $(
+                    let $P = $P::states_hinted(snapshot, hint);
+                )*
+                for_each_state!(snapshot, states, []; $($P),*);
+                states
             }
 
             fn states(snapshot: &Snapshot) -> Vec<Self::State> {
@@ -1006,7 +1080,22 @@ fn plan_invocations<Params>(
 where
     Params: SystemParam,
 {
-    let states = Params::states(snapshot);
+    plan_invocations_hinted::<Params>(system, snapshot, memo, None)
+}
+
+fn plan_invocations_hinted<Params>(
+    system: SystemId,
+    snapshot: &Snapshot,
+    memo: &HashMap<SystemInvocation, MemoEntry>,
+    hint: Option<&[Entity]>,
+) -> PlannedRun<Params::State>
+where
+    Params: SystemParam,
+{
+    let states = match hint {
+        Some(hint) => Params::states_hinted(snapshot, hint),
+        None => Params::states(snapshot),
+    };
     let completed = !states.is_empty();
     let invocations = states
         .into_iter()
@@ -1140,6 +1229,7 @@ pub(crate) trait Runnable: Send + Sync {
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun<'a>>;
 
     fn run_settled<'a>(
@@ -1184,6 +1274,15 @@ pub struct BoxedSystem {
     pub(crate) planned_mark: Arc<std::sync::atomic::AtomicU64>,
     /// Profiling counters, surfaced by [`crate::Bowl::profile_all`].
     pub(crate) stats: Arc<SystemStats>,
+    /// Whether the system can plan from a dirty-entity hint (exactly one
+    /// plain tracked query driving rows, bounded interest).
+    pub(crate) delta_eligible: bool,
+    /// The plan epoch this system's `log_pos` belongs to; `u64::MAX`
+    /// forces the next plan to be full (fresh registration, resets).
+    pub(crate) plan_epoch: Arc<std::sync::atomic::AtomicU64>,
+    /// Cursor into the settle-scoped write log: entries before this were
+    /// covered by the system's last plan.
+    pub(crate) log_pos: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl BoxedSystem {
@@ -1193,6 +1292,7 @@ impl BoxedSystem {
         view_sets: Vec<Vec<TypeId>>,
         declared_outputs: Option<Vec<TypeId>>,
         interest: Option<Vec<TypeId>>,
+        delta_eligible: bool,
     ) -> Self {
         Self {
             runnable,
@@ -1200,9 +1300,12 @@ impl BoxedSystem {
             name,
             view_sets: Arc::new(view_sets),
             declared_outputs: declared_outputs.map(Arc::new),
+            delta_eligible: delta_eligible && interest.is_some(),
             interest: interest.map(Arc::new),
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
+            plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+            log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -1240,10 +1343,14 @@ impl BoxedSystem {
     }
 
     /// Forces the next wave to replan this system (conflict deferrals and
-    /// stale commits invalidate the planned mark).
+    /// stale commits invalidate the planned mark). Delta cursors are
+    /// invalidated too: a deferred or discarded row's entity may have no
+    /// new writes, so only a full plan is guaranteed to see it again.
     pub(crate) fn reset_planned_mark(&self) {
         self.planned_mark
             .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.plan_epoch
+            .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn run_during(mut self, phase: Phase) -> Self {
@@ -1446,12 +1553,13 @@ where
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun<'a>> {
         // Pre-plan the inner system now (planning is deterministic over the
         // captured snapshot + memo), so the run future carries the planned
         // rows instead of a memo snapshot — this is what lets the runner
         // stop cloning the memo per wave.
-        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo);
+        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo, hint);
         if inner.is_empty() {
             return Vec::new();
         }
@@ -1545,10 +1653,11 @@ where
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun<'a>> {
         // Pre-planned like `OnStart`; the completion hook appends its
         // output after the batch, only when the batch produced outputs.
-        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo);
+        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo, hint);
         if inner.is_empty() {
             return Vec::new();
         }
@@ -1624,8 +1733,9 @@ where
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        self.system.stream_runs(bowl, snapshot, memo)
+        self.system.stream_runs(bowl, snapshot, memo, hint)
     }
 
     fn run_settled<'a>(
@@ -1685,6 +1795,7 @@ where
         let declared_outputs =
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
+        let system_delta_eligible = system.delta_eligible;
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
                 _declares: PhantomData,
@@ -1696,9 +1807,12 @@ where
             name,
             view_sets,
             declared_outputs,
+            delta_eligible: system_delta_eligible,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
+            plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+            log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
@@ -1719,6 +1833,7 @@ where
         let declared_outputs =
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
+        let system_delta_eligible = system.delta_eligible;
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
                 _declares: PhantomData,
@@ -1730,9 +1845,12 @@ where
             name,
             view_sets,
             declared_outputs,
+            delta_eligible: system_delta_eligible,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
+            plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+            log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
@@ -1753,6 +1871,7 @@ where
         let declared_outputs =
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
+        let system_delta_eligible = system.delta_eligible;
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
                 _declares: PhantomData,
@@ -1764,9 +1883,12 @@ where
             name,
             view_sets,
             declared_outputs,
+            delta_eligible: system_delta_eligible,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
+            plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+            log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
@@ -1809,8 +1931,9 @@ impl BoxedSystem {
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        self.runnable.stream_runs(bowl, snapshot, memo)
+        self.runnable.stream_runs(bowl, snapshot, memo, hint)
     }
 
     pub(crate) fn run_settled<'a>(
@@ -1943,8 +2066,9 @@ where
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        plan_invocations::<F::Param>(self.id, &snapshot, memo)
+        plan_invocations_hinted::<F::Param>(self.id, &snapshot, memo, hint)
             .invocations
             .into_iter()
             .map(|invocation| {
@@ -2059,6 +2183,7 @@ where
             view_sets,
             F::Param::declared_outputs(),
             F::Param::interest_types(),
+            F::Param::delta_shape() == DeltaShape::Driver,
         )
     }
 }

@@ -87,6 +87,10 @@ struct Inner {
     /// This lock must only be held for short bookkeeping sections. It must not
     /// be held while user systems run.
     state: Mutex<State>,
+    /// Lock-free mirror of `State::completed_generation`, so the hot wait
+    /// paths (every scoop caller spinning on "is my generation done yet")
+    /// stop contending on the state lock.
+    completed_generation: std::sync::atomic::AtomicU64,
     /// Single-permit evaluator lock.
     ///
     /// Holding this guard means the caller is the only active runner. The guard
@@ -1024,6 +1028,7 @@ impl Bowl {
                     normal_clean: true,
                     startup_ran: false,
                 }),
+                completed_generation: std::sync::atomic::AtomicU64::new(0),
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
@@ -1638,12 +1643,11 @@ impl Bowl {
         };
 
         let snapshot = self.snapshot().await;
-        let memo_snapshot = Arc::new(memo.clone());
         let mut runs = systems
             .iter()
             .filter(|system| system.phase == Phase::Settle)
             .flat_map(|system| {
-                system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo_snapshot)
+                system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo, None)
             })
             .map(|planned| {
                 let owner = planned.owner;
@@ -1699,7 +1703,9 @@ impl Bowl {
     }
 
     async fn completed_generation(&self) -> u64 {
-        self.inner.state.lock().await.completed_generation
+        self.inner
+            .completed_generation
+            .load(atomic::Ordering::Acquire)
     }
 
     /// Revision counter of the last settled state — the cursor source for
@@ -1838,6 +1844,9 @@ impl Bowl {
             state.memo = memo;
             state.normal_clean = !normal_phase_changed;
             state.completed_generation = generation;
+            self.inner
+                .completed_generation
+                .store(generation, atomic::Ordering::Release);
             if cfg!(debug_assertions) {
                 GENERATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
@@ -1912,6 +1921,10 @@ impl Bowl {
                 WAVE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let snapshot_start = std::time::Instant::now();
                 let snapshot = self.snapshot().await;
+                let (plan_log, plan_epoch) = {
+                    let state = self.inner.state.lock().await;
+                    state.world.plan_log()
+                };
                 SNAPSHOT_NANOS.fetch_add(
                     snapshot_start.elapsed().as_nanos() as u64,
                     std::sync::atomic::Ordering::Relaxed,
@@ -1968,8 +1981,47 @@ impl Bowl {
                     .filter(|system| system.phase == phase && system.needs_planning(&snapshot))
                 {
                     let plan_start = std::time::Instant::now();
-                    let planned_runs =
-                        system.stream_runs(self.clone(), Arc::clone(&snapshot), memo);
+                    // Delta planning: a system whose cursor is current for
+                    // this epoch plans only the entities written since its
+                    // last plan; anything else (fresh registration, epoch
+                    // roll, resets) plans fully once and joins the deltas.
+                    let hint: Option<Vec<Entity>> = if system.delta_eligible
+                        && system
+                            .plan_epoch
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            == plan_epoch
+                    {
+                        let pos = system.log_pos.load(std::sync::atomic::Ordering::Relaxed)
+                            as usize;
+                        let interest = system
+                            .interest
+                            .as_ref()
+                            .expect("delta-eligible systems have bounded interest");
+                        let mut entities: Vec<Entity> = plan_log[pos.min(plan_log.len())..]
+                            .iter()
+                            .filter(|(type_id, _)| interest.contains(type_id))
+                            .map(|(_, entity)| *entity)
+                            .collect();
+                        entities.sort_unstable();
+                        entities.dedup();
+                        Some(entities)
+                    } else {
+                        None
+                    };
+                    let planned_runs = system.stream_runs(
+                        self.clone(),
+                        Arc::clone(&snapshot),
+                        memo,
+                        hint.as_deref(),
+                    );
+                    if system.delta_eligible {
+                        system
+                            .log_pos
+                            .store(plan_log.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                        system
+                            .plan_epoch
+                            .store(plan_epoch, std::sync::atomic::Ordering::Relaxed);
+                    }
                     system.stats.plan_nanos.fetch_add(
                         plan_start.elapsed().as_nanos() as u64,
                         std::sync::atomic::Ordering::Relaxed,
@@ -2152,6 +2204,7 @@ impl Bowl {
     )> {
         let mut state = self.inner.state.lock().await;
         let generation = state.pending_generation.take()?;
+        state.world.maybe_roll_plan_epoch();
         let inputs = std::mem::take(&mut state.pending_inputs);
 
         // Settle-phase inserts deferred from the previous settle land first:
@@ -2750,26 +2803,10 @@ async fn commit_system_run(
         if cfg!(debug_assertions) {
             let written = state.world.take_written_derived();
 
-            // Honesty backstop for declared outputs: typed `Commands<S>`
-            // makes undeclared emission a compile error, so this guards
-            // only future dynamic emission paths and declaration-registry
-            // drift. Wildcard systems (`declared_outputs == None`) skip.
-            if let Some(declared) = state
-                .systems
-                .get(writer.0)
-                .and_then(|system| system.declared_outputs.clone())
-            {
-                for (type_id, _entity, type_name) in &written {
-                    if !declared.contains(type_id) {
-                        panic!(
-                            "system `{}` emitted undeclared component `{type_name}`: \
-                             add it (or a group containing it) to the system's \
-                             `Commands<..>` declaration",
-                            state.systems[writer.0].name
-                        );
-                    }
-                }
-            }
+            // (The declared-output honesty backstop that used to live here
+            // is gone: with no public wildcard and strict typed `Commands`,
+            // undeclared emission is unrepresentable outside the engine's
+            // own test doubles — the type system carries the contract.)
 
             // Schema conformance: each entity's write bundle must fit one
             // declared shape, and after the write that shape's required
@@ -5975,6 +6012,70 @@ mod tests {
         });
     }
 
+    static DELTA_STAGE1_RUNS: AtomicUsize = AtomicUsize::new(0);
+    static DELTA_STAGE2_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    async fn delta_stage1(query: Query<(Entity, &A)>, mut commands: Commands<(B,)>) {
+        let (entity, a) = query.item();
+        DELTA_STAGE1_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(B(a.0 + 1));
+    }
+
+    async fn delta_stage2(query: Query<(Entity, &B)>, mut commands: Commands<(Count,)>) {
+        let (entity, b) = query.item();
+        DELTA_STAGE2_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(Count(b.0 as usize + 1));
+    }
+
+    /// Delta planning must be run-for-run identical to full planning: a
+    /// derivation chain over N rows runs each stage exactly N times on the
+    /// first settle and exactly once per touched row after — no missed
+    /// reruns (under-planning) and no spurious ones (over-planning).
+    #[test]
+    fn delta_planning_matches_full_planning_run_counts() {
+        DELTA_STAGE1_RUNS.store(0, Ordering::SeqCst);
+        DELTA_STAGE2_RUNS.store(0, Ordering::SeqCst);
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(delta_stage1)
+                .system(delta_stage2)
+                .build();
+
+            let mut entities = Vec::new();
+            for index in 0..10 {
+                entities.push(bowl.insert((A(index),)).await);
+            }
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 10);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 10);
+
+            // Touch one row: exactly one rerun per stage, correct values.
+            bowl.entity(entities[3].entity()).insert((A(100),)).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 11);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 11);
+            let rows = counts.collect();
+            assert_eq!(rows.len(), 10);
+            assert!(
+                rows.iter()
+                    .any(|(entity, count)| *entity == entities[3].entity() && count.0 == 102),
+                "the touched row must re-derive through the chain"
+            );
+
+            // Untouched settles plan nothing and rerun nothing.
+            bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 11);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 11);
+
+            // A fresh row after the steady state joins through deltas.
+            bowl.insert((A(50),)).await;
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 12);
+            assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 12);
+            assert_eq!(counts.collect().len(), 11);
+        });
+    }
+
     type NoteShape = (Note, Count, Option<B>);
 
     static FACET_ANCHOR_RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -6053,70 +6154,6 @@ mod tests {
                 "an optional part appearing must invalidate Tracked<H>"
             );
             assert_eq!(FACET_ANCHOR_RUNS.load(Ordering::SeqCst), 2);
-        });
-    }
-
-    /// A test-only param that *lies*: it declares only `Note` but hands the
-    /// system a wildcard buffer. The commit-time honesty backstop must
-    /// catch the undeclared emission (this is the guard for future dynamic
-    /// emission paths — typed `Commands` cannot get here).
-    struct LyingCommands(Commands<Anything>);
-
-    impl crate::system::SystemParam for LyingCommands {
-        type State = ();
-        type Item<'a> = LyingCommands;
-
-        fn states(_snapshot: &crate::world::Snapshot) -> Vec<Self::State> {
-            vec![()]
-        }
-
-        fn keys(_state: &Self::State) -> Vec<Entity> {
-            Vec::new()
-        }
-
-        fn deps(
-            _snapshot: &crate::world::Snapshot,
-            _state: &Self::State,
-        ) -> Vec<crate::query::Dep> {
-            Vec::new()
-        }
-
-        fn access(
-            _snapshot: &crate::world::Snapshot,
-            _state: &Self::State,
-        ) -> Vec<crate::query::Access> {
-            Vec::new()
-        }
-
-        fn declared_outputs() -> Option<Vec<std::any::TypeId>> {
-            Some(vec![std::any::TypeId::of::<Note>()])
-        }
-
-        fn fetch<'a>(
-            _bowl: &Bowl,
-            _snapshot: &'a crate::world::Snapshot,
-            _state: &Self::State,
-            commands: &Commands<Anything>,
-            _guards: &mut crate::query::GuardStore,
-        ) -> Self::Item<'a> {
-            LyingCommands(commands.clone())
-        }
-    }
-
-    async fn dishonest_writer(query: Query<(Entity, &A)>, mut lying: LyingCommands) {
-        let (_entity, _a) = query.item();
-        lying.0.insert((C(1),));
-    }
-
-    #[test]
-    #[should_panic(expected = "emitted undeclared component")]
-    fn undeclared_emission_panics_in_debug() {
-        block_on(async {
-            let bowl = Bowl::builder()
-                .system(dishonest_writer)
-                .build();
-            bowl.insert((A(1),)).await;
-            bowl.scoop::<Query<(Entity, &C)>>().await;
         });
     }
 

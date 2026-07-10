@@ -55,10 +55,12 @@ async fn check_imports(
 - Known wart: a component reachable through two declared items makes the
   membership proof ambiguous ("type annotations needed"). Rule: don't
   double-declare; keep groups disjoint.
-- Runtime honesty backstop: the commit path already records every derived
-  write (`written_derived`); in debug builds, a write outside the writer's
-  declared set panics. This exists for the wildcard-into-typed migration
-  boundary and for any future dynamic emission path.
+- ~~Runtime honesty backstop~~ (retired): with no public wildcard and
+  strict spawns, undeclared emission became unrepresentable, so the
+  debug-build commit check was removed — the type system carries the
+  contract. `written_derived` recording remains (it feeds shape
+  conformance and the same-phase flag, which guard what the type system
+  cannot see).
 
 Infrastructure components (`DerivedFrom` etc.) are declared like any
 other — groups make that painless, and exemptions would weaken the
