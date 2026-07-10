@@ -444,6 +444,53 @@ let rows = diagnostics.collect();
   disappears entirely. Refactor: split the wrapper path into
   plan-at-stream + execute-batch; `run_settled` keeps its by-ref memo.
   Expected to dominate every settle-shaped bench.
+- **Playground profile (debug counters, `BOWL_COUNTERS=1`)**: the run is
+  37 settles / 34 generations at ~2.8ms per settle in debug — settle
+  *count* times per-settle *fixed cost*, not row scale. Dirty queues cut
+  the planning slice of that fixed cost; the rest is per-phase snapshot
+  clones, state-lock round-trips, `always_run` Settle-phase planning
+  (`cleanup_stale_derived` has `WorldMetaView`, so it *runs* — not just
+  plans — every `DerivedFrom` row every settle: the playground's explain
+  dump shows 96 matched / 0 memoized × 37 settles ≈ 3.5k invocations per
+  run doing nothing but `is_current` checks), and the debug-only commit
+  checks. Done: `cleanup_stale_derived` is now a *batch sweep* — one
+  always-run invocation iterating a whole-store `View` instead of one
+  invocation per `DerivedFrom` row (playground: 96 → 1 planned
+  invocations per settle, generations 54 → 30). Deliberately user-land
+  (public params only), so plugins can build the same sweep shape.
+  Follow-ups from the same discussion: (a) an *intentional* once-per-
+  settle marker (`Sweep`/`.always()`) instead of `WorldMetaView`'s
+  `always_run` side effect being load-bearing; (b) the SIMD track —
+  `#[component(dense)]` column storage (`Vec<T>` + entity index,
+  whole-column COW against snapshots, per-column revision) and a
+  `BatchView<T>` param yielding scheduler-exclusive `&mut [T]`, designed
+  against span/offset remapping after edits (the genuinely vectorizable
+  compiler workload); engine-side derived-fact cleanup remains the
+  fallback if the user-land sweep proves insufficient at dsql scale.
+  Fixed-cost thread worth its own pass after stage 2: snapshot reuse
+  across phases when the world hasn't changed, a cheaper `is_current`
+  path for cleanup, and a true no-op-settle early-out.
+- **Stage 2 execution plan (bitmap dirty queues)** — planning becomes
+  delta application:
+  1. Registration builds the reverse index: for each system with a
+     bounded interest set, its presence mask(s) (schema bowls); store
+     `mask → Vec<SystemId>` sorted for lookup.
+  2. World keeps a `dirty: Vec<(TypeId, Entity)>` transition log at the
+     same four chokepoints as presence bits (only transitions, not value
+     writes; value staleness stays watermark/memo-based).
+  3. At wave start, drain transitions → for each, compute affected
+     systems via the reverse index (bit became set/cleared → masks
+     containing that bit) → per-system dirty entity sets.
+  4. `plan_invocations` gains a hinted path: instead of enumerating all
+     rows, seed candidates = dirty entities ∪ rows whose memo deps are
+     watermark-stale (needs a per-store dirty-entity narrowing too, else
+     value changes still force full enumeration — the memo table can be
+     bucketed by (system, store) to find dep-stale rows cheaply).
+  5. Fall back to full enumeration for unbounded-interest systems and on
+     the first plan after registration/preemption.
+  Correctness invariant: dirty ∪ watermark-stale must cover exactly what
+  full enumeration + memo comparison finds runnable; pin with a
+  debug-mode cross-check flag that runs both and asserts equality.
 - After the memo clone: **parallel runtime option.** Systems already
   poll concurrently on one thread and run futures are `Send` by design
   (spec/access-scheduling.md); a parallel variant spawns planned

@@ -231,6 +231,43 @@ async fn main() {
         count = hover_facts.collect().len(),
         "hover facts after request"
     );
+    // End-of-run engine diagnostics: per-system explain + profile plus
+    // the engine-internal time buckets, so a slow run explains itself.
+    let (settle_us, snapshot_us, commit_us, waves) = bowl::bowl_debug_buckets();
+    eprintln!(
+        "\n== engine ==  settles: {}  generations: {}  waves: {}",
+        bowl::bowl_debug_settles(),
+        bowl::bowl_debug_generations(),
+        waves,
+    );
+    eprintln!(
+        "settle total: {settle_us}us  snapshots: {snapshot_us}us  commits: {commit_us}us"
+    );
+    let profiles = db.profile_all().await;
+    let mut rows: Vec<_> = db.explain_all().await.into_iter().zip(profiles).collect();
+    // Biggest timesink first.
+    rows.sort_by_key(|(_, profile)| std::cmp::Reverse(profile.plan_nanos + profile.run_nanos));
+    eprintln!(
+        "{:<58} {:>9} {:>8} {:>9} {:>6} {:>9} {:>9}",
+        "system", "phase", "matched", "memoized", "runs", "plan_us", "run_us"
+    );
+    for ((name, report), profile) in rows {
+        // Strip module paths (also inside generics) for a readable table.
+        let name = strip_module_paths(name);
+        eprintln!(
+            "{:<58} {:>9} {:>8} {:>9} {:>6} {:>9} {:>9}",
+            name,
+            report
+                .phase
+                .map(|phase| format!("{phase:?}"))
+                .unwrap_or_default(),
+            report.matched_rows,
+            report.memoized_rows,
+            profile.runs,
+            profile.plan_nanos / 1_000,
+            profile.run_nanos / 1_000,
+        );
+    }
 }
 
 fn init_tracing() {
@@ -431,6 +468,24 @@ async fn mutate_file_by_path(db: Bowl, path: String) {
             "external file mut"
         );
     }
+}
+
+/// `a::b::f<(x::y::T, z::U)>` → `f<(T, U)>`.
+fn strip_module_paths(name: &str) -> String {
+    let mut out = String::new();
+    for chunk in name.split("::") {
+        // Keep only the trailing identifier of each `::` chain: erase the
+        // identifier we just appended when another segment follows.
+        while out
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            out.pop();
+        }
+        out.push_str(chunk);
+    }
+    out
 }
 
 pub(crate) async fn short_sleep() {
