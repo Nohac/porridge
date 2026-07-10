@@ -91,6 +91,9 @@ struct Inner {
     /// paths (every scoop caller spinning on "is my generation done yet")
     /// stop contending on the state lock.
     completed_generation: std::sync::atomic::AtomicU64,
+    /// Read-mostly mirror of `State::settled_snapshot`, so stale-tolerant
+    /// readers (`.last_settled()`) never touch the state lock at all.
+    settled_read: std::sync::RwLock<Option<Arc<Snapshot>>>,
     /// Single-permit evaluator lock.
     ///
     /// Holding this guard means the caller is the only active runner. The guard
@@ -164,7 +167,11 @@ struct State {
     /// generation restarts through `Phase::Startup` so settle-scoped claims
     /// can be retracted before fresh derivations plan.
     preempt_restart: bool,
-    waiters: Vec<oneshot::Sender<()>>,
+    /// Generation waiters, each tagged with the generation it needs.
+    /// Completions wake only satisfied waiters — the rest stay registered,
+    /// so a waiter locks the state once per wait, not once per generation
+    /// (the broadcast version produced ~100 herd acquisitions per settle).
+    waiters: Vec<(u64, oneshot::Sender<()>)>,
     settled_revision: u64,
     /// Snapshot retained at the last settle for `last_settled` scoops.
     /// Invalidated by destructive takes (a retained snapshot pins every
@@ -390,10 +397,17 @@ where
         SCOOP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _scoop_timer = ScopeTimer(&SCOOP_NANOS, std::time::Instant::now());
         if self.last_settled {
-            let retained = {
-                let state = lock_state(&self.bowl.inner.state).await;
-                state.settled_snapshot.as_ref().map(Arc::clone)
-            };
+            // Lock-free: the settled snapshot is published to a
+            // read-mostly slot at settle time, so stale-tolerant readers
+            // bypass the state lock entirely.
+            let retained = self
+                .bowl
+                .inner
+                .settled_read
+                .read()
+                .expect("settled-read slot poisoned")
+                .as_ref()
+                .map(Arc::clone);
             let snapshot = match retained {
                 Some(snapshot) => snapshot,
                 None => self.bowl.snapshot().await,
@@ -677,6 +691,12 @@ impl BoundEntity {
             // the shared snapshot cache or the retained settled snapshot.
             state.snapshot_cache = None;
             state.settled_snapshot = None;
+            *self
+                .bowl
+                .inner
+                .settled_read
+                .write()
+                .expect("settled-read slot poisoned") = None;
 
             // In-flight snapshots and live query results can still share the
             // cells this take needs; removing a shared cell would lose the
@@ -1122,6 +1142,7 @@ impl Bowl {
                     startup_ran: false,
                 }),
                 completed_generation: std::sync::atomic::AtomicU64::new(0),
+                settled_read: std::sync::RwLock::new(None),
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
@@ -1621,7 +1642,7 @@ impl Bowl {
                 && state.world.revision_raw() == state.settled_revision
                 && state.deferred_inputs.is_empty()
             {
-                refresh_settled_snapshot(&mut state);
+                refresh_settled_snapshot(&self.inner, &mut state);
                 return;
             }
         }
@@ -1642,7 +1663,7 @@ impl Bowl {
                     if promote_deferred_inputs(&mut state, epoch.watermark) {
                         continue;
                     }
-                    refresh_settled_snapshot(&mut state);
+                    refresh_settled_snapshot(&self.inner, &mut state);
                     return;
                 }
 
@@ -1662,7 +1683,7 @@ impl Bowl {
                     if promote_deferred_inputs(&mut state, epoch.watermark) {
                         continue;
                     }
-                    refresh_settled_snapshot(&mut state);
+                    refresh_settled_snapshot(&self.inner, &mut state);
                     return;
                 }
                 clean && state.normal_clean
@@ -1679,7 +1700,7 @@ impl Bowl {
                 if promote_deferred_inputs(&mut state, epoch.watermark) {
                     continue;
                 }
-                refresh_settled_snapshot(&mut state);
+                refresh_settled_snapshot(&self.inner, &mut state);
                 // This settle performed work: fire the settle watchers.
                 let settled_revision = state.settled_revision;
                 let watchers = std::mem::take(&mut state.settle_watchers);
@@ -1845,7 +1866,7 @@ impl Bowl {
             }
 
             let (sender, receiver) = oneshot::channel();
-            state.waiters.push(sender);
+            state.waiters.push((target, sender));
             receiver
         };
 
@@ -1944,7 +1965,19 @@ impl Bowl {
                 GENERATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             state.running_generation = None;
-            std::mem::take(&mut state.waiters)
+            let mut satisfied = Vec::new();
+            state.waiters.retain_mut(|(target, sender)| {
+                if *target <= generation {
+                    // Sender is consumed by `send`; move it out via a
+                    // placeholder channel.
+                    let (placeholder, _) = oneshot::channel();
+                    satisfied.push(std::mem::replace(sender, placeholder));
+                    false
+                } else {
+                    true
+                }
+            });
+            satisfied
         };
 
         for waiter in waiters {
@@ -2506,9 +2539,13 @@ fn snapshot_locked(state: &mut State) -> Arc<Snapshot> {
 
 /// Retains a snapshot of the settled world for `last_settled` scoops,
 /// sharing the cached snapshot when the world has not moved.
-fn refresh_settled_snapshot(state: &mut State) {
+fn refresh_settled_snapshot(inner: &Inner, state: &mut State) {
     let snapshot = snapshot_locked(state);
-    state.settled_snapshot = Some(snapshot);
+    state.settled_snapshot = Some(Arc::clone(&snapshot));
+    *inner
+        .settled_read
+        .write()
+        .expect("settled-read slot poisoned") = Some(snapshot);
 }
 
 /// Promotes deferred inputs whose arrival tag is covered by `watermark`.
@@ -2584,10 +2621,12 @@ impl Drop for EvaluationGuard {
         if state.pending_generation.is_none() {
             state.pending_generation = Some(self.generation);
         }
+        // Abandoned run: wake everyone regardless of target, so a waiter
+        // can be promoted to a fresh driver.
         let waiters = std::mem::take(&mut state.waiters);
         drop(state);
 
-        for waiter in waiters {
+        for (_, waiter) in waiters {
             let _ = waiter.send(());
         }
     }
