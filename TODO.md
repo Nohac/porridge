@@ -570,7 +570,22 @@ Current shortcut:
   components do not false-positive. Shipped as a warning, not a refusal:
   marker-gated same-phase consumers are legitimate and undetectable
   statically; the commit-time entity-granular flag stays the precise
-  enforcement. Register `with_schema` before `add_system`.
+  enforcement. (Registration ordering is gone: schemas are fixed at
+  construction via `Bowl::of::<S>()`.)
+- Schema composition for plugins: `#[schema(extend(plugin::Shapes))]` on
+  `#[derive(Schema)]`, concatenating a plugin crate's shape fragment into
+  the app schema's `shapes()` (runtime conformance + bit universe). The
+  compile-time half already works cross-crate — `Commands<S>` spawn
+  checking is against the system's own declaration, so plugins declare
+  their own shape aliases; apps compose upward. Plugins over *app* data
+  export schema-generic systems instantiated at registration
+  (`add_system(plugin::system::<app_schema::Shape>)`, the emit_diagnostic
+  pattern scaled up), and replication-style plugins stay on the dynamic
+  boundary (delta capture + base-write apply, both type-erased) with
+  `Schema::shapes()` as the enumerable replication manifest — the closed
+  universe makes "replicate these shapes" well-defined, and a
+  daemon/client pair sharing one schema type makes the schema the wire
+  contract (see daemon-client porting notes).
 - Done: "never produce and ambiently consume in the same phase" is now
   engine-enforced in debug builds (dsql port, friction 5): a commit whose
   derived write is `View`ed by a same-phase system with matched rows
