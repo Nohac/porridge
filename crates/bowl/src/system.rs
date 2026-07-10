@@ -357,11 +357,7 @@ where
         Q::provides_key(key)
     }
 
-    fn provided_key(
-        snapshot: &Snapshot,
-        state: &Self::State,
-        key: TypeId,
-    ) -> Option<Option<u64>> {
+    fn provided_key(snapshot: &Snapshot, state: &Self::State, key: TypeId) -> Option<Option<u64>> {
         Q::provided_key(snapshot, state, key)
     }
 
@@ -1443,9 +1439,7 @@ where
         // captured snapshot + memo), so the run future carries the planned
         // rows instead of a memo snapshot — this is what lets the runner
         // stop cloning the memo per wave.
-        let inner = self
-            .system
-            .stream_runs(bowl, Arc::clone(&snapshot), memo);
+        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo);
         if inner.is_empty() {
             return Vec::new();
         }
@@ -1457,8 +1451,10 @@ where
         let hook_owner = owner.clone();
         let run = async move {
             // The hook fires before the batch, its output prepended.
-            let commands =
-                Commands::new(snapshot.spawn_slots(&hook_owner), snapshot.entity_allocator());
+            let commands = Commands::new(
+                snapshot.spawn_slots(&hook_owner),
+                snapshot.entity_allocator(),
+            );
             self.callback.run(commands.retype());
             let start_output = SystemOutput {
                 owner: hook_owner,
@@ -1540,9 +1536,7 @@ where
     ) -> Vec<PlannedSystemRun<'a>> {
         // Pre-planned like `OnStart`; the completion hook appends its
         // output after the batch, only when the batch produced outputs.
-        let inner = self
-            .system
-            .stream_runs(bowl, Arc::clone(&snapshot), memo);
+        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo);
         if inner.is_empty() {
             return Vec::new();
         }
@@ -1646,8 +1640,7 @@ where
                 return SystemRun::empty();
             }
 
-            let commands =
-                Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
+            let commands = Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
             self.callback.run(commands.retype());
 
             SystemRun {
@@ -1677,10 +1670,8 @@ where
         let view_sets = Arc::clone(&system.view_sets);
         // The hook declares its outputs too; merge them into the
         // system's entry.
-        let declared_outputs = merge_declarations(
-            system.declared_outputs.clone(),
-            D::declared_types(),
-        );
+        let declared_outputs =
+            merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
@@ -1712,10 +1703,8 @@ where
         let view_sets = Arc::clone(&system.view_sets);
         // The hook declares its outputs too; merge them into the
         // system's entry.
-        let declared_outputs = merge_declarations(
-            system.declared_outputs.clone(),
-            D::declared_types(),
-        );
+        let declared_outputs =
+            merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
@@ -1747,10 +1736,8 @@ where
         let view_sets = Arc::clone(&system.view_sets);
         // The hook declares its outputs too; merge them into the
         // system's entry.
-        let declared_outputs = merge_declarations(
-            system.declared_outputs.clone(),
-            D::declared_types(),
-        );
+        let declared_outputs =
+            merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
@@ -1787,9 +1774,7 @@ fn merge_declarations(
     hook: Option<Vec<TypeId>>,
 ) -> Option<Arc<Vec<TypeId>>> {
     match (inner, hook) {
-        (Some(inner), Some(hook)) => {
-            Some(Arc::new(inner.iter().copied().chain(hook).collect()))
-        }
+        (Some(inner), Some(hook)) => Some(Arc::new(inner.iter().copied().chain(hook).collect())),
         _ => None,
     }
 }
@@ -1843,15 +1828,21 @@ where
 /// bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle));
 /// ```
 pub async fn cleanup_stale_derived(
-    query: Query<(Entity, &DerivedFrom)>,
+    // A batch sweep, deliberately not a tracked per-row query: cleanup
+    // memoizes at 0% by nature (its work only exists when anchors moved),
+    // so per-row invocations are pure overhead — one invocation iterates
+    // the whole store instead. `WorldMetaView` keeps it always-run; the
+    // pattern is user-land on purpose, so plugins can build the same
+    // sweep shape without an engine feature.
+    derived: View<'_, (Entity, &DerivedFrom)>,
     meta: WorldMetaView<'_>,
     // Removal-only: the empty declaration says so.
     mut commands: Commands<()>,
 ) {
-    let (entity, derived_from) = query.item();
-
-    if !meta.is_current(derived_from) {
-        commands.remove(entity);
+    for (entity, derived_from) in derived.iter() {
+        if !meta.is_current(derived_from) {
+            commands.remove(entity);
+        }
     }
 }
 
@@ -1914,8 +1905,12 @@ where
                         self.function.run(params).await;
                         drop(guards);
 
-                        let (output, memo_update) =
-                            finish_invocation(invocation.owner, invocation.deps, snapshot.revision_raw(), commands);
+                        let (output, memo_update) = finish_invocation(
+                            invocation.owner,
+                            invocation.deps,
+                            snapshot.revision_raw(),
+                            commands,
+                        );
                         (output, memo_update, writes)
                     }
                 })
@@ -1962,8 +1957,12 @@ where
                     self.function.run(params).await;
                     drop(guards);
 
-                    let (output, memo_update) =
-                        finish_invocation(invocation.owner, invocation.deps, snapshot.revision_raw(), commands);
+                    let (output, memo_update) = finish_invocation(
+                        invocation.owner,
+                        invocation.deps,
+                        snapshot.revision_raw(),
+                        commands,
+                    );
 
                     SystemRun {
                         completed: true,

@@ -453,11 +453,20 @@ let rows = diagnostics.collect();
   plans — every `DerivedFrom` row every settle: the playground's explain
   dump shows 96 matched / 0 memoized × 37 settles ≈ 3.5k invocations per
   run doing nothing but `is_current` checks), and the debug-only commit
-  checks. The cleanup fix is its own item: anchor-revision staleness is
-  cheap to detect engine-side (compare captured anchor revisions against
-  entity revisions — a per-settle sweep over the `DerivedFrom` store,
-  no system invocations, no memo traffic), or give the system real memo
-  deps on its anchors instead of `always_run`.
+  checks. Done: `cleanup_stale_derived` is now a *batch sweep* — one
+  always-run invocation iterating a whole-store `View` instead of one
+  invocation per `DerivedFrom` row (playground: 96 → 1 planned
+  invocations per settle, generations 54 → 30). Deliberately user-land
+  (public params only), so plugins can build the same sweep shape.
+  Follow-ups from the same discussion: (a) an *intentional* once-per-
+  settle marker (`Sweep`/`.always()`) instead of `WorldMetaView`'s
+  `always_run` side effect being load-bearing; (b) the SIMD track —
+  `#[component(dense)]` column storage (`Vec<T>` + entity index,
+  whole-column COW against snapshots, per-column revision) and a
+  `BatchView<T>` param yielding scheduler-exclusive `&mut [T]`, designed
+  against span/offset remapping after edits (the genuinely vectorizable
+  compiler workload); engine-side derived-fact cleanup remains the
+  fallback if the user-land sweep proves insufficient at dsql scale.
   Fixed-cost thread worth its own pass after stage 2: snapshot reuse
   across phases when the world hasn't changed, a cheaper `is_current`
   path for cleanup, and a true no-op-settle early-out.
