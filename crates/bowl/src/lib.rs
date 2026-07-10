@@ -81,7 +81,7 @@
 //! `CommitLimit::None` when a caller intentionally wants to drive an
 //! open-ended system and handle cancellation externally.
 //!
-//! Systems registered with [`Bowl::add_system`] are async functions. The first
+//! Systems registered through [`Bowl::builder`] are async functions. The first
 //! implementation uses local async concurrency: systems and invalid query rows
 //! are polled together, but they are not spawned onto worker threads.
 //!

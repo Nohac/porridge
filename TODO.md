@@ -105,7 +105,11 @@ See:
   field verbatim, so large components change-detect without hashing (or
   being able to hash) their payload; mutually exclusive with
   `#[component(hash)]`. Friction 6.
-- Keep the README aligned with the final mental model:
+- Rewrite the README for the schema era — it predates declared outputs,
+  schemas, strict spawns, facets, the builder, and plugins, so its
+  examples (bare `Commands`, `Bowl::new()`, `add_system`) no longer
+  compile. Full rewrite, not a patch. Keep it aligned with the final
+  mental model:
   - components-only storage
   - immutable snapshots for reads
   - clone-on-write external updates
@@ -411,6 +415,44 @@ let rows = diagnostics.collect();
   index / dirty queues, mask bits for `With`/`Without` filters, the
   off-schema registration refusal, and driving *candidates* from the
   bitmap instead of the smallest store.
+- **Done (planner gating stage 1): watermark-gated system skipping.**
+  Every system carries a static interest set (`interest_types()`
+  unioned over params: query part types, filter types, join keys,
+  `Tracked` parts; `View`/`Commands` contribute nothing; dense-scan and
+  custom params poison to always-plan) and a planned-mark watermark. A
+  wave skips planning any system whose interested stores haven't moved,
+  and an all-skip wave skips the whole wave setup (snapshot + memo
+  clone). Marks reset on conflict deferral and stale commits. New
+  `planner_gating` bench (32 disjoint systems, one touched).
+- **Done: the per-wave memo clone is eliminated** (was the dominant
+  settle cost at scale — incremental_settle −23…−28%, cold_settle
+  −9…−12%, planner_gating −22…−26%; see spec/bench-reports.md). Original
+  finding, kept for the record: (`Arc::new(memo.clone())` in `run_phase_streaming`; at 16k
+  memo entries — `planner_gating/512` — it is milliseconds per settle
+  and buries what gating saves; it is also why gating first *regressed*
+  `in_join_planning`: fast empty waves → more waves → more clones,
+  fixed by the all-skip wave setup skip). The diagnosis is precise:
+  `FunctionSystem` (every plain system) uses the memo *only at plan
+  time* (`plan_invocations` inside `stream_runs`); its run futures never
+  capture it. Only the three hook wrappers
+  (`OnStart`/`OnComplete`/`OnSettled`) clone the Arc into their run
+  future, because they re-plan the inner system *inside* it
+  (`self.system.run(bowl, &snapshot, &memo)`). Planning is
+  deterministic over the captured snapshot+memo, so wrappers can
+  pre-plan at stream time (capture the invocation list, not the memo) —
+  then `stream_runs` takes plain `&memo` and the per-wave clone
+  disappears entirely. Refactor: split the wrapper path into
+  plan-at-stream + execute-batch; `run_settled` keeps its by-ref memo.
+  Expected to dominate every settle-shaped bench.
+- After the memo clone: **parallel runtime option.** Systems already
+  poll concurrently on one thread and run futures are `Send` by design
+  (spec/access-scheduling.md); a parallel variant spawns planned
+  invocations onto worker threads (tokio/rayon), with the existing
+  `Access` conflict scheduling as the correctness layer and commits
+  staying serialized in registration order. Needs: `GuardStore`/cell
+  guard `Send`+`Sync` audit, per-wave join instead of `FuturesUnordered`
+  single-poll, and a bench with genuinely CPU-heavy systems (the current
+  fixtures are too cheap to show parallel wins).
 - Add ordered/range predicates as join keys (position-in-span is the
   playground's blocker): with them, the hover candidates become tracked
   joins, move to `Evaluate`, and the finalizer flattens back to a plain

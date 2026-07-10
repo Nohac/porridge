@@ -351,3 +351,36 @@ probe = schema-less bowl, mask = schema bowl, identical data):
 The delta is pure matching cost (both variants materialize identically).
 Stage 2 — the reverse index turning bit transitions into per-system dirty
 queues (delta planning) — is recorded in TODO §7.
+
+## Planner memoization round (gating + memo-clone elimination)
+
+Two changes, landed in sequence:
+
+1. **Watermark-gated system skipping**: every system carries a static
+   store-interest set and a planned-mark watermark; a wave skips planning
+   systems whose interested stores haven't moved, and an all-skip wave
+   skips the whole wave setup. Neutral on work-dominated benches, the
+   enabler for many-systems workloads (new `planner_gating` bench: 32
+   disjoint systems, one touched per settle).
+2. **Per-wave memo clone eliminated**: `run_phase_streaming` cloned the
+   full memo table into an `Arc` every planning wave, solely so the
+   `OnStart`/`OnComplete` hook wrappers could re-plan inside their run
+   futures. Wrappers now pre-plan at stream time (planning is
+   deterministic over the captured snapshot + memo), so planning borrows
+   the memo and nothing clones it. This was the dominant settle cost at
+   scale — at 16k memo entries, milliseconds per settle.
+
+After both (vs the pre-round baseline):
+
+| bench                    | change      |
+|--------------------------|-------------|
+| incremental_settle/8-128 | −23% … −28% |
+| cold_settle/8-128        | −9% … −12%  |
+| view_scaling/8-64        | −3% … −16%  |
+| in_join_planning         | −15% … −20% |
+| planner_gating/64,512    | −26%, −22%  |
+
+`incremental_settle` is the language-service hot path (touch one file,
+re-settle); the memo clone scaled with total memoized rows, so the win
+grows with bowl size. Next: bitmap dirty queues (TODO §7 stage 2), then
+the parallel runtime option.

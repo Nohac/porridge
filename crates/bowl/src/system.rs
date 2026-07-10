@@ -183,6 +183,13 @@ pub trait SystemParam {
     fn always_run() -> bool {
         false
     }
+    /// Component stores whose watermark movement can change this param's
+    /// planned rows or deps. `None` means unbounded: the system is planned
+    /// every wave. Ambient params (`View`, `Commands`) contribute nothing
+    /// without poisoning the set.
+    fn interest_types() -> Option<Vec<TypeId>> {
+        None
+    }
     /// Join keys a bound `Where` filter on this param requires, with the
     /// row's stamped fingerprint per key. Compound filters return several;
     /// every key must match its provider for the row to join.
@@ -290,6 +297,12 @@ where
     type State = Q::State;
     type Item<'a> = Query<Q::Item<'a>, Filter>;
 
+    fn interest_types() -> Option<Vec<TypeId>> {
+        let mut interest = Q::interest_types()?;
+        interest.extend(<Filter as QueryFilter<Q>>::interest_types()?);
+        Some(interest)
+    }
+
     fn states(snapshot: &Snapshot) -> Vec<Self::State> {
         filtered_rows::<Q, Filter>(snapshot)
     }
@@ -372,6 +385,10 @@ where
 {
     type State = Option<Q::State>;
     type Item<'a> = Option<Query<Q::Item<'a>, Filter>>;
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        <Query<Q, Filter> as SystemParam>::interest_types()
+    }
 
     fn states(snapshot: &Snapshot) -> Vec<Self::State> {
         // The absent placeholder always enumerates; `binding_matches`
@@ -489,6 +506,12 @@ where
     type State = ();
     type Item<'a> = View<'a, Q, Filter>;
 
+    // Ambient by design: view movement never invalidates, so it never
+    // requires replanning either.
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(Vec::new())
+    }
+
     fn states(_snapshot: &Snapshot) -> Vec<Self::State> {
         vec![()]
     }
@@ -546,6 +569,10 @@ where
 {
     type State = ();
     type Item<'a> = Commands<S>;
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(Vec::new())
+    }
 
     fn states(_snapshot: &Snapshot) -> Vec<Self::State> {
         vec![()]
@@ -639,6 +666,12 @@ macro_rules! impl_system_param_tuple {
             type State = ($($P::State,)*);
             type Item<'a> = ($($P::Item<'a>,)*);
 
+            fn interest_types() -> Option<Vec<TypeId>> {
+                let mut interest = Vec::new();
+                $(interest.extend($P::interest_types()?);)*
+                Some(interest)
+            }
+
             fn states(snapshot: &Snapshot) -> Vec<Self::State> {
                 let mut states = Vec::new();
                 // Pair-expandable params (single-key bound joins) are not
@@ -655,10 +688,14 @@ macro_rules! impl_system_param_tuple {
 
                 for_each_state!(snapshot, states, []; $($P),*);
 
-                let has_bound = false
-                    $(|| !$P::bound_key_types().is_empty())*
-                    $(|| !$P::in_key_types().is_empty())*;
-                if has_bound {
+                // Pair-expanded params are key-equal by construction (their
+                // rows come from the provider's member list or fingerprint
+                // bucket), so only *non-expandable* bound params — compound
+                // multi-key joins — still need the product prune.
+                let needs_prune = false
+                    $(|| (!$P::bound_key_types().is_empty() || !$P::in_key_types().is_empty())
+                        && !$P::pair_expandable())*;
+                if needs_prune {
                     states.retain(|state| Self::binding_matches(snapshot, state));
                 }
 
@@ -1106,7 +1143,7 @@ pub(crate) trait Runnable: Send + Sync {
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>>;
 
     fn run_settled<'a>(
@@ -1133,6 +1170,13 @@ pub struct BoxedSystem {
     /// Component types the system declared it may emit (`Commands<S>`);
     /// `None` is the wildcard (bare `Commands` or hook-driven writers).
     pub(crate) declared_outputs: Option<Arc<Vec<TypeId>>>,
+    /// Planner interest: the stores whose watermark movement can change
+    /// this system's plan. `None` = unbounded (planned every wave).
+    pub(crate) interest: Option<Arc<Vec<TypeId>>>,
+    /// Highest interest-store watermark this system was last planned
+    /// against; planning is skipped while no interested store moves past
+    /// it. Reset on conflict deferral and stale commits.
+    pub(crate) planned_mark: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl BoxedSystem {
@@ -1141,6 +1185,7 @@ impl BoxedSystem {
         name: &'static str,
         view_sets: Vec<Vec<TypeId>>,
         declared_outputs: Option<Vec<TypeId>>,
+        interest: Option<Vec<TypeId>>,
     ) -> Self {
         Self {
             runnable,
@@ -1148,7 +1193,49 @@ impl BoxedSystem {
             name,
             view_sets: Arc::new(view_sets),
             declared_outputs: declared_outputs.map(Arc::new),
+            interest: interest.map(Arc::new),
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
+    }
+
+    /// Whether the planner must (re)consider this system: unbounded
+    /// interest always plans; scoped interest plans only when some
+    /// interested store's watermark moved past the last planned mark.
+    /// Advances the mark to the snapshot's level when planning proceeds.
+    /// Pure form of [`BoxedSystem::needs_planning`]: no mark advance.
+    pub(crate) fn peek_needs_planning(&self, snapshot: &Snapshot) -> bool {
+        let Some(interest) = &self.interest else {
+            return true;
+        };
+        let mark = interest
+            .iter()
+            .map(|type_id| snapshot.store_watermark(*type_id))
+            .max()
+            .unwrap_or(0);
+        mark > self.planned_mark.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn needs_planning(&self, snapshot: &Snapshot) -> bool {
+        if !self.peek_needs_planning(snapshot) {
+            return false;
+        }
+        if let Some(interest) = &self.interest {
+            let mark = interest
+                .iter()
+                .map(|type_id| snapshot.store_watermark(*type_id))
+                .max()
+                .unwrap_or(0);
+            self.planned_mark
+                .store(mark, std::sync::atomic::Ordering::Relaxed);
+        }
+        true
+    }
+
+    /// Forces the next wave to replan this system (conflict deferrals and
+    /// stale commits invalidate the planned mark).
+    pub(crate) fn reset_planned_mark(&self) {
+        self.planned_mark
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn run_during(mut self, phase: Phase) -> Self {
@@ -1348,11 +1435,18 @@ where
 
     fn stream_runs<'a>(
         &'a self,
-        _bowl: Bowl,
+        bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        if !self.has_work(&snapshot, memo) {
+        // Pre-plan the inner system now (planning is deterministic over the
+        // captured snapshot + memo), so the run future carries the planned
+        // rows instead of a memo snapshot — this is what lets the runner
+        // stop cloning the memo per wave.
+        let inner = self
+            .system
+            .stream_runs(bowl, Arc::clone(&snapshot), memo);
+        if inner.is_empty() {
             return Vec::new();
         }
 
@@ -1360,8 +1454,30 @@ where
             system: self.id,
             keys: Vec::new(),
         };
-        let memo = Arc::clone(memo);
-        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
+        let hook_owner = owner.clone();
+        let run = async move {
+            // The hook fires before the batch, its output prepended.
+            let commands =
+                Commands::new(snapshot.spawn_slots(&hook_owner), snapshot.entity_allocator());
+            self.callback.run(commands.retype());
+            let start_output = SystemOutput {
+                owner: hook_owner,
+                commands: commands.take(),
+            };
+
+            let runs = join_all(inner.into_iter().map(|planned| planned.run)).await;
+            let mut merged = SystemRun::empty();
+            merged.completed = true;
+            for inner_run in runs {
+                merged.completed &= inner_run.completed;
+                merged.outputs.extend(inner_run.outputs);
+                merged.memo_updates.extend(inner_run.memo_updates);
+                merged.writes.extend(inner_run.writes);
+            }
+            merged.outputs.insert(0, start_output);
+            merged
+        }
+        .boxed();
 
         vec![PlannedSystemRun {
             owner,
@@ -1418,11 +1534,16 @@ where
 
     fn stream_runs<'a>(
         &'a self,
-        _bowl: Bowl,
+        bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        if !self.has_work(&snapshot, memo) {
+        // Pre-planned like `OnStart`; the completion hook appends its
+        // output after the batch, only when the batch produced outputs.
+        let inner = self
+            .system
+            .stream_runs(bowl, Arc::clone(&snapshot), memo);
+        if inner.is_empty() {
             return Vec::new();
         }
 
@@ -1430,8 +1551,33 @@ where
             system: self.id,
             keys: Vec::new(),
         };
-        let memo = Arc::clone(memo);
-        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
+        let hook_owner = owner.clone();
+        let run = async move {
+            let runs = join_all(inner.into_iter().map(|planned| planned.run)).await;
+            let mut merged = SystemRun::empty();
+            merged.completed = true;
+            for inner_run in runs {
+                merged.completed &= inner_run.completed;
+                merged.outputs.extend(inner_run.outputs);
+                merged.memo_updates.extend(inner_run.memo_updates);
+                merged.writes.extend(inner_run.writes);
+            }
+
+            if !merged.outputs.is_empty() {
+                let commands = Commands::new(
+                    snapshot.spawn_slots(&hook_owner),
+                    snapshot.entity_allocator(),
+                );
+                self.callback.run(commands.retype());
+                merged.outputs.push(SystemOutput {
+                    owner: hook_owner,
+                    commands: commands.take(),
+                });
+            }
+
+            merged
+        }
+        .boxed();
 
         vec![PlannedSystemRun {
             owner,
@@ -1471,7 +1617,7 @@ where
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
         self.system.stream_runs(bowl, snapshot, memo)
     }
@@ -1535,6 +1681,7 @@ where
             system.declared_outputs.clone(),
             D::declared_types(),
         );
+        let interest = system.interest.clone();
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
                 _declares: PhantomData,
@@ -1546,6 +1693,8 @@ where
             name,
             view_sets,
             declared_outputs,
+            interest,
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
@@ -1567,6 +1716,7 @@ where
             system.declared_outputs.clone(),
             D::declared_types(),
         );
+        let interest = system.interest.clone();
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
                 _declares: PhantomData,
@@ -1578,6 +1728,8 @@ where
             name,
             view_sets,
             declared_outputs,
+            interest,
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
@@ -1599,6 +1751,7 @@ where
             system.declared_outputs.clone(),
             D::declared_types(),
         );
+        let interest = system.interest.clone();
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
                 _declares: PhantomData,
@@ -1610,6 +1763,8 @@ where
             name,
             view_sets,
             declared_outputs,
+            interest,
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
@@ -1653,7 +1808,7 @@ impl BoxedSystem {
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
         self.runnable.stream_runs(bowl, snapshot, memo)
     }
@@ -1777,7 +1932,7 @@ where
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
         plan_invocations::<F::Param>(self.id, &snapshot, memo)
             .invocations
@@ -1889,6 +2044,7 @@ where
             std::any::type_name::<F>(),
             view_sets,
             F::Param::declared_outputs(),
+            F::Param::interest_types(),
         )
     }
 }

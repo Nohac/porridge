@@ -1806,12 +1806,60 @@ impl Bowl {
             if needs_plan {
                 deferred_conflicts = false;
                 let snapshot = self.snapshot().await;
-                let memo_snapshot = Arc::new(memo.clone());
+                // Planner memoization: a system whose interested stores
+                // haven't moved past its last planned mark cannot have new
+                // rows or stale deps. When *no* system needs planning the
+                // whole wave setup is skipped — cloning the memo per wave
+                // is the dominant cost of quiet waves.
+                if !systems
+                    .iter()
+                    .any(|system| system.phase == phase && system.peek_needs_planning(&snapshot))
+                {
+                    match self
+                        .await_next_run(&mut read_runs, &mut write_runs, allow_preempt)
+                        .await
+                    {
+                        RunEvent::Preempt => {
+                            needs_plan = false;
+                            continue;
+                        }
+                        RunEvent::Drained => return PhaseRun::Completed(phase_changed),
+                        RunEvent::Finished(first) => {
+                            let mut batch = vec![first];
+                            while let Some(Some(next)) = read_runs.next().now_or_never() {
+                                batch.push(next);
+                            }
+                            while let Some(Some(next)) = write_runs.next().now_or_never() {
+                                batch.push(next);
+                            }
+                            for (owner, run) in batch {
+                                running.remove(&owner);
+                                running_access.remove(&owner);
+                                read_owners.remove(&owner);
+                                let progress = commit_system_run(
+                                    memo,
+                                    &self.inner.state,
+                                    run,
+                                    Some(phase),
+                                )
+                                .await;
+                                commit_budget.record(progress.commits);
+                                phase_changed |= progress.needs_followup;
+                                if progress.stale {
+                                    systems[owner.system.0].reset_planned_mark();
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
                 for planned in systems
                     .iter()
-                    .filter(|system| system.phase == phase)
+                    .filter(|system| {
+                        system.phase == phase && system.needs_planning(&snapshot)
+                    })
                     .flat_map(|system| {
-                        system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo_snapshot)
+                        system.stream_runs(self.clone(), Arc::clone(&snapshot), memo)
                     })
                 {
                     if !running.insert(planned.owner.clone()) {
@@ -1821,6 +1869,9 @@ impl Bowl {
                     if conflicts_with_running(&planned.access, &running_access) {
                         running.remove(&planned.owner);
                         deferred_conflicts = true;
+                        // The deferred row must be replanned once the
+                        // conflict frees, even if no store moves.
+                        systems[planned.owner.system.0].reset_planned_mark();
                         continue;
                     }
 
@@ -1876,6 +1927,11 @@ impl Bowl {
                 let progress = commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
                 commit_budget.record(progress.commits);
                 followup |= progress.needs_followup;
+                if progress.stale {
+                    // A discarded stale run leaves its row memo-invalid;
+                    // force its system back through planning.
+                    systems[owner.system.0].reset_planned_mark();
+                }
                 stale |= progress.stale;
             }
 

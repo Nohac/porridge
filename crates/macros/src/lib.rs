@@ -529,6 +529,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     let mut validate_body = String::new();
     let mut view_types_body = String::new();
     let mut declared_outputs_body = String::new();
+    let mut interest_body = String::new();
 
     for (index, field) in bundle.fields.iter().enumerate() {
         let static_ty = field.ty_with_lifetime(&bundle.lifetime, "'static");
@@ -571,6 +572,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
         ));
         declared_outputs_body.push_str(&format!(
             "match <{static_ty} as ::bowl::__derive::SystemParam>::declared_outputs() {{
+                ::core::option::Option::Some(types) => out.extend(types),
+                ::core::option::Option::None => return ::core::option::Option::None,
+            }}"
+        ));
+        interest_body.push_str(&format!(
+            "match <{static_ty} as ::bowl::__derive::SystemParam>::interest_types() {{
                 ::core::option::Option::Some(types) => out.extend(types),
                 ::core::option::Option::None => return ::core::option::Option::None,
             }}"
@@ -639,6 +646,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
             fn declared_outputs() -> ::core::option::Option<::std::vec::Vec<::std::any::TypeId>> {{
                 let mut out = ::std::vec::Vec::new();
                 {declared_outputs_body}
+                ::core::option::Option::Some(out)
+            }}
+
+            fn interest_types() -> ::core::option::Option<::std::vec::Vec<::std::any::TypeId>> {{
+                let mut out = ::std::vec::Vec::new();
+                {interest_body}
                 ::core::option::Option::Some(out)
             }}
         }}"

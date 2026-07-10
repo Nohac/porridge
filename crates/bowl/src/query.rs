@@ -802,6 +802,11 @@ pub trait QueryParam {
         let _ = hint;
         Self::rows(snapshot)
     }
+    /// Component stores whose watermark movement can change this param's
+    /// rows or deps (planner interest). `None` means unbounded.
+    fn interest_types() -> Option<Vec<TypeId>> {
+        None
+    }
     /// Returns entity keys that identify the invocation for this row.
     fn keys(state: &Self::State) -> Vec<Entity>;
     /// Returns tracked component revisions that should invalidate this row.
@@ -978,6 +983,15 @@ impl<H: FacetKind> QueryParam for Entity<H> {
         Vec::new()
     }
 
+    fn interest_types() -> Option<Vec<TypeId>> {
+        let parts = H::parts();
+        if parts.is_empty() {
+            // Untyped: rows are the dense id scan, unbounded.
+            return None;
+        }
+        Some(parts.into_iter().map(|part| part.type_id).collect())
+    }
+
     fn access(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
         Vec::new()
     }
@@ -1150,6 +1164,12 @@ pub trait QueryPart {
     fn presence_requirement() -> PresenceReq {
         PresenceReq::Opaque
     }
+    /// Component stores whose watermark movement can change this part's
+    /// rows or deps (planner interest). `None` means unbounded — the
+    /// owning system is planned every wave.
+    fn interest_types() -> Option<Vec<TypeId>> {
+        None
+    }
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
     fn access_all() -> Access;
@@ -1203,6 +1223,10 @@ impl<T: Component> QueryPart for &T {
 
     fn presence_requirement() -> PresenceReq {
         PresenceReq::Requires(TypeId::of::<T>())
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1276,6 +1300,10 @@ impl<T: Component> QueryPart for Option<&T> {
         PresenceReq::Free
     }
 
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
+    }
+
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
         optional_component_dep::<T>(snapshot, entity)
             .into_iter()
@@ -1335,6 +1363,10 @@ impl<H: FacetKind> QueryPart for Tracked<H> {
 
     fn presence_requirement() -> PresenceReq {
         PresenceReq::Free
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(H::parts().into_iter().map(|part| part.type_id).collect())
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1402,6 +1434,10 @@ impl<T: Component> QueryPart for MutRef<'_, T> {
 
     fn presence_requirement() -> PresenceReq {
         PresenceReq::Requires(TypeId::of::<T>())
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1626,6 +1662,11 @@ impl EntityQueryState for Entity {
 /// is not part of the returned item.
 pub trait QueryFilter<Q: QueryParam> {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool;
+    /// Component stores whose watermark movement can change this filter's
+    /// matching or bound pairs. `None` means unbounded.
+    fn interest_types() -> Option<Vec<TypeId>> {
+        None
+    }
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access>;
     /// Component-level access covering every row this filter inspects.
@@ -1667,6 +1708,10 @@ impl<Q: QueryParam> QueryFilter<Q> for () {
         true
     }
 
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(Vec::new())
+    }
+
     fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
         Vec::new()
     }
@@ -1684,6 +1729,10 @@ where
 {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
         snapshot.has::<T>(state.entity())
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
     }
 
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
@@ -1720,6 +1769,10 @@ where
 {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
         snapshot.has::<T>(state.entity())
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
     }
 
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
@@ -1761,6 +1814,10 @@ where
         true
     }
 
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
+    }
+
     fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
         // The membership dep rides the provider's `&T` read: the inverse's
         // revision moves exactly when membership changes.
@@ -1793,6 +1850,12 @@ where
 {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
         L::matches(snapshot, state) && R::matches(snapshot, state)
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        let mut interest = L::interest_types()?;
+        interest.extend(R::interest_types()?);
+        Some(interest)
     }
 
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
@@ -1865,6 +1928,12 @@ where
         <And<Where<L>, Where<R>> as QueryFilter<Q>>::matches(snapshot, state)
     }
 
+    fn interest_types() -> Option<Vec<TypeId>> {
+        let mut interest = <Where<L> as QueryFilter<Q>>::interest_types()?;
+        interest.extend(<Where<R> as QueryFilter<Q>>::interest_types()?);
+        Some(interest)
+    }
+
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
         <And<Where<L>, Where<R>> as QueryFilter<Q>>::deps(snapshot, state)
     }
@@ -1906,6 +1975,10 @@ where
 {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
         !snapshot.has::<T>(state.entity())
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
     }
 
     fn deps(_snapshot: &Snapshot, _state: &Q::State) -> Vec<Dep> {
