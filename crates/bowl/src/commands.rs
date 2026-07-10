@@ -1,10 +1,14 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    marker::PhantomData,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use crate::{
     Bundle, Component, Entity,
+    declare::{Anything, BundleDeclaredIn, DeclaredIn},
     world::{SystemInvocation, World},
 };
 
@@ -21,9 +25,25 @@ use crate::{
 /// barrier
 ///   command applies to world N+1
 /// ```
-#[derive(Clone)]
-pub struct Commands {
+/// The type parameter is the system's *output declaration*: a tuple of
+/// component types and/or group aliases (which are themselves tuple
+/// aliases). `insert` bounds every bundle to the declared set, so emitting
+/// an undeclared component does not compile. The default,
+/// [`Anything`](crate::Anything), is the wildcard — bare `Commands` keeps
+/// today's dynamic behavior and shows up as a wildcard edge in the system
+/// graph. See `spec/declared-outputs.md`.
+pub struct Commands<S = Anything> {
     pub(crate) inner: Arc<Mutex<CommandBuffer>>,
+    _declares: PhantomData<fn() -> S>,
+}
+
+impl<S> Clone for Commands<S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            _declares: PhantomData,
+        }
+    }
 }
 
 /// Invocation-local buffer state: the queued operations plus the spawn-id
@@ -49,11 +69,24 @@ impl Commands {
                 spawn_cursor: 0,
                 allocator,
             })),
+            _declares: PhantomData,
+        }
+    }
+}
+
+impl<S> Commands<S> {
+    /// Reinterprets the shared buffer under a different declaration. The
+    /// runner owns one wildcard buffer per invocation; each `Commands<S>`
+    /// param is a typed view of it.
+    pub(crate) fn retype<S2>(&self) -> Commands<S2> {
+        Commands {
+            inner: Arc::clone(&self.inner),
+            _declares: PhantomData,
         }
     }
 
     /// Returns a builder for writing components to an existing entity.
-    pub fn entity(&mut self, entity: Entity) -> EntityCommands<'_> {
+    pub fn entity(&mut self, entity: Entity) -> EntityCommands<'_, S> {
         EntityCommands {
             commands: self,
             entity,
@@ -69,7 +102,13 @@ impl Commands {
     /// slots allocate. The id is guaranteed only for fresh spawns: a
     /// `Singleton<T>` bundle resolves to the already-existing singleton
     /// entity when the buffer applies.
-    pub fn insert<B: Bundle>(&mut self, bundle: B) -> Entity {
+    ///
+    /// Every component of the bundle must be declared in `S` (trivially
+    /// true for the wildcard default).
+    pub fn insert<B, M>(&mut self, bundle: B) -> Entity
+    where
+        B: Bundle + BundleDeclaredIn<S, M>,
+    {
         let mut buffer = self.inner.lock().expect("command buffer lock poisoned");
         let reserved = buffer
             .spawn_slots
@@ -103,18 +142,22 @@ impl Commands {
 }
 
 /// Command builder scoped to one entity.
-pub struct EntityCommands<'a> {
-    commands: &'a mut Commands,
+pub struct EntityCommands<'a, S = Anything> {
+    commands: &'a mut Commands<S>,
     entity: Entity,
 }
 
-impl EntityCommands<'_> {
+impl<S> EntityCommands<'_, S> {
     /// Buffers insertion of a derived component on this entity.
     ///
     /// The component is owned by the current system invocation. When that
     /// invocation reruns, previous derived outputs with the same owner are
-    /// removed before the new commands are applied.
-    pub fn insert<T: Component>(&mut self, value: T) {
+    /// removed before the new commands are applied. The component must be
+    /// declared in `S`.
+    pub fn insert<T, M>(&mut self, value: T)
+    where
+        T: Component + DeclaredIn<S, M>,
+    {
         self.commands
             .inner
             .lock()

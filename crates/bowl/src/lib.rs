@@ -91,6 +91,7 @@
 mod bowl;
 mod commands;
 mod component;
+mod declare;
 mod entity;
 mod query;
 mod system;
@@ -100,7 +101,8 @@ pub use bowl::{
     BoundEntity, Bowl, BowlEntity, Bundle, CommitLimit, ExplainReport, ExternalScoop,
     InsertBuilder, InsertedEntity, RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
 };
-pub use commands::Commands;
+pub use commands::{Commands, EntityCommands};
+pub use declare::{Anything, BundleDeclaredIn, DeclarationList, DeclaredIn};
 pub use component::{
     Component, ComponentHookContext, DerivedFrom, RelationshipEdge, RelationshipRetraction,
     RelationshipTarget, Singleton, hash_component, relationship_retractions_for,

@@ -8,6 +8,7 @@ use futures::future::{BoxFuture, FutureExt, join_all};
 use crate::{
     Bowl, Commands, DerivedFrom, Entity, Query, View,
     commands::CommandOp,
+    declare::DeclarationList,
     query::{
         Access, AccessKind, Dep, GuardStore, QueryFilter, QueryParam, filtered_access,
         filtered_deps, filtered_rows, filtered_rows_from_candidates, store_watermark_dep,
@@ -228,6 +229,12 @@ pub trait SystemParam {
     /// (a written entity races a view only if it carries the whole set)
     /// and by `explain`'s stale-view detection.
     fn view_sets(_out: &mut Vec<Vec<TypeId>>) {}
+    /// Component types this param may emit. `Some(empty)` for non-writers
+    /// (the default), `Some(list)` for a typed `Commands<S>`, `None` for
+    /// the wildcard (bare `Commands`).
+    fn declared_outputs() -> Option<Vec<TypeId>> {
+        Some(Vec::new())
+    }
     /// For outer-join params: the bound key types this state must verify
     /// have *no* matching row. Nonempty only for the absent placeholder
     /// state of an `Option<Query<..>>`.
@@ -533,9 +540,12 @@ where
     }
 }
 
-impl SystemParam for Commands {
+impl<S> SystemParam for Commands<S>
+where
+    S: DeclarationList + Send + Sync + 'static,
+{
     type State = ();
-    type Item<'a> = Commands;
+    type Item<'a> = Commands<S>;
 
     fn states(_snapshot: &Snapshot) -> Vec<Self::State> {
         vec![()]
@@ -553,6 +563,12 @@ impl SystemParam for Commands {
         Vec::new()
     }
 
+    fn declared_outputs() -> Option<Vec<TypeId>> {
+        // `None` is the wildcard (bare `Commands`); a typed declaration
+        // enumerates its component set for the system graph.
+        S::declared_types()
+    }
+
     fn fetch<'a>(
         _bowl: &Bowl,
         _snapshot: &'a Snapshot,
@@ -560,7 +576,7 @@ impl SystemParam for Commands {
         commands: &Commands,
         _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
-        commands.clone()
+        commands.retype()
     }
 }
 
@@ -858,6 +874,19 @@ macro_rules! impl_system_param_tuple {
             fn view_sets(out: &mut Vec<Vec<TypeId>>) {
                 $($P::view_sets(out);)*
             }
+
+            fn declared_outputs() -> Option<Vec<TypeId>> {
+                let mut out = Vec::new();
+                $(
+                    match $P::declared_outputs() {
+                        Some(types) => out.extend(types),
+                        // Any wildcard writer makes the whole system a
+                        // wildcard.
+                        None => return None,
+                    }
+                )*
+                Some(out)
+            }
         }
     };
 }
@@ -1101,15 +1130,24 @@ pub struct BoxedSystem {
     /// the components an entity must carry to appear in that view. For the
     /// same-phase production flag and `explain`'s stale-view report.
     pub(crate) view_sets: Arc<Vec<Vec<TypeId>>>,
+    /// Component types the system declared it may emit (`Commands<S>`);
+    /// `None` is the wildcard (bare `Commands` or hook-driven writers).
+    pub(crate) declared_outputs: Option<Arc<Vec<TypeId>>>,
 }
 
 impl BoxedSystem {
-    fn new(runnable: Arc<dyn Runnable>, name: &'static str, view_sets: Vec<Vec<TypeId>>) -> Self {
+    fn new(
+        runnable: Arc<dyn Runnable>,
+        name: &'static str,
+        view_sets: Vec<Vec<TypeId>>,
+        declared_outputs: Option<Vec<TypeId>>,
+    ) -> Self {
         Self {
             runnable,
             phase: Phase::Evaluate,
             name,
             view_sets: Arc::new(view_sets),
+            declared_outputs: declared_outputs.map(Arc::new),
         }
     }
 
@@ -1476,6 +1514,7 @@ where
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        let declared_outputs = system.declared_outputs.clone();
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
                 id,
@@ -1485,6 +1524,7 @@ where
             phase,
             name,
             view_sets,
+            declared_outputs,
         }
     }
 }
@@ -1499,6 +1539,7 @@ where
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        let declared_outputs = system.declared_outputs.clone();
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
                 id,
@@ -1508,6 +1549,7 @@ where
             phase,
             name,
             view_sets,
+            declared_outputs,
         }
     }
 }
@@ -1522,6 +1564,7 @@ where
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        let declared_outputs = system.declared_outputs.clone();
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
                 id,
@@ -1531,6 +1574,7 @@ where
             phase,
             name,
             view_sets,
+            declared_outputs,
         }
     }
 }
@@ -1794,6 +1838,7 @@ where
             }),
             std::any::type_name::<F>(),
             view_sets,
+            F::Param::declared_outputs(),
         )
     }
 }

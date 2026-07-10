@@ -304,6 +304,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     let mut always_run_body = String::from("false");
     let mut validate_body = String::new();
     let mut view_types_body = String::new();
+    let mut declared_outputs_body = String::new();
 
     for (index, field) in bundle.fields.iter().enumerate() {
         let static_ty = field.ty_with_lifetime(&bundle.lifetime, "'static");
@@ -343,6 +344,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
         ));
         view_types_body.push_str(&format!(
             "<{static_ty} as ::bowl::__derive::SystemParam>::view_sets(out);"
+        ));
+        declared_outputs_body.push_str(&format!(
+            "match <{static_ty} as ::bowl::__derive::SystemParam>::declared_outputs() {{
+                ::core::option::Option::Some(types) => out.extend(types),
+                ::core::option::Option::None => return ::core::option::Option::None,
+            }}"
         ));
     }
 
@@ -403,6 +410,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
 
             fn view_sets(out: &mut ::std::vec::Vec<::std::vec::Vec<::std::any::TypeId>>) {{
                 {view_types_body}
+            }}
+
+            fn declared_outputs() -> ::core::option::Option<::std::vec::Vec<::std::any::TypeId>> {{
+                let mut out = ::std::vec::Vec::new();
+                {declared_outputs_body}
+                ::core::option::Option::Some(out)
             }}
         }}"
     )

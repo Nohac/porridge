@@ -1852,6 +1852,11 @@ impl Bowl {
             input.apply(&mut state.world);
         }
         state.world.flush_derived_from();
+        // Deferred settle inserts are recorded as derived writes; drain
+        // them here so the next commit's debug checks (same-phase flag,
+        // declared-output honesty) do not misattribute them to that
+        // commit's writer.
+        let _ = state.world.take_written_derived();
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
@@ -2286,6 +2291,28 @@ async fn commit_system_run(
         // generation cannot have raced anything).
         if cfg!(debug_assertions) {
             let written = state.world.take_written_derived();
+
+            // Honesty backstop for declared outputs: typed `Commands<S>`
+            // makes undeclared emission a compile error, so this guards
+            // only future dynamic emission paths and declaration-registry
+            // drift. Wildcard systems (`declared_outputs == None`) skip.
+            if let Some(declared) = state
+                .systems
+                .get(writer.0)
+                .and_then(|system| system.declared_outputs.clone())
+            {
+                for (type_id, _entity, type_name) in &written {
+                    if !declared.contains(type_id) {
+                        panic!(
+                            "system `{}` emitted undeclared component `{type_name}`: \
+                             add it (or a group containing it) to the system's \
+                             `Commands<..>` declaration",
+                            state.systems[writer.0].name
+                        );
+                    }
+                }
+            }
+
             if let Some(phase) = phase {
                 for (type_id, entity, type_name) in written {
                     for (index, system) in state.systems.iter().enumerate() {
@@ -5314,6 +5341,100 @@ mod tests {
                 Some(100),
                 "a component disappearing must invalidate the observing row"
             );
+        });
+    }
+
+    type NoteParts = (Note, Count);
+
+    async fn declared_writer(
+        query: Query<(Entity, &A)>,
+        mut commands: Commands<(NoteParts, B)>,
+    ) {
+        let (entity, _a) = query.item();
+        commands.insert((Note,));
+        commands.entity(entity).insert(Count(7));
+        commands.entity(entity).insert(B(2));
+    }
+
+    /// Typed `Commands<S>`: declared writes (directly or through a group
+    /// alias) compile and behave exactly like the wildcard; the declared
+    /// set reaches the registry. Emitting an undeclared component is a
+    /// compile error, which a test cannot demonstrate — the runtime
+    /// honesty backstop is pinned separately.
+    #[test]
+    fn declared_outputs_permit_declared_writes() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(declared_writer).await;
+            bowl.insert((A(1),)).await;
+
+            let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            assert_eq!(notes.collect().len(), 1);
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(counts.collect()[0].1.0, 7);
+        });
+    }
+
+    /// A test-only param that *lies*: it declares only `Note` but hands the
+    /// system a wildcard buffer. The commit-time honesty backstop must
+    /// catch the undeclared emission (this is the guard for future dynamic
+    /// emission paths — typed `Commands` cannot get here).
+    struct LyingCommands(Commands);
+
+    impl crate::system::SystemParam for LyingCommands {
+        type State = ();
+        type Item<'a> = LyingCommands;
+
+        fn states(_snapshot: &crate::world::Snapshot) -> Vec<Self::State> {
+            vec![()]
+        }
+
+        fn keys(_state: &Self::State) -> Vec<Entity> {
+            Vec::new()
+        }
+
+        fn deps(
+            _snapshot: &crate::world::Snapshot,
+            _state: &Self::State,
+        ) -> Vec<crate::query::Dep> {
+            Vec::new()
+        }
+
+        fn access(
+            _snapshot: &crate::world::Snapshot,
+            _state: &Self::State,
+        ) -> Vec<crate::query::Access> {
+            Vec::new()
+        }
+
+        fn declared_outputs() -> Option<Vec<std::any::TypeId>> {
+            Some(vec![std::any::TypeId::of::<Note>()])
+        }
+
+        fn fetch<'a>(
+            _bowl: &Bowl,
+            _snapshot: &'a crate::world::Snapshot,
+            _state: &Self::State,
+            commands: &Commands,
+            _guards: &mut crate::query::GuardStore,
+        ) -> Self::Item<'a> {
+            LyingCommands(commands.clone())
+        }
+    }
+
+    async fn dishonest_writer(query: Query<(Entity, &A)>, mut lying: LyingCommands) {
+        let (_entity, _a) = query.item();
+        lying.0.insert((C(1),));
+    }
+
+    #[test]
+    #[should_panic(expected = "emitted undeclared component")]
+    fn undeclared_emission_panics_in_debug() {
+        block_on(async {
+            let bowl = Bowl::new();
+            bowl.add_system(dishonest_writer).await;
+            bowl.insert((A(1),)).await;
+            bowl.scoop::<Query<(Entity, &C)>>().await;
         });
     }
 

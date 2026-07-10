@@ -526,14 +526,14 @@ Current shortcut:
   pushed further.
 - Prefer query/output availability over explicit ordering where possible.
 - If ordering returns, make it system-level and cycle-checked.
-- Registration-time phase checking (dsql feedback): with *declared
-  outputs* (`produces::<T>()` hints — outputs are dynamic commands today,
-  which is why the same-phase flag is commit-time), `add_system` could
+- Registration-time phase checking (dsql feedback): `add_system` could
   refuse a `View<T>` in the same phase as `T`'s declared producer,
   turning the runtime panic into an unrepresentable state. Prefer
   refuse/warn over auto-scheduling (silently moving a system between
-  phases is spooky). Declared outputs are the prerequisite and would
-  benefit scheduling generally; design them once, use twice.
+  phases is spooky). The prerequisite landed: declared outputs
+  (`Commands<S>`, spec/declared-outputs.md) — the precise check also
+  wants schema shapes (layer 2) so shared vocabulary components do not
+  false-positive, mirroring the entity-granular commit-time flag.
 - Done: "never produce and ambiently consume in the same phase" is now
   engine-enforced in debug builds (dsql port, friction 5): a commit whose
   derived write is `View`ed by a same-phase system with matched rows

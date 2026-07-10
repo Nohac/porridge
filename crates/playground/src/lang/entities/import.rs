@@ -12,7 +12,7 @@ use tracing::info;
 use crate::lang::{
     entities::{node_span, token_texts},
     entity::{HoverStage, LanguageEntity, LowerCtx, LowerStage},
-    facts::{BelongsToFile, DiagnosticsDemand, Severity, Span, emit_diagnostic},
+    facts::{BelongsToFile, DiagnosticParts, DiagnosticsDemand, Severity, Span, emit_diagnostic},
     grammar::{lexer::Token, parser::NodeRef},
     service::{HoverCandidate, HoverFile, HoverRequest, Position, RequestKey, priority},
 };
@@ -124,7 +124,7 @@ pub(crate) async fn check_imports(
     _: Query<Entity, With<DiagnosticsDemand>>,
     query: Query<(Entity, &ImportDecl)>,
     system_imports: View<'_, (Entity, &SystemImportDb)>,
-    mut commands: Commands,
+    mut commands: Commands<(DiagnosticParts,)>,
 ) {
     crate::short_sleep().await;
 
