@@ -104,8 +104,8 @@ pub use bowl::{
 };
 pub use commands::{Commands, EntityCommands};
 pub use declare::{
-    BundleDeclaredIn, CoveredBy, DeclarationList, DeclaredIn, IncrementOf, MatchesShape, Schema,
-    ShapeDesc, ShapeHead, SpawnsAs,
+    BundleDeclaredIn, CoveredBy, DeclarationList, DeclaredIn, FacetKind, FacetPart, IncrementOf,
+    MatchesShape, Schema, ShapeDesc, ShapePart, SpawnsAs,
 };
 pub use macros::Schema;
 pub use component::{
@@ -116,7 +116,7 @@ pub use entity::{Entity, Untyped};
 pub use macros::Component;
 pub use query::{
     And, ArgBundle, Cow, CowQueryParam, EntityMutResult, Eq, ExternalFilter, ExternalQueryFilter,
-    FilterExpr, Gte, In, Mut, MutRef, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam,
+    FilterExpr, Gte, In, Mut, MutRef, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam, Tracked,
     QueryResult, View, Where, With, Without,
 };
 pub use system::{

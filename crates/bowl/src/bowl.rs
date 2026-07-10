@@ -5800,6 +5800,87 @@ mod tests {
         });
     }
 
+    type NoteShape = (Note, Count, Option<B>);
+
+    static FACET_ANCHOR_RUNS: AtomicUsize = AtomicUsize::new(0);
+    static FACET_TRACKED_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    async fn observe_facet(query: Query<Entity<NoteShape>>) {
+        let _facet = query.item();
+        FACET_ANCHOR_RUNS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    async fn observe_tracked_facet(query: Query<(Entity<NoteShape>, crate::Tracked<NoteShape>)>) {
+        let (_facet, _tracked) = query.item();
+        FACET_TRACKED_RUNS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Facet queries: `Entity<H>` anchors rows to entities carrying `H`'s
+    /// required set (optional parts vary freely) and contributes no memo
+    /// deps — an unread part changing must not rerun the anchor-only row.
+    /// `Tracked<H>` is the opt-in complement: it deps the row on every
+    /// part, so the same change reruns it, and an optional part appearing
+    /// invalidates the absence observation.
+    #[test]
+    fn facet_rows_match_required_sets_and_track_on_request() {
+        FACET_ANCHOR_RUNS.store(0, Ordering::SeqCst);
+        FACET_TRACKED_RUNS.store(0, Ordering::SeqCst);
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(observe_facet)
+                .system(observe_tracked_facet)
+                .build();
+
+            // Full shape, shape minus the optional, and a non-conforming
+            // entity (missing required Count).
+            let full = bowl.insert((Note, Count(1), B(1))).await;
+            bowl.insert((Note, Count(2))).await;
+            bowl.insert((Note,)).await;
+
+            let rows = bowl.scoop::<Query<Entity<NoteShape>>>().await;
+            assert_eq!(
+                rows.collect().len(),
+                2,
+                "facet rows are entities with the whole required set"
+            );
+            assert_eq!(FACET_ANCHOR_RUNS.load(Ordering::SeqCst), 2);
+            assert_eq!(FACET_TRACKED_RUNS.load(Ordering::SeqCst), 2);
+
+            // Changing a part the anchor-only row never read must not
+            // rerun it; the tracked row must rerun.
+            bowl.entity(full.entity()).insert((Count(9),)).await;
+            bowl.scoop::<Query<Entity<NoteShape>>>().await;
+            assert_eq!(
+                FACET_ANCHOR_RUNS.load(Ordering::SeqCst),
+                2,
+                "the facet anchor contributes no revision deps"
+            );
+            assert_eq!(
+                FACET_TRACKED_RUNS.load(Ordering::SeqCst),
+                3,
+                "Tracked<H> deps the row on every part"
+            );
+
+            // An optional part appearing invalidates the tracked row's
+            // absence observation (second entity gains B).
+            let notes = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let plain = notes
+                .collect()
+                .into_iter()
+                .find(|(_, count)| count.0 == 2)
+                .expect("the optional-less row exists")
+                .0;
+            bowl.entity(plain).insert((B(5),)).await;
+            bowl.scoop::<Query<Entity<NoteShape>>>().await;
+            assert_eq!(
+                FACET_TRACKED_RUNS.load(Ordering::SeqCst),
+                4,
+                "an optional part appearing must invalidate Tracked<H>"
+            );
+            assert_eq!(FACET_ANCHOR_RUNS.load(Ordering::SeqCst), 2);
+        });
+    }
+
     /// A test-only param that *lies*: it declares only `Note` but hands the
     /// system a wildcard buffer. The commit-time honesty backstop must
     /// catch the undeclared emission (this is the guard for future dynamic

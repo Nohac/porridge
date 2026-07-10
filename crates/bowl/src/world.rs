@@ -268,6 +268,10 @@ trait StoreDyn: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision>;
+    /// Number of entries in the store.
+    fn len(&self) -> usize;
+    /// Entities present in the store, ascending.
+    fn entities(&self) -> Vec<Entity>;
     /// Whether this store's component type participates in revision tracking.
     fn tracked(&self) -> bool;
     /// Highest revision at which this store changed.
@@ -383,6 +387,14 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision> {
         self.entries.get(&entity).map(|entry| entry.revision)
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn entities(&self) -> Vec<Entity> {
+        self.entries.keys().copied().collect()
     }
 
     fn tracked(&self) -> bool {
@@ -638,6 +650,25 @@ impl PresenceIndex {
             .all(|(mask_word, bits_word)| bits_word & mask_word == *mask_word)
     }
 
+    /// All entities whose bits satisfy `mask`, scanning row-major words.
+    /// Sound only for non-empty masks: entities that never carried a
+    /// universe component have no row, which cannot matter when at least
+    /// one bit is required.
+    pub(crate) fn entities_matching(&self, mask: &[u64]) -> Vec<Entity> {
+        let rows = self.bits.len() / self.stride;
+        let mut out = Vec::new();
+        for row in 0..rows {
+            let start = row * self.stride;
+            let hit = mask
+                .iter()
+                .zip(&self.bits[start..start + self.stride])
+                .all(|(mask_word, bits_word)| bits_word & mask_word == *mask_word);
+            if hit {
+                out.push(Entity::from_raw(row as u64));
+            }
+        }
+        out
+    }
 }
 
 impl Clone for World {
@@ -734,6 +765,32 @@ impl World {
         if let Some(presence) = &mut self.presence {
             presence.clear_entity(entity);
         }
+    }
+
+    /// Type-erased store size (`usize::MAX` for an absent store, so it is
+    /// never picked as a probing driver over a present one).
+    pub(crate) fn store_len_dyn(&self, type_id: TypeId) -> usize {
+        self.stores
+            .get(&type_id)
+            .map_or(usize::MAX, |store| store.len())
+    }
+
+    /// Type-erased store row listing, ascending; empty for an absent store.
+    pub(crate) fn entities_with_dyn(&self, type_id: TypeId) -> Vec<Entity> {
+        self.stores
+            .get(&type_id)
+            .map_or_else(Vec::new, |store| store.entities())
+    }
+
+    /// Type-erased revision lookup for facet-part deps.
+    pub(crate) fn revision_for_entity_dyn(
+        &self,
+        type_id: TypeId,
+        entity: Entity,
+    ) -> Option<Revision> {
+        self.stores
+            .get(&type_id)
+            .and_then(|store| store.revision_for_entity(entity))
     }
 
     /// Drains the derived component writes recorded since the last drain.

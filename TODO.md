@@ -594,14 +594,13 @@ Current shortcut:
   (`.replicate::<lang_schema::SourceFile>()`), `Schema::shapes()` is the
   enumerable manifest, and a daemon/client pair sharing one schema type
   makes the schema the wire contract (see daemon-client porting notes).
-  Dogfood finding, pinned in
-  `replication_plugin_maintains_replica_records`: head-driven capture
-  (`Query<Entity, With<H::Head>>` via `ShapeHead`) carries no deps on the
-  rest of the shape, so a reaped record whose head didn't change is never
-  re-derived — shape-granular consumers need shape-granular *deps*, which
-  is exactly the facet-query slice (`Entity<H>` rows,
-  spec/declared-outputs.md layer 4). That slice upgrades the capture and
-  flips the pinned assertion.
+  Resolved: capture is now a facet query
+  (`Query<(Entity<H>, Tracked<H>)>`) — the anchor matches conforming
+  entities, `Tracked<H>` deps the row on every part, and the previously
+  pinned assertion flipped (records re-derive after any part of the
+  instance changes). Still open from the facet slice: registration-time
+  presence-typing validation of sibling parts (`&T` iff required,
+  `Option<&T>` iff optional).
 - Done: "never produce and ambiently consume in the same phase" is now
   engine-enforced in debug builds (dsql port, friction 5): a commit whose
   derived write is `View`ed by a same-phase system with matched rows

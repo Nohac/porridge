@@ -196,12 +196,17 @@ boundary, where replication/external adapters apply components by runtime
   are derive-generated sugar over per-component deps, never a
   replacement.
 
-Build order: (1) strict spawn returning `Entity<H>`; (2) facet handles +
-optionals-only increments; (3) facet-anchored queries with
-presence-typing; (4) union slots (`OneOf`); (5) `Bowl<Schema>` +
-compile-time declaration coverage; (6) sweep untyped `Entity` from the
-public surface; (7) derive-generated shape rows / union enum readers as
-sugar.
+Build order: (1) strict spawn returning `Entity<H>` — **done**; (2) facet
+handles + optionals-only increments — **done**; (3) facet-anchored
+queries — **done** (`Query<(Entity<H>, parts…)>`; the anchor drives row
+matching via the presence mask or store probing and contributes no
+revision deps; `Tracked<H>` is the opt-in whole-shape dep part, added
+when the replication dogfood showed shape-granular consumers need
+shape-granular deps; registration-time presence-typing validation of
+sibling parts is still open); (4) union slots (`OneOf`); (5)
+`Bowl<Schema>` + compile-time declaration coverage; (6) sweep untyped
+`Entity` from the public surface; (7) derive-generated shape rows /
+union enum readers as sugar.
 
 ## Implementation order
 

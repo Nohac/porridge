@@ -205,18 +205,11 @@ fn replication_plugin_maintains_replica_records() {
             2,
             "definition replicas must follow the derivation"
         );
-        // Dogfood finding, pinned: the source-file record is gone. The
-        // edit bumped `FileText`, cleanup reaped the record (source
-        // revision moved), but head-driven capture (`With<FilePath>`)
-        // carries no dep on the rest of the shape, so nothing reran to
-        // re-derive it. Shape-granular capture needs shape-granular deps —
-        // the staged facet queries (`Entity<H>` rows, spec/declared-
-        // outputs.md layer 4). When those land, this asserts 3.
-        assert_eq!(
-            replicas.len(),
-            2,
-            "source-file record awaits facet-query capture"
-        );
+        // The source-file record survives the edit: `Tracked<H>` deps the
+        // capture row on every part of the shape, so the `FileText` bump
+        // reran it and re-derived the record cleanup had reaped. (This
+        // assertion was pinned at 2 before facet queries landed.)
+        assert_eq!(replicas.len(), 3, "replicas must follow the derivation");
     });
 }
 

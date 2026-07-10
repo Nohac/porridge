@@ -22,13 +22,14 @@
 //! type-erased boundary (`changed_since` cursors on the capture side,
 //! shape-bundle base writes on the apply side); the dummy stops at
 //! maintaining the per-shape replica records such a wire would ship.
-//! Capture currently keys row tracking off the shape's head component
-//! ([`bowl::ShapeHead`]); facet queries (`Entity<H>`) are the staged
-//! upgrade that waits for full shape conformance instead.
+//! Capture is a facet query: `Entity<H>` anchors rows to entities
+//! conforming to the shape, and `Tracked<H>` deps the row on every part,
+//! so any change to the instance re-derives its record.
 
 use bowl::{
-    Commands, Component, DerivedFrom, Entity, Plugin, Query, Registrar, Schema, ShapeDesc,
-    ShapeHead, With,
+    Commands, Component, DerivedFrom, Entity, FacetKind, Plugin, Query, Registrar, Schema,
+    ShapeDesc,
+    Tracked,
 };
 
 /// One replica record per replicated shape instance: what a wire protocol
@@ -48,20 +49,21 @@ pub(crate) struct ReplicationShapes {
     replica: (Replica, DerivedFrom),
 }
 
-/// One invocation per entity carrying the subscribed shape's head;
-/// idempotent reruns keep their spawn slot, so an unchanged source keeps
-/// its replica's identity and revisions.
+/// One invocation per entity conforming to the subscribed shape;
+/// `Tracked<H>` makes the row depend on every part of the instance, so
+/// edits re-derive the record after cleanup reaps it. Idempotent reruns
+/// keep their spawn slot, so an unchanged source keeps its replica's
+/// identity and revisions.
 async fn replicate_shape<H>(
-    query: Query<Entity, With<H::Head>>,
+    query: Query<(Entity<H>, Tracked<H>)>,
     mut commands: Commands<(replication_shapes::Replica,)>,
 ) where
-    H: ShapeHead + 'static,
-    H::Head: Component,
+    H: FacetKind,
 {
-    let source = query.item();
+    let (source, _tracked) = query.item();
     commands.insert((
         Replica {
-            source,
+            source: source.untyped(),
             shape: std::any::type_name::<H>(),
         },
         DerivedFrom::new(source),
@@ -82,12 +84,10 @@ impl ReplicationPlugin {
     }
 
     /// Subscribes a schema shape: every entity conforming to `H` gets a
-    /// replica record. Shapes must lead with a required component (the
-    /// capture driver).
+    /// replica record, kept current against every part of the shape.
     pub(crate) fn replicate<H>(mut self) -> Self
     where
-        H: ShapeHead + 'static,
-        H::Head: Component,
+        H: FacetKind,
     {
         self.subscriptions
             .push(Box::new(|reg| reg.system(replicate_shape::<H>)));

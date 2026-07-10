@@ -218,25 +218,67 @@ macro_rules! impl_increment_of_tuple {
 
 all_tuples!(impl_increment_of_tuple, 1, 8, T);
 
-/// The leading component of a shape tuple.
-///
-/// Shape-granular consumers (replication capture, until facet queries
-/// land) key their row tracking off the shape's head; a shape must
-/// therefore lead with a required (non-`Option`) part, which the
-/// `Head: Component` bound at the use site enforces.
-pub trait ShapeHead {
-    type Head;
+/// One part of a facet, as seen at runtime.
+#[derive(Clone, Copy)]
+pub struct FacetPart {
+    pub type_id: TypeId,
+    pub name: &'static str,
+    pub optional: bool,
+    /// Whether the component participates in revision tracking (untracked
+    /// parts contribute no deps, as everywhere else).
+    pub tracked: bool,
 }
 
-macro_rules! impl_shape_head {
-    ($H:ident $(, $T:ident)*) => {
-        impl<$H, $($T,)*> ShapeHead for ($H, $($T,)*) {
-            type Head = $H;
+/// A shape element contributing its runtime description to a facet.
+pub trait ShapePart {
+    fn part() -> FacetPart;
+}
+
+impl<C: Component> ShapePart for C {
+    fn part() -> FacetPart {
+        FacetPart {
+            type_id: TypeId::of::<C>(),
+            name: std::any::type_name::<C>(),
+            optional: false,
+            tracked: C::tracked(),
+        }
+    }
+}
+
+impl<T: Component> ShapePart for Option<T> {
+    fn part() -> FacetPart {
+        FacetPart {
+            type_id: TypeId::of::<T>(),
+            name: std::any::type_name::<T>(),
+            optional: true,
+            tracked: T::tracked(),
+        }
+    }
+}
+
+/// A facet usable on `Entity<H>`: the untyped handle (no parts, plain
+/// identity) or a shape tuple whose required parts drive row matching.
+pub trait FacetKind: 'static {
+    fn parts() -> Vec<FacetPart>;
+}
+
+impl FacetKind for crate::entity::Untyped {
+    fn parts() -> Vec<FacetPart> {
+        Vec::new()
+    }
+}
+
+macro_rules! impl_facet_kind {
+    ($($P:ident),*) => {
+        impl<$($P: ShapePart + 'static,)*> FacetKind for ($($P,)*) {
+            fn parts() -> Vec<FacetPart> {
+                vec![$($P::part(),)*]
+            }
         }
     };
 }
 
-all_tuples!(impl_shape_head, 1, 8, T);
+all_tuples!(impl_facet_kind, 1, 8, P);
 
 /// Runtime enumeration of a declaration: the component `TypeId`s it
 /// covers, or `None` for the wildcard. This is what makes tuple-alias
