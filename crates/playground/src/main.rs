@@ -178,9 +178,7 @@ async fn main() {
     }
 
     info!("replica records maintained by the replication plugin");
-    let replicas = db
-        .scoop::<Query<(Entity, &replication::Replica)>>()
-        .await;
+    let replicas = db.scoop::<Query<(Entity, &replication::Replica)>>().await;
     for (entity, replica) in replicas.collect() {
         info!(
             entity = entity.raw(),
@@ -240,8 +238,16 @@ async fn main() {
         bowl::bowl_debug_generations(),
         waves,
     );
+    eprintln!("settle total: {settle_us}us  snapshots: {snapshot_us}us  commits: {commit_us}us");
+    let (lock_wait_us, lock_held_us, lock_count, scoop_us, scoop_count) =
+        bowl::bowl_debug_lock_read_buckets();
     eprintln!(
-        "settle total: {settle_us}us  snapshots: {snapshot_us}us  commits: {commit_us}us"
+        "state lock: waited {lock_wait_us}us  held {lock_held_us}us  ({lock_count} acquisitions, avg hold {}ns)",
+        if lock_count > 0 { lock_held_us * 1_000 / lock_count } else { 0 },
+    );
+    eprintln!(
+        "reads: {scoop_count} scoops totaling {scoop_us}us (avg {}us)",
+        if scoop_count > 0 { scoop_us / scoop_count } else { 0 },
     );
     let profiles = db.profile_all().await;
     let mut rows: Vec<_> = db.explain_all().await.into_iter().zip(profiles).collect();
@@ -344,10 +350,14 @@ async fn run_task_storm(db: Bowl) {
     for path in paths {
         let db = db.clone();
         spawned.push(tokio::spawn(async move {
+            // Pure racing reads tolerate the last settled epoch, so they
+            // skip the settle queue entirely instead of chasing every
+            // concurrent writer's generation.
             let row_count = {
                 let result = db
                     .scoop::<Query<(Entity, &FileText), Where<Eq<FilePath>>>>()
                     .args(FilePath(path.to_string()))
+                    .last_settled()
                     .await;
                 result.collect().len()
             };

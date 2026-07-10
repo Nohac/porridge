@@ -91,6 +91,9 @@ struct Inner {
     /// paths (every scoop caller spinning on "is my generation done yet")
     /// stop contending on the state lock.
     completed_generation: std::sync::atomic::AtomicU64,
+    /// Read-mostly mirror of `State::settled_snapshot`, so stale-tolerant
+    /// readers (`.last_settled()`) never touch the state lock at all.
+    settled_read: std::sync::RwLock<Option<Arc<Snapshot>>>,
     /// Single-permit evaluator lock.
     ///
     /// Holding this guard means the caller is the only active runner. The guard
@@ -112,6 +115,9 @@ struct Inner {
     /// Wakes the runner's in-flight await when a mutator registers, so the
     /// preemption boundary is reached promptly.
     preempt_signal: futures::task::AtomicWaker,
+    /// Wakes the runner's open window when the last preempt waiter
+    /// finishes applying.
+    preempt_done: futures::task::AtomicWaker,
 }
 
 /// World counters identifying the state a snapshot was taken at.
@@ -164,7 +170,15 @@ struct State {
     /// generation restarts through `Phase::Startup` so settle-scoped claims
     /// can be retracted before fresh derivations plan.
     preempt_restart: bool,
-    waiters: Vec<oneshot::Sender<()>>,
+    /// Generation waiters, each tagged with the generation it needs.
+    /// Completions wake only satisfied waiters — the rest stay registered,
+    /// so a waiter locks the state once per wait, not once per generation
+    /// (the broadcast version produced ~100 herd acquisitions per settle).
+    waiters: Vec<(u64, oneshot::Sender<()>)>,
+    /// External mutators waiting for a preemption boundary. Notified when
+    /// a window opens or a generation completes, instead of spin-polling
+    /// the state lock every yield.
+    boundary_waiters: Vec<oneshot::Sender<()>>,
     settled_revision: u64,
     /// Snapshot retained at the last settle for `last_settled` scoops.
     /// Invalidated by destructive takes (a retained snapshot pins every
@@ -387,11 +401,20 @@ where
     S: ExternalScoop,
 {
     async fn materialize(self) -> S::Output {
+        SCOOP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let _scoop_timer = ScopeTimer(&SCOOP_NANOS, std::time::Instant::now());
         if self.last_settled {
-            let retained = {
-                let state = self.bowl.inner.state.lock().await;
-                state.settled_snapshot.as_ref().map(Arc::clone)
-            };
+            // Lock-free: the settled snapshot is published to a
+            // read-mostly slot at settle time, so stale-tolerant readers
+            // bypass the state lock entirely.
+            let retained = self
+                .bowl
+                .inner
+                .settled_read
+                .read()
+                .expect("settled-read slot poisoned")
+                .as_ref()
+                .map(Arc::clone);
             let snapshot = match retained {
                 Some(snapshot) => snapshot,
                 None => self.bowl.snapshot().await,
@@ -442,7 +465,7 @@ where
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
 
-        let mut state = self.bowl.inner.state.lock().await;
+        let mut state = lock_state(&self.bowl.inner.state).await;
         let snapshot = snapshot_locked(&mut state);
         let result =
             QueryResult::<Q, F>::new(self.bowl.clone(), Arc::clone(&snapshot), &self.args, None);
@@ -480,7 +503,7 @@ where
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
 
-        let mut state = self.bowl.inner.state.lock().await;
+        let mut state = lock_state(&self.bowl.inner.state).await;
         let rows = crate::query::external_filtered_cow_rows::<Q, F>(&state.world, &self.args, None);
         let mut changed = false;
 
@@ -515,7 +538,7 @@ where
         self.bowl.settle().await;
         self.bowl.drain_deferred_bound_cleanup().await;
 
-        let mut state = self.bowl.inner.state.lock().await;
+        let mut state = lock_state(&self.bowl.inner.state).await;
         let rows = crate::query::external_filtered_cow_rows::<Q, F>(
             &state.world,
             &self.args,
@@ -670,11 +693,17 @@ impl BoundEntity {
         self.bowl.settle().await;
 
         let result = loop {
-            let mut state = self.bowl.inner.state.lock().await;
+            let mut state = lock_state(&self.bowl.inner.state).await;
             // Taking unwraps component cells, which must not be kept alive by
             // the shared snapshot cache or the retained settled snapshot.
             state.snapshot_cache = None;
             state.settled_snapshot = None;
+            *self
+                .bowl
+                .inner
+                .settled_read
+                .write()
+                .expect("settled-read slot poisoned") = None;
 
             // In-flight snapshots and live query results can still share the
             // cells this take needs; removing a shared cell would lose the
@@ -936,6 +965,71 @@ pub static SNAPSHOT_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::Ato
 pub static COMMIT_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static SETTLE_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static WAVE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// State-lock telemetry: cumulative time spent *waiting* to acquire,
+/// cumulative time the lock was *held*, and acquisition count.
+pub static STATE_LOCK_WAIT_NANOS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static STATE_LOCK_HELD_NANOS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static STATE_LOCK_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// External read telemetry: scoop calls and their end-to-end time (queue
+/// wait + snapshot + materialization).
+pub static SCOOP_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static SCOOP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Timed guard over the state lock: hold time is recorded on drop.
+struct StateGuard<'a> {
+    guard: futures::lock::MutexGuard<'a, State>,
+    since: Option<std::time::Instant>,
+}
+
+impl<'a> std::ops::Deref for StateGuard<'a> {
+    type Target = State;
+
+    fn deref(&self) -> &State {
+        &self.guard
+    }
+}
+
+impl std::ops::DerefMut for StateGuard<'_> {
+    fn deref_mut(&mut self) -> &mut State {
+        &mut self.guard
+    }
+}
+
+impl Drop for StateGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(since) = self.since {
+            STATE_LOCK_HELD_NANOS.fetch_add(
+                since.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+    }
+}
+
+/// Acquires the state lock, with wait/held telemetry in debug builds
+/// (measurement-free in release: the two `Instant` reads and three
+/// atomics per acquisition are visible on µs-scale settles).
+async fn lock_state(state: &Mutex<State>) -> StateGuard<'_> {
+    if !cfg!(debug_assertions) {
+        return StateGuard {
+            guard: state.lock().await,
+            since: None,
+        };
+    }
+    let wait_start = std::time::Instant::now();
+    let guard = state.lock().await;
+    STATE_LOCK_WAIT_NANOS.fetch_add(
+        wait_start.elapsed().as_nanos() as u64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    STATE_LOCK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    StateGuard {
+        guard,
+        since: Some(std::time::Instant::now()),
+    }
+}
 
 /// One system's profile row: registration name plus cumulative counters.
 pub struct ProfileEntry {
@@ -955,6 +1049,53 @@ impl Drop for ScopeTimer<'_> {
             std::sync::atomic::Ordering::Relaxed,
         );
     }
+}
+
+/// A spawned system run that aborts if the runner drops it (preemption
+/// discards read-only work; a detached task must not keep holding cell
+/// guards).
+#[cfg(feature = "parallel")]
+struct SpawnedRun<T> {
+    handle: tokio::task::JoinHandle<T>,
+}
+
+#[cfg(feature = "parallel")]
+impl<T> std::future::Future for SpawnedRun<T> {
+    type Output = T;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        std::pin::Pin::new(&mut self.handle)
+            .poll(cx)
+            .map(|result| result.expect("system task panicked or was aborted"))
+    }
+}
+
+#[cfg(feature = "parallel")]
+impl<T> Drop for SpawnedRun<T> {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+/// Dispatches a planned run: onto ambient tokio workers under the
+/// `parallel` feature (falling back to cooperative polling without a
+/// runtime), always cooperative otherwise — the engine itself stays
+/// executor-agnostic.
+fn dispatch_run(
+    run: impl std::future::Future<Output = (SystemInvocation, SystemRun)> + Send + 'static,
+) -> futures::future::BoxFuture<'static, (SystemInvocation, SystemRun)> {
+    #[cfg(feature = "parallel")]
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            return Box::pin(SpawnedRun {
+                handle: handle.spawn(run),
+            });
+        }
+    }
+    Box::pin(run)
 }
 
 /// Poll-time measuring wrapper: charges only the time spent inside the
@@ -1022,6 +1163,7 @@ impl Bowl {
                     preempt_window: false,
                     preempt_restart: false,
                     waiters: Vec::new(),
+                    boundary_waiters: Vec::new(),
                     settled_revision: 0,
                     settled_snapshot: None,
                     settle_watchers: Vec::new(),
@@ -1029,11 +1171,13 @@ impl Bowl {
                     startup_ran: false,
                 }),
                 completed_generation: std::sync::atomic::AtomicU64::new(0),
+                settled_read: std::sync::RwLock::new(None),
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
                 preempt_waiters: std::sync::atomic::AtomicUsize::new(0),
                 preempt_signal: futures::task::AtomicWaker::new(),
+                preempt_done: futures::task::AtomicWaker::new(),
             }),
         }
     }
@@ -1074,8 +1218,8 @@ impl Bowl {
         let mut f = f;
         let mut waiter = PreemptWaiter::new(self, deferred);
         loop {
-            {
-                let mut state = self.inner.state.lock().await;
+            let boundary = {
+                let mut state = lock_state(&self.inner.state).await;
                 if state.world.revision::<T>(entity) != original_revision {
                     waiter.finish();
                     return None;
@@ -1091,16 +1235,25 @@ impl Bowl {
                             waiter.finish();
                             return None;
                         }
-                        TryUpdate::Busy(back) => f = back,
+                        // A held cell releases without touching the state
+                        // lock; keep the yield path for busy retries.
+                        TryUpdate::Busy(back) => {
+                            f = back;
+                            None
+                        }
                     }
+                } else {
+                    let (sender, receiver) = oneshot::channel();
+                    state.boundary_waiters.push(sender);
+                    Some(receiver)
                 }
+            };
+            match boundary {
+                Some(receiver) => {
+                    let _ = receiver.await;
+                }
+                None => yield_once().await,
             }
-
-            // The cell is held by a reader or writer, or an epoch is driving
-            // and the runner has not reached the preemption boundary yet.
-            // Retry after yielding; the state lock is not held while we
-            // wait, so guard holders that need it cannot deadlock with us.
-            yield_once().await;
         }
     }
 
@@ -1117,8 +1270,8 @@ impl Bowl {
         let mut f = f;
         let mut waiter = PreemptWaiter::new(self, deferred);
         loop {
-            {
-                let mut state = self.inner.state.lock().await;
+            let boundary = {
+                let mut state = lock_state(&self.inner.state).await;
                 if waiter.boundary_reached(&mut state) {
                     match apply_component_mutation::<T, F, R>(&mut state, entity, f) {
                         TryUpdate::Applied { result, .. } => {
@@ -1129,12 +1282,25 @@ impl Bowl {
                             waiter.finish();
                             return None;
                         }
-                        TryUpdate::Busy(back) => f = back,
+                        // A held cell releases without touching the state
+                        // lock, so busy-retry keeps the yield path.
+                        TryUpdate::Busy(back) => {
+                            f = back;
+                            None
+                        }
                     }
+                } else {
+                    let (sender, receiver) = oneshot::channel();
+                    state.boundary_waiters.push(sender);
+                    Some(receiver)
                 }
+            };
+            match boundary {
+                Some(receiver) => {
+                    let _ = receiver.await;
+                }
+                None => yield_once().await,
             }
-
-            yield_once().await;
         }
     }
 
@@ -1144,7 +1310,7 @@ impl Bowl {
     /// Snapshots do not carry the ownership index, so settled hooks check the
     /// live bowl instead.
     pub(crate) async fn has_derived_owned(&self, owner: &SystemInvocation) -> bool {
-        self.inner.state.lock().await.world.has_derived_owned(owner)
+        lock_state(&self.inner.state).await.world.has_derived_owned(owner)
     }
 
     /// Registers a system. Build-time only ([`BowlBuilder::system`] /
@@ -1230,7 +1396,7 @@ impl Bowl {
     /// Cumulative per-system profile (plan time, poll time, completed
     /// runs) in registration order.
     pub async fn profile_all(&self) -> Vec<ProfileEntry> {
-        let state = self.inner.state.lock().await;
+        let state = lock_state(&self.inner.state).await;
         state
             .systems
             .iter()
@@ -1253,7 +1419,7 @@ impl Bowl {
     /// order, with each system's name — the end-of-run diagnostic dump.
     pub async fn explain_all(&self) -> Vec<(&'static str, ExplainReport)> {
         let names: Vec<&'static str> = {
-            let state = self.inner.state.lock().await;
+            let state = lock_state(&self.inner.state).await;
             state.systems.iter().map(|system| system.name).collect()
         };
         let mut reports = Vec::with_capacity(names.len());
@@ -1265,7 +1431,7 @@ impl Bowl {
 
     pub async fn explain(&self, system: &str) -> ExplainReport {
         let (target, memo, snapshot) = {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             let target = state
                 .systems
                 .iter()
@@ -1332,7 +1498,7 @@ impl Bowl {
             })];
 
         {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             let next_generation = state.next_generation;
 
             if state.settling == 0 {
@@ -1357,8 +1523,8 @@ impl Bowl {
         // generation drains this retraction instead of the next epoch.
         let mut waiter = PreemptWaiter::new(self, false);
         loop {
-            {
-                let mut state = self.inner.state.lock().await;
+            let boundary = {
+                let mut state = lock_state(&self.inner.state).await;
                 if waiter.boundary_reached(&mut state) {
                     waiter.finish();
                     state.pending_inputs.append(&mut commands);
@@ -1366,8 +1532,11 @@ impl Bowl {
                     state.pending_generation.get_or_insert(next_generation);
                     return;
                 }
-            }
-            yield_once().await;
+                let (sender, receiver) = oneshot::channel();
+                state.boundary_waiters.push(sender);
+                receiver
+            };
+            let _ = boundary.await;
         }
     }
 
@@ -1381,7 +1550,7 @@ impl Bowl {
         B: Bundle,
     {
         let (entity, mut commands) = {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             let entity = target.unwrap_or_else(|| {
                 B::singleton_key()
                     .map(|key| state.world.singleton_entity_or_spawn(key))
@@ -1430,8 +1599,8 @@ impl Bowl {
         // of the next epoch.
         let mut waiter = PreemptWaiter::new(self, false);
         loop {
-            {
-                let mut state = self.inner.state.lock().await;
+            let boundary = {
+                let mut state = lock_state(&self.inner.state).await;
                 if waiter.boundary_reached(&mut state) {
                     waiter.finish();
                     state.pending_inputs.append(&mut commands);
@@ -1443,8 +1612,11 @@ impl Bowl {
                         generation,
                     };
                 }
-            }
-            yield_once().await;
+                let (sender, receiver) = oneshot::channel();
+                state.boundary_waiters.push(sender);
+                receiver
+            };
+            let _ = boundary.await;
         }
     }
 
@@ -1490,7 +1662,7 @@ impl Bowl {
             return;
         }
 
-        let mut state = self.inner.state.lock().await;
+        let mut state = lock_state(&self.inner.state).await;
         let was_settled = bowl_is_settled(&state);
         for entity in cleanup {
             cleanup_bound_entity(&mut state, entity);
@@ -1522,13 +1694,13 @@ impl Bowl {
         // guard bookkeeping is skipped entirely — settled reads keep their
         // single-lock cost.
         {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             if state.pending_generation.is_none()
                 && state.running_generation.is_none()
                 && state.world.revision_raw() == state.settled_revision
                 && state.deferred_inputs.is_empty()
             {
-                refresh_settled_snapshot(&mut state);
+                refresh_settled_snapshot(&self.inner, &mut state);
                 return;
             }
         }
@@ -1538,7 +1710,7 @@ impl Bowl {
 
         loop {
             let target = {
-                let mut state = self.inner.state.lock().await;
+                let mut state = lock_state(&self.inner.state).await;
                 if state.pending_generation.is_none()
                     && state.running_generation.is_none()
                     && state.world.revision_raw() == state.settled_revision
@@ -1549,7 +1721,7 @@ impl Bowl {
                     if promote_deferred_inputs(&mut state, epoch.watermark) {
                         continue;
                     }
-                    refresh_settled_snapshot(&mut state);
+                    refresh_settled_snapshot(&self.inner, &mut state);
                     return;
                 }
 
@@ -1562,14 +1734,14 @@ impl Bowl {
             self.ensure_evaluated(target, &mut commit_budget).await;
 
             let clean_and_settled = {
-                let mut state = self.inner.state.lock().await;
+                let mut state = lock_state(&self.inner.state).await;
                 let clean = state.pending_generation.is_none()
                     && state.running_generation.is_none();
                 if clean && state.world.revision_raw() == state.settled_revision {
                     if promote_deferred_inputs(&mut state, epoch.watermark) {
                         continue;
                     }
-                    refresh_settled_snapshot(&mut state);
+                    refresh_settled_snapshot(&self.inner, &mut state);
                     return;
                 }
                 clean && state.normal_clean
@@ -1582,11 +1754,11 @@ impl Bowl {
                 }
 
                 self.run_settle_phase().await;
-                let mut state = self.inner.state.lock().await;
+                let mut state = lock_state(&self.inner.state).await;
                 if promote_deferred_inputs(&mut state, epoch.watermark) {
                     continue;
                 }
-                refresh_settled_snapshot(&mut state);
+                refresh_settled_snapshot(&self.inner, &mut state);
                 // This settle performed work: fire the settle watchers.
                 let settled_revision = state.settled_revision;
                 let watchers = std::mem::take(&mut state.settle_watchers);
@@ -1603,7 +1775,7 @@ impl Bowl {
 
     async fn run_settled_hooks(&self, commit_budget: &mut CommitBudget) -> bool {
         let (systems, mut memo) = {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             (state.systems.clone(), std::mem::take(&mut state.memo))
         };
 
@@ -1624,7 +1796,7 @@ impl Bowl {
         };
         commit_budget.record(progress.commits);
 
-        let mut state = self.inner.state.lock().await;
+        let mut state = lock_state(&self.inner.state).await;
         state.memo = memo;
         if !progress.needs_followup {
             state.settled_revision = state.world.revision_raw();
@@ -1638,7 +1810,7 @@ impl Bowl {
     /// reads return); their insert/spawn commands defer to the next run.
     async fn run_settle_phase(&self) {
         let (systems, mut memo) = {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             (state.systems.clone(), std::mem::take(&mut state.memo))
         };
 
@@ -1662,13 +1834,13 @@ impl Bowl {
             commit_system_run(&mut memo, &self.inner.state, run, Some(Phase::Settle)).await;
         }
 
-        let mut state = self.inner.state.lock().await;
+        let mut state = lock_state(&self.inner.state).await;
         state.memo = memo;
         state.settled_revision = state.world.revision_raw();
     }
 
     async fn enqueue_next_generation(&self) {
-        let mut state = self.inner.state.lock().await;
+        let mut state = lock_state(&self.inner.state).await;
         if state.pending_generation.is_none() {
             let next_generation = state.next_generation;
             state.pending_generation = Some(next_generation);
@@ -1711,7 +1883,7 @@ impl Bowl {
     /// Revision counter of the last settled state — the cursor source for
     /// [`changed_since`](ScoopBuilder::changed_since) delta reads.
     pub async fn settled_revision(&self) -> u64 {
-        self.inner.state.lock().await.settled_revision
+        lock_state(&self.inner.state).await.settled_revision
     }
 
     /// Resolves after the next settle that performed work, with the settled
@@ -1720,7 +1892,7 @@ impl Bowl {
     /// of an already-settled bowl) do not fire it.
     pub async fn next_settle(&self) -> u64 {
         let receiver = {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             let (sender, receiver) = oneshot::channel();
             state.settle_watchers.push(sender);
             receiver
@@ -1734,7 +1906,7 @@ impl Bowl {
     /// Component values are stored in shared guarded cells, so a fresh
     /// snapshot is a structural clone of the store maps, not of user data.
     async fn snapshot(&self) -> Arc<Snapshot> {
-        let mut state = self.inner.state.lock().await;
+        let mut state = lock_state(&self.inner.state).await;
         snapshot_locked(&mut state)
     }
 
@@ -1746,13 +1918,13 @@ impl Bowl {
     /// generation again, which also handles newly queued work.
     async fn wait_for_generation(&self, target: u64) {
         let receiver = {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             if state.completed_generation >= target {
                 return;
             }
 
             let (sender, receiver) = oneshot::channel();
-            state.waiters.push(sender);
+            state.waiters.push((target, sender));
             receiver
         };
 
@@ -1826,7 +1998,7 @@ impl Bowl {
                     normal_phase_changed |= changed;
                     preemptions += 1;
                     {
-                        let mut state = self.inner.state.lock().await;
+                        let mut state = lock_state(&self.inner.state).await;
                         state.preempt_restart = false;
                     }
                     // A preempted generation restarts through the Startup
@@ -1840,7 +2012,7 @@ impl Bowl {
 
         let memo = guard.complete();
         let waiters = {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             state.memo = memo;
             state.normal_clean = !normal_phase_changed;
             state.completed_generation = generation;
@@ -1851,7 +2023,23 @@ impl Bowl {
                 GENERATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             state.running_generation = None;
-            std::mem::take(&mut state.waiters)
+            // A completed generation is a natural mutation boundary.
+            for boundary in state.boundary_waiters.drain(..) {
+                let _ = boundary.send(());
+            }
+            let mut satisfied = Vec::new();
+            state.waiters.retain_mut(|(target, sender)| {
+                if *target <= generation {
+                    // Sender is consumed by `send`; move it out via a
+                    // placeholder channel.
+                    let (placeholder, _) = oneshot::channel();
+                    satisfied.push(std::mem::replace(sender, placeholder));
+                    false
+                } else {
+                    true
+                }
+            });
+            satisfied
         };
 
         for waiter in waiters {
@@ -1922,7 +2110,7 @@ impl Bowl {
                 let snapshot_start = std::time::Instant::now();
                 let snapshot = self.snapshot().await;
                 let (plan_log, plan_epoch) = {
-                    let state = self.inner.state.lock().await;
+                    let state = lock_state(&self.inner.state).await;
                     state.world.plan_log()
                 };
                 SNAPSHOT_NANOS.fetch_add(
@@ -2057,6 +2245,12 @@ impl Bowl {
                             let run = timed.await;
                             (owner, run)
                         };
+                        // Parallel execution when an executor is ambient
+                        // (feature `parallel`): planned runs are owned +
+                        // `Send`, `Access` scheduling already keeps
+                        // conflicting rows apart, and commits stay
+                        // serialized on the driver.
+                        let run = dispatch_run(run);
                         if writer {
                             write_runs.push(run);
                         } else {
@@ -2171,20 +2365,29 @@ impl Bowl {
     /// mutator has applied its write.
     async fn open_preempt_window(&self) {
         {
-            let mut state = self.inner.state.lock().await;
+            let mut state = lock_state(&self.inner.state).await;
             state.preempt_window = true;
+            for boundary in state.boundary_waiters.drain(..) {
+                let _ = boundary.send(());
+            }
         }
 
-        while self
-            .inner
-            .preempt_waiters
-            .load(atomic::Ordering::SeqCst)
-            > 0
-        {
-            yield_once().await;
-        }
+        // Wait for every registered preempt waiter to apply, woken by
+        // `PreemptWaiter::finish`/`Drop` instead of spin-polling.
+        futures::future::poll_fn(|context| {
+            if self.inner.preempt_waiters.load(atomic::Ordering::SeqCst) == 0 {
+                return std::task::Poll::Ready(());
+            }
+            self.inner.preempt_done.register(context.waker());
+            if self.inner.preempt_waiters.load(atomic::Ordering::SeqCst) == 0 {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        })
+        .await;
 
-        let mut state = self.inner.state.lock().await;
+        let mut state = lock_state(&self.inner.state).await;
         state.preempt_window = false;
     }
 
@@ -2202,7 +2405,7 @@ impl Bowl {
         HashMap<SystemInvocation, MemoEntry>,
         bool,
     )> {
-        let mut state = self.inner.state.lock().await;
+        let mut state = lock_state(&self.inner.state).await;
         let generation = state.pending_generation.take()?;
         state.world.maybe_roll_plan_epoch();
         let inputs = std::mem::take(&mut state.pending_inputs);
@@ -2328,6 +2531,7 @@ impl PreemptWaiter {
                 .inner
                 .preempt_waiters
                 .fetch_sub(1, atomic::Ordering::SeqCst);
+            self.bowl.inner.preempt_done.wake();
         }
     }
 }
@@ -2354,7 +2558,7 @@ struct EpochGuard {
 
 impl EpochGuard {
     async fn enter(bowl: &Bowl) -> EpochGuard {
-        let mut state = bowl.inner.state.lock().await;
+        let mut state = lock_state(&bowl.inner.state).await;
         state.settling += 1;
         let watermark = state.input_seq;
         EpochGuard {
@@ -2379,6 +2583,14 @@ impl Drop for EpochGuard {
         if state.settling == 0 {
             promote_deferred_inputs(&mut state, u64::MAX);
         }
+        // The epoch's end is a mutation boundary too: a mutator that
+        // registered during the Settle phase (no generation completion
+        // follows it) must be woken here or it would starve.
+        let boundary_waiters: Vec<_> = state.boundary_waiters.drain(..).collect();
+        drop(state);
+        for boundary in boundary_waiters {
+            let _ = boundary.send(());
+        }
     }
 }
 
@@ -2398,9 +2610,13 @@ fn snapshot_locked(state: &mut State) -> Arc<Snapshot> {
 
 /// Retains a snapshot of the settled world for `last_settled` scoops,
 /// sharing the cached snapshot when the world has not moved.
-fn refresh_settled_snapshot(state: &mut State) {
+fn refresh_settled_snapshot(inner: &Inner, state: &mut State) {
     let snapshot = snapshot_locked(state);
-    state.settled_snapshot = Some(snapshot);
+    state.settled_snapshot = Some(Arc::clone(&snapshot));
+    *inner
+        .settled_read
+        .write()
+        .expect("settled-read slot poisoned") = Some(snapshot);
 }
 
 /// Promotes deferred inputs whose arrival tag is covered by `watermark`.
@@ -2476,10 +2692,12 @@ impl Drop for EvaluationGuard {
         if state.pending_generation.is_none() {
             state.pending_generation = Some(self.generation);
         }
+        // Abandoned run: wake everyone regardless of target, so a waiter
+        // can be promoted to a fresh driver.
         let waiters = std::mem::take(&mut state.waiters);
         drop(state);
 
-        for waiter in waiters {
+        for (_, waiter) in waiters {
             let _ = waiter.send(());
         }
     }
@@ -2742,7 +2960,7 @@ async fn commit_system_run(
     let memo_updates = run.memo_updates;
     let writes = run.writes;
 
-    let mut state = state.lock().await;
+    let mut state = lock_state(state).await;
     let before_revision = state.world.revision_raw();
     let before_mutations = state.world.mutations_raw();
 
@@ -3539,7 +3757,7 @@ mod tests {
 
             assert_eq!(bowl.scoop::<Query<(Entity, &A)>>().await.len(), 0);
 
-            let state = bowl.inner.state.lock().await;
+            let state = super::lock_state(&bowl.inner.state).await;
             assert!(
                 state
                     .memo

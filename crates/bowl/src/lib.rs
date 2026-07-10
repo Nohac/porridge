@@ -147,6 +147,20 @@ pub fn bowl_debug_buckets() -> (u64, u64, u64, u64) {
     )
 }
 
+/// State-lock and external-read telemetry in microseconds:
+/// (lock wait, lock held, acquisitions, scoop total, scoop count).
+#[doc(hidden)]
+pub fn bowl_debug_lock_read_buckets() -> (u64, u64, u64, u64, u64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (
+        bowl::STATE_LOCK_WAIT_NANOS.load(Relaxed) / 1_000,
+        bowl::STATE_LOCK_HELD_NANOS.load(Relaxed) / 1_000,
+        bowl::STATE_LOCK_COUNT.load(Relaxed),
+        bowl::SCOOP_NANOS.load(Relaxed) / 1_000,
+        bowl::SCOOP_COUNT.load(Relaxed),
+    )
+}
+
 pub use macros::SystemParam;
 
 /// Support surface for the `#[derive(SystemParam)]` macro. Not public API.

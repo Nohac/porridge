@@ -453,3 +453,26 @@ exposed:
                             deref on read paths; +37ns absolute, accepted) |
 
 Planner series cumulative (`planner_gating/512`): 7.7ms → 2.26ms (−71%).
+
+
+## Parallel runtime round (first cut) + settled reads
+
+1. **Owned run futures**: planned runs capture `Arc`s (system function,
+   snapshot, callbacks) instead of borrowing the registry, making them
+   `'static + Send`. No measurable cost (settle benches flat within
+   noise).
+2. **Adaptive worker spawning**: when a tokio runtime is ambient, the
+   wave loop spawns each planned run onto workers (abort-on-drop, so
+   preemption still cancels read-only work); without one (plain
+   `block_on` tests) runs poll cooperatively on the driver, as before.
+   `Access` scheduling remains the conflict layer; commits stay
+   serialized on the driver. New `parallel_compute` bench (32 rows ×
+   ~14µs CPU each): inline 465µs → workers 217µs (**2.1×**); the gap to
+   core count is wave/commit serialization plus per-task spawn overhead,
+   which grows favorably with heavier rows.
+3. **Settled reads dogfooded**: the storm's pure racing reads use
+   `.last_settled()` and skip the settle queue entirely.
+
+Playground storm effects: cumulative settle wait 686ms → 507ms, the
+commit bucket (state-lock waits) collapsed 108ms → 6.6ms, debug wall
+~80ms → ~70ms, settles 37 → 31.

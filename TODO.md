@@ -502,15 +502,35 @@ let rows = diagnostics.collect();
   Correctness invariant: dirty ∪ watermark-stale must cover exactly what
   full enumeration + memo comparison finds runnable; pin with a
   debug-mode cross-check flag that runs both and asserts equality.
-- After the memo clone: **parallel runtime option.** Systems already
-  poll concurrently on one thread and run futures are `Send` by design
-  (spec/access-scheduling.md); a parallel variant spawns planned
-  invocations onto worker threads (tokio/rayon), with the existing
-  `Access` conflict scheduling as the correctness layer and commits
-  staying serialized in registration order. Needs: `GuardStore`/cell
-  guard `Send`+`Sync` audit, per-wave join instead of `FuturesUnordered`
-  single-poll, and a bench with genuinely CPU-heavy systems (the current
-  fixtures are too cheap to show parallel wins).
+- Done (first cut): **parallel runtime.** Planned runs are owned
+  `'static + Send` futures; with an ambient tokio runtime the wave loop
+  spawns them onto workers (abort-on-drop preserves preemption
+  cancellation), else they poll cooperatively as before. 2.1× on the
+  `parallel_compute` bench at 32×~14µs rows. Remaining headroom: per-task
+  spawn overhead (batch small rows per task), wave/commit serialization
+  (commit pipelining — apply finished batches while later runs still
+  execute), and a heavier-row bench matrix. Pure racing readers use
+  `.last_settled()` to skip the settle queue (dogfooded in the storm;
+  commit-bucket lock waits collapsed 108ms → 6.6ms).
+- **Congestion roadmap** (from the lock/read telemetry). Done:
+  generation-targeted waiter wakeups (waiters register once per wait and
+  only satisfied ones wake; the abandoned-run path still broadcasts so a
+  waiter can be promoted to driver) and lock-free settled reads
+  (`.last_settled()` serves from a read-mostly published slot, never
+  touching the state lock; the take path clears it). Measured after
+  both: storm waited-time barely moved (~157–202ms) and acquisition
+  counts turned wildly variable (2.7k–7.7k/run) — the fingerprint of
+  **spin-polling loops**, which are the actual remaining contender:
+  `PreemptWaiter` (`Mut` mutators re-locking per yield while polling
+  `boundary_reached`) and the `take()` pin-retry loop. Next moves, in
+  order: convert preempt-boundary and take-pin waits to notification
+  (the `preempt_signal` AtomicWaker machinery half-exists); *then*
+  re-measure before the input-intake lock split (deferred — its
+  interleaving with singleton resolution, epoch deferral, and preempt
+  boundaries makes it a deep refactor, and the data no longer points at
+  insert contention as dominant). Far item: interest-scoped settling for
+  multi-tenant daemons (schema/presence knows which stores a reader can
+  see).
 - Add ordered/range predicates as join keys (position-in-span is the
   playground's blocker): with them, the hover candidates become tracked
   joins, move to `Evaluate`, and the finalizer flattens back to a plain
