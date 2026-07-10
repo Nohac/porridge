@@ -125,6 +125,16 @@ pub use system::{
 #[doc(hidden)]
 pub use world::ComponentRef;
 
+/// Debug profiling counters (debug builds; process-global).
+#[doc(hidden)]
+pub fn bowl_debug_settles() -> u64 {
+    bowl::SETTLE_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+#[doc(hidden)]
+pub fn bowl_debug_generations() -> u64 {
+    bowl::GENERATION_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub use macros::SystemParam;
 
 /// Support surface for the `#[derive(SystemParam)]` macro. Not public API.

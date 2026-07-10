@@ -923,6 +923,10 @@ impl BowlBuilder {
     }
 }
 
+/// Debug counters for profiling settle behavior (debug builds only).
+pub static SETTLE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static GENERATION_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 impl Bowl {
     /// Starts building a bowl — the only construction path. See
     /// [`BowlBuilder`].
@@ -1411,6 +1415,9 @@ impl Bowl {
     /// any settle is active are deferred to the next epoch, so mid-epoch
     /// generations run against a frozen input set.
     async fn settle(&self) {
+        if cfg!(debug_assertions) {
+            SETTLE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         // Settled fast path: with nothing pending, running, changed, or
         // deferred there is no epoch to drive (and none to freeze), so the
         // guard bookkeeping is skipped entirely — settled reads keep their
@@ -1737,6 +1744,9 @@ impl Bowl {
             state.memo = memo;
             state.normal_clean = !normal_phase_changed;
             state.completed_generation = generation;
+            if cfg!(debug_assertions) {
+                GENERATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
             state.running_generation = None;
             std::mem::take(&mut state.waiters)
         };

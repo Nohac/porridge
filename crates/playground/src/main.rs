@@ -231,6 +231,13 @@ async fn main() {
         count = hover_facts.collect().len(),
         "hover facts after request"
     );
+    if std::env::var_os("BOWL_COUNTERS").is_some() {
+        eprintln!(
+            "settles: {} generations: {}",
+            bowl::bowl_debug_settles(),
+            bowl::bowl_debug_generations()
+        );
+    }
 }
 
 fn init_tracing() {
