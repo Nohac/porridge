@@ -418,3 +418,38 @@ Cumulative planner series (`planner_gating/512`): 7.7ms → 6.0ms (memo
 clone) → 3.27ms (deltas) ≈ −58%. Playground: delta-eligible systems
 dropped to a fraction of their former run/plan counts (replicate 122→54
 runs, check_imports 36→14).
+
+
+## Fixed-cost round (COW stores, lock-free waits, honesty removal)
+
+Three changes aimed at the per-settle fixed costs the playground profiler
+exposed:
+
+1. **Store-level copy-on-write**: `Store<T>` entries moved behind `Arc`,
+   so `World::clone` (one per planning wave) is O(#stores) instead of
+   O(total entries); live mutation copies a store's map on the first
+   write after a snapshot — the same COW pattern as the fingerprint index
+   and presence bits. The take/pin check now also treats a shared map as
+   pinning its cells (same coarseness as before, when every snapshot
+   bumped every cell).
+2. **Lock-free generation waits**: `completed_generation` is mirrored in
+   an atomic, so scoop callers spinning on "is my generation done" stop
+   contending on the state lock.
+3. **Honesty backstop removed**: with no public wildcard and strict typed
+   `Commands`, undeclared emission is unrepresentable — the type system
+   carries the contract; the debug check (and its test double) is gone.
+   Shape conformance and the same-phase flag remain (they guard what the
+   type system cannot see: untyped-handle increments and ambient races).
+
+| bench                   | change      |
+|-------------------------|-------------|
+| playground debug wall   | ~110ms → ~80ms (−27%) |
+| playground snapshots bucket | 11.7ms → 2.1ms (−82%) |
+| incremental_settle/128  | −16.9%      |
+| planner_gating/512      | −28.9%      |
+| in_join_planning        | −11% … −18% |
+| spawn_rerun             | −8% … −10%  |
+| read_scan               | **+19% … +35%** (172→209ns: the extra `Arc`
+                            deref on read paths; +37ns absolute, accepted) |
+
+Planner series cumulative (`planner_gating/512`): 7.7ms → 2.26ms (−71%).

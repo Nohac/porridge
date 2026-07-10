@@ -310,7 +310,12 @@ trait StoreDyn: Send + Sync {
 
 /// Concrete storage for one component type.
 struct Store<T> {
-    entries: BTreeMap<Entity, ComponentEntry<T>>,
+    /// Entry map behind `Arc`: snapshots clone the handle (O(1) per
+    /// store), and live mutation copies the map on the first write after
+    /// a clone — the same copy-on-write pattern as the fingerprint index
+    /// and presence bits, making `World::clone` O(#stores) instead of
+    /// O(total entries).
+    entries: Arc<BTreeMap<Entity, ComponentEntry<T>>>,
     /// Fingerprint → entities index for equality lookups.
     ///
     /// Only entries with a fingerprint participate. The map is shared with
@@ -355,7 +360,7 @@ impl<T> Store<T> {
 impl<T> Clone for Store<T> {
     fn clone(&self) -> Self {
         Self {
-            entries: self.entries.clone(),
+            entries: Arc::clone(&self.entries),
             by_fingerprint: Arc::clone(&self.by_fingerprint),
             watermark: self.watermark,
         }
@@ -365,7 +370,7 @@ impl<T> Clone for Store<T> {
 impl<T> Default for Store<T> {
     fn default() -> Self {
         Self {
-            entries: BTreeMap::new(),
+            entries: Arc::new(BTreeMap::new()),
             by_fingerprint: Arc::new(HashMap::new()),
             watermark: 0,
         }
@@ -431,7 +436,7 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn reconcile_entry(&mut self, entity: Entity, revision: &mut Revision) {
         let (before, after, changed) = {
-            let Some(entry) = self.entries.get_mut(&entity) else {
+            let Some(entry) = Arc::make_mut(&mut self.entries).get_mut(&entity) else {
                 return;
             };
 
@@ -463,7 +468,7 @@ impl<T: Component> StoreDyn for Store<T> {
             return None;
         }
 
-        let removed = self.entries.remove(&entity)?;
+        let removed = Arc::make_mut(&mut self.entries).remove(&entity)?;
         self.unindex_fingerprint(entity, removed.fingerprint);
         T::on_remove(ComponentHookContext::new(entity));
 
@@ -475,7 +480,7 @@ impl<T: Component> StoreDyn for Store<T> {
         entity: Entity,
         revision: &mut Revision,
     ) -> Option<Option<SystemInvocation>> {
-        let removed = self.entries.remove(&entity)?;
+        let removed = Arc::make_mut(&mut self.entries).remove(&entity)?;
         self.unindex_fingerprint(entity, removed.fingerprint);
 
         let context = ComponentHookContext::new(entity);
@@ -1099,7 +1104,7 @@ impl World {
         self.log_write(TypeId::of::<T>(), entity);
         let store = self.store_mut::<T>();
         store.watermark = store.watermark.max(revision.0);
-        let previous = store.entries.insert(
+        let previous = Arc::make_mut(&mut store.entries).insert(
             entity,
             ComponentEntry {
                 value: Arc::new(ComponentCell::new(value)),
@@ -1451,9 +1456,16 @@ impl World {
     /// requires that lock, so a `false` answer cannot be invalidated before
     /// the caller's matching `remove_component`.
     pub(crate) fn component_pinned<T: Component>(&self, entity: Entity) -> bool {
-        self.store::<T>()
-            .and_then(|store| store.entries.get(&entity))
-            .is_some_and(|entry| Arc::strong_count(&entry.value) > 1)
+        self.store::<T>().is_some_and(|store| {
+            store.entries.get(&entity).is_some_and(|entry| {
+                // A shared entries map pins every cell in it: removing
+                // under COW would clone the map first, leaving the removed
+                // cell alive in the sharer and the taken value
+                // unrecoverable. Same coarseness as the pre-COW behavior,
+                // where every snapshot bumped every cell.
+                Arc::strong_count(&store.entries) > 1 || Arc::strong_count(&entry.value) > 1
+            })
+        })
     }
 
     /// Removes one typed component and returns the stored value behind `Arc`.
@@ -1467,7 +1479,7 @@ impl World {
         T: Component,
     {
         let store = self.store_mut_existing::<T>()?;
-        let removed = store.entries.remove(&entity)?;
+        let removed = Arc::make_mut(&mut store.entries).remove(&entity)?;
         store.unindex_fingerprint(entity, removed.fingerprint);
         self.presence_set(TypeId::of::<T>(), entity, false);
         self.log_write(TypeId::of::<T>(), entity);
@@ -1540,7 +1552,7 @@ impl World {
             let Some(store) = self.store_mut_existing::<T>() else {
                 return TryUpdate::Missing;
             };
-            let Some(entry) = store.entries.get_mut(&entity) else {
+            let Some(entry) = Arc::make_mut(&mut store.entries).get_mut(&entity) else {
                 return TryUpdate::Missing;
             };
             let before_fingerprint = entry.fingerprint;
@@ -1590,7 +1602,7 @@ impl World {
         let next_revision = Revision(self.revision.0 + 1);
         let (changed, result, before_fingerprint, after_fingerprint) = {
             let store = self.store_mut_existing::<T>()?;
-            let entry = store.entries.get_mut(&entity)?;
+            let entry = Arc::make_mut(&mut store.entries).get_mut(&entity)?;
             let before_fingerprint = entry.fingerprint;
 
             let mut value = entry.value.write();

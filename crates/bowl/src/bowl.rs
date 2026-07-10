@@ -87,6 +87,10 @@ struct Inner {
     /// This lock must only be held for short bookkeeping sections. It must not
     /// be held while user systems run.
     state: Mutex<State>,
+    /// Lock-free mirror of `State::completed_generation`, so the hot wait
+    /// paths (every scoop caller spinning on "is my generation done yet")
+    /// stop contending on the state lock.
+    completed_generation: std::sync::atomic::AtomicU64,
     /// Single-permit evaluator lock.
     ///
     /// Holding this guard means the caller is the only active runner. The guard
@@ -1024,6 +1028,7 @@ impl Bowl {
                     normal_clean: true,
                     startup_ran: false,
                 }),
+                completed_generation: std::sync::atomic::AtomicU64::new(0),
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
@@ -1698,7 +1703,9 @@ impl Bowl {
     }
 
     async fn completed_generation(&self) -> u64 {
-        self.inner.state.lock().await.completed_generation
+        self.inner
+            .completed_generation
+            .load(atomic::Ordering::Acquire)
     }
 
     /// Revision counter of the last settled state — the cursor source for
@@ -1837,6 +1844,9 @@ impl Bowl {
             state.memo = memo;
             state.normal_clean = !normal_phase_changed;
             state.completed_generation = generation;
+            self.inner
+                .completed_generation
+                .store(generation, atomic::Ordering::Release);
             if cfg!(debug_assertions) {
                 GENERATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
@@ -2793,26 +2803,10 @@ async fn commit_system_run(
         if cfg!(debug_assertions) {
             let written = state.world.take_written_derived();
 
-            // Honesty backstop for declared outputs: typed `Commands<S>`
-            // makes undeclared emission a compile error, so this guards
-            // only future dynamic emission paths and declaration-registry
-            // drift. Wildcard systems (`declared_outputs == None`) skip.
-            if let Some(declared) = state
-                .systems
-                .get(writer.0)
-                .and_then(|system| system.declared_outputs.clone())
-            {
-                for (type_id, _entity, type_name) in &written {
-                    if !declared.contains(type_id) {
-                        panic!(
-                            "system `{}` emitted undeclared component `{type_name}`: \
-                             add it (or a group containing it) to the system's \
-                             `Commands<..>` declaration",
-                            state.systems[writer.0].name
-                        );
-                    }
-                }
-            }
+            // (The declared-output honesty backstop that used to live here
+            // is gone: with no public wildcard and strict typed `Commands`,
+            // undeclared emission is unrepresentable outside the engine's
+            // own test doubles — the type system carries the contract.)
 
             // Schema conformance: each entity's write bundle must fit one
             // declared shape, and after the write that shape's required
@@ -6160,70 +6154,6 @@ mod tests {
                 "an optional part appearing must invalidate Tracked<H>"
             );
             assert_eq!(FACET_ANCHOR_RUNS.load(Ordering::SeqCst), 2);
-        });
-    }
-
-    /// A test-only param that *lies*: it declares only `Note` but hands the
-    /// system a wildcard buffer. The commit-time honesty backstop must
-    /// catch the undeclared emission (this is the guard for future dynamic
-    /// emission paths — typed `Commands` cannot get here).
-    struct LyingCommands(Commands<Anything>);
-
-    impl crate::system::SystemParam for LyingCommands {
-        type State = ();
-        type Item<'a> = LyingCommands;
-
-        fn states(_snapshot: &crate::world::Snapshot) -> Vec<Self::State> {
-            vec![()]
-        }
-
-        fn keys(_state: &Self::State) -> Vec<Entity> {
-            Vec::new()
-        }
-
-        fn deps(
-            _snapshot: &crate::world::Snapshot,
-            _state: &Self::State,
-        ) -> Vec<crate::query::Dep> {
-            Vec::new()
-        }
-
-        fn access(
-            _snapshot: &crate::world::Snapshot,
-            _state: &Self::State,
-        ) -> Vec<crate::query::Access> {
-            Vec::new()
-        }
-
-        fn declared_outputs() -> Option<Vec<std::any::TypeId>> {
-            Some(vec![std::any::TypeId::of::<Note>()])
-        }
-
-        fn fetch<'a>(
-            _bowl: &Bowl,
-            _snapshot: &'a crate::world::Snapshot,
-            _state: &Self::State,
-            commands: &Commands<Anything>,
-            _guards: &mut crate::query::GuardStore,
-        ) -> Self::Item<'a> {
-            LyingCommands(commands.clone())
-        }
-    }
-
-    async fn dishonest_writer(query: Query<(Entity, &A)>, mut lying: LyingCommands) {
-        let (_entity, _a) = query.item();
-        lying.0.insert((C(1),));
-    }
-
-    #[test]
-    #[should_panic(expected = "emitted undeclared component")]
-    fn undeclared_emission_panics_in_debug() {
-        block_on(async {
-            let bowl = Bowl::builder()
-                .system(dishonest_writer)
-                .build();
-            bowl.insert((A(1),)).await;
-            bowl.scoop::<Query<(Entity, &C)>>().await;
         });
     }
 
