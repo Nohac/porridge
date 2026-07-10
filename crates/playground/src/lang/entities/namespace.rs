@@ -2,8 +2,8 @@
 //! membership key, and the join-driven qualified names of member definitions.
 
 use bowl::{
-    Bowl, Commands, Component, DerivedFrom, Entity, Eq, Phase, Query, SystemExt, SystemParam, View,
-    Where, With,
+    Commands, Component, DerivedFrom, Entity, Eq, Phase, Query, Registrar, SystemExt,
+    SystemParam, View, Where, With,
 };
 use tracing::info;
 
@@ -46,8 +46,8 @@ pub(crate) struct Namespace;
 impl LanguageEntity for Namespace {
     const NAME: &'static str = "namespace";
 
-    async fn register(db: &Bowl) {
-        db.add_system(qualify_members).await;
+    fn register(reg: &mut Registrar<'_>) {
+        reg.system(qualify_members);
     }
 }
 
@@ -70,9 +70,8 @@ impl LowerStage for Namespace {
 }
 
 impl HoverStage for Namespace {
-    async fn register_hover(db: &Bowl) {
-        db.add_system(hover_qualified_definitions.run_during(Phase::Complete))
-            .await;
+    fn register_hover(reg: &mut Registrar<'_>) {
+        reg.system(hover_qualified_definitions.run_during(Phase::Complete));
     }
 }
 
@@ -90,7 +89,7 @@ struct QualifiedDefs<'a> {
 async fn hover_qualified_definitions(
     query: Query<(Entity, &HoverWord), With<HoverRequest>>,
     context: QualifiedDefs<'_>,
-    mut commands: Commands<CandidateParts>,
+    mut commands: Commands<(CandidateParts,)>,
 ) {
     crate::short_sleep().await;
 
@@ -151,7 +150,7 @@ fn first_rule_child(cst: &CstData, node: NodeRef, rule: Rule) -> Option<NodeRef>
 pub(crate) async fn qualify_members(
     namespaces: Query<(Entity, &NamespaceDecl, &NamespacePath)>,
     members: Query<(Entity, &AstDef), Where<Eq<NamespacePath>>>,
-    mut commands: Commands<(QualifiedName, DerivedFrom)>,
+    mut commands: Commands<(crate::lang::schema::lang_schema::QualifiedName,)>,
 ) {
     let (namespace, decl, _path) = namespaces.item();
     let (definition, def) = members.item();

@@ -799,18 +799,145 @@ where
     }
 }
 
-impl Default for Bowl {
-    fn default() -> Self {
-        Self::new()
+/// One queued build step, applied in call order at [`BowlBuilder::build`].
+enum BuildStep {
+    System(Box<dyn FnOnce(&Bowl)>),
+    Plugin(Box<dyn Plugin>),
+}
+
+/// A reusable unit of bowl content: entity shapes plus the systems that
+/// produce and consume them, added with [`BowlBuilder::plugin`].
+///
+/// Shapes and systems travel together, so installing a plugin cannot
+/// desync its schema fragment from its systems — the bowl's schema is the
+/// union of every fragment collected at build time, before any store
+/// exists.
+pub trait Plugin {
+    /// Entity shapes this plugin contributes to the bowl schema (its
+    /// systems' outputs and, for base inputs, what they query). Plugins
+    /// that only derive over other fragments' shapes contribute none.
+    fn shapes(&self) -> Vec<ShapeDesc> {
+        Vec::new()
+    }
+
+    /// Registers the plugin's systems. Runs at build time, after the
+    /// schema universe is sealed.
+    fn build(&self, bowl: &mut Registrar<'_>);
+}
+
+/// System registration handle passed to [`Plugin::build`]. The only way
+/// to register systems is through the builder lifecycle — a built bowl's
+/// system set is sealed.
+pub struct Registrar<'a> {
+    bowl: &'a Bowl,
+}
+
+impl Registrar<'_> {
+    /// Registers a system. Systems run in registration order semantics
+    /// (buffered outputs commit in registration order).
+    pub fn system<S, M>(&mut self, system: S)
+    where
+        S: IntoSystem<M>,
+    {
+        self.bowl.register_system(system);
+    }
+}
+
+/// Builds a [`Bowl`]: schema fragments and plugins first, then a sealed
+/// bowl. This is the only construction path — the schema universe must be
+/// closed before any store exists (presence bit layout), and the sealed
+/// system set is what lets registration-time analyses and the planner
+/// treat the graph as total.
+pub struct BowlBuilder {
+    shapes: Vec<ShapeDesc>,
+    steps: Vec<BuildStep>,
+}
+
+impl BowlBuilder {
+    /// Adds an entity-schema fragment (`#[derive(Schema)]`). The app's own
+    /// schema is just another fragment alongside plugin contributions.
+    pub fn schema<S: Schema>(mut self) -> Self {
+        self.shapes.extend(S::shapes());
+        self
+    }
+
+    /// Adds a plugin: its shape fragment joins the schema universe and its
+    /// systems register at this position in build order.
+    pub fn plugin<P: Plugin + 'static>(mut self, plugin: P) -> Self {
+        self.steps.push(BuildStep::Plugin(Box::new(plugin)));
+        self
+    }
+
+    /// Registers a system at this position in build order.
+    pub fn system<S, M>(mut self, system: S) -> Self
+    where
+        S: IntoSystem<M> + 'static,
+    {
+        self.steps
+            .push(BuildStep::System(Box::new(move |bowl: &Bowl| {
+                bowl.register_system(system);
+            })));
+        self
+    }
+
+    /// Seals and constructs the bowl: unions every schema fragment, lays
+    /// out the presence-bit universe, then runs registrations in order.
+    /// A builder with no schema fragments yields a schema-less bowl
+    /// (conformance and presence indexing skipped).
+    pub fn build(mut self) -> Bowl {
+        for step in &self.steps {
+            if let BuildStep::Plugin(plugin) = step {
+                self.shapes.extend(plugin.shapes());
+            }
+        }
+
+        let bowl = Bowl::new();
+        if !self.shapes.is_empty() {
+            let mut state = bowl
+                .inner
+                .state
+                .try_lock()
+                .expect("freshly constructed bowl state is uncontended");
+            // The schema closes the component universe, so presence bits
+            // can be laid out once, before any store exists.
+            let mut universe = Vec::new();
+            for shape in &self.shapes {
+                for (type_id, _) in shape.required.iter().chain(&shape.optional) {
+                    if !universe.contains(type_id) {
+                        universe.push(*type_id);
+                    }
+                }
+            }
+            state.world.init_presence(universe);
+            state.schema = Some(Arc::new(self.shapes));
+        }
+
+        for step in self.steps {
+            match step {
+                BuildStep::System(register) => register(&bowl),
+                BuildStep::Plugin(plugin) => plugin.build(&mut Registrar { bowl: &bowl }),
+            }
+        }
+
+        bowl
     }
 }
 
 impl Bowl {
-    /// Creates an empty async bowl.
+    /// Starts building a bowl — the only construction path. See
+    /// [`BowlBuilder`].
+    pub fn builder() -> BowlBuilder {
+        BowlBuilder {
+            shapes: Vec::new(),
+            steps: Vec::new(),
+        }
+    }
+
+    /// Creates the empty inner bowl.
     ///
     /// The initial completed generation is `0`; the first inserted input is
     /// assigned to generation `1`.
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             inner: Arc::new(Inner {
                 state: Mutex::new(State {
@@ -955,20 +1082,23 @@ impl Bowl {
         self.inner.state.lock().await.world.has_derived_owned(owner)
     }
 
-    /// Registers a system.
+    /// Registers a system. Build-time only ([`BowlBuilder::system`] /
+    /// [`Registrar::system`]): the builder owns the bowl exclusively, so
+    /// the state lock is uncontended.
     ///
     /// Systems are stored in registration order. During evaluation, systems
     /// plan from the same structural snapshot and are polled concurrently from
     /// the active runner. Their buffered outputs are still committed in
     /// registration order.
-    ///
-    /// This method is async only because registration mutates shared internal
-    /// state through an executor-agnostic mutex.
-    pub async fn add_system<S, M>(&self, system: S)
+    fn register_system<S, M>(&self, system: S)
     where
         S: IntoSystem<M>,
     {
-        let mut state = self.inner.state.lock().await;
+        let mut state = self
+            .inner
+            .state
+            .try_lock()
+            .expect("systems register at build time, before the bowl is shared");
         let id = SystemId(state.systems.len());
         let system = system.into_system(id);
         if cfg!(debug_assertions) {
@@ -1020,17 +1150,6 @@ impl Bowl {
             bowl: self.clone(),
             entity,
         }
-    }
-
-    /// Registers the bowl's entity schema (`#[derive(Schema)]`). In debug
-    /// builds every derived write is then shape-checked at commit: each
-    /// write bundle per entity must fit inside one declared shape, and
-    /// after the write that shape's required components must all be
-    /// present. Register before adding systems so registration-time
-    /// analyses can consult the shapes.
-    pub async fn with_schema<S: Schema>(&self) {
-        let mut state = self.inner.state.lock().await;
-        state.schema = Some(Arc::new(S::shapes()));
     }
 
     /// Explains why `system` (matched by function-name suffix) did or did
@@ -2257,7 +2376,10 @@ fn check_shape_conformance(
     writer: &'static str,
 ) {
     // Shapes whose component set covers the whole bundle are candidates.
+    // Shapes may overlap, so an incomplete candidate is only a failure if
+    // no other candidate completes; the panic names the nearest one.
     let mut best: Option<(&ShapeDesc, usize)> = None;
+    let mut nearest_incomplete: Option<(&ShapeDesc, Vec<&'static str>)> = None;
     for shape in schema {
         let covered = bundle
             .iter()
@@ -2274,17 +2396,27 @@ fn check_shape_conformance(
             if missing.is_empty() {
                 return;
             }
-            panic!(
-                "system `{writer}` wrote entity {} as shape `{}` but left required \
-                 component(s) missing: {}",
-                entity.raw(),
-                shape.name,
-                missing.join(", ")
-            );
+            if nearest_incomplete
+                .as_ref()
+                .is_none_or(|(_, best_missing)| missing.len() < best_missing.len())
+            {
+                nearest_incomplete = Some((shape, missing));
+            }
+            continue;
         }
         if best.is_none_or(|(_, best_covered)| covered > best_covered) {
             best = Some((shape, covered));
         }
+    }
+
+    if let Some((shape, missing)) = nearest_incomplete {
+        panic!(
+            "system `{writer}` wrote entity {} as shape `{}` but left required \
+             component(s) missing: {}",
+            entity.raw(),
+            shape.name,
+            missing.join(", ")
+        );
     }
 
     let written = bundle
@@ -3087,9 +3219,10 @@ mod tests {
         use std::future::IntoFuture;
         use std::task::Context;
 
-        let bowl = Bowl::new();
+        let bowl = Bowl::builder()
+            .system(make_b_after_yield)
+            .build();
         block_on(async {
-            bowl.add_system(make_b_after_yield).await;
             bowl.insert((A(1),)).await;
         });
 
@@ -3141,8 +3274,9 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::new();
-            bowl.add_system(increment_once).await;
+            let bowl = Bowl::builder()
+                .system(increment_once)
+                .build();
             bowl.insert((MutableA(0),)).await;
 
             let values = bowl.scoop::<Query<(Entity, &MutableA)>>().await;
@@ -3165,8 +3299,9 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::new();
-            bowl.add_system(set_rank_unconditionally).await;
+            let bowl = Bowl::builder()
+                .system(set_rank_unconditionally)
+                .build();
             bowl.insert((Rank(1),)).await;
 
             // A system that always writes its Mut row must still settle after
@@ -3184,9 +3319,10 @@ mod tests {
     #[test]
     fn removing_an_entity_purges_its_memo_entries() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(remove_doomed).await;
+            let bowl = Bowl::builder()
+                .system(make_b_uncounted)
+                .system(remove_doomed)
+                .build();
             let entity = bowl.insert((A(1), Doomed)).await.entity();
 
             assert_eq!(bowl.scoop::<Query<(Entity, &A)>>().await.len(), 0);
@@ -3210,8 +3346,9 @@ mod tests {
     #[test]
     fn rerun_replaces_spawned_outputs_and_reuses_entity_ids() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(spawn_b_note_from_a).await;
+            let bowl = Bowl::builder()
+                .system(spawn_b_note_from_a)
+                .build();
             let source = bowl.insert((MutableA(0),)).await.entity();
 
             let first = bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -3241,8 +3378,9 @@ mod tests {
                 .lock()
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
-            let bowl = Bowl::new();
-            bowl.add_system(make_b).await;
+            let bowl = Bowl::builder()
+                .system(make_b)
+                .build();
 
             let inserted = bowl.insert((A(41),)).await;
             let result = bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -3259,8 +3397,9 @@ mod tests {
     fn clean_query_does_not_rerun_systems() {
         block_on(async {
             CLEAN_RUNS.store(0, Ordering::SeqCst);
-            let bowl = Bowl::new();
-            bowl.add_system(make_c).await;
+            let bowl = Bowl::builder()
+                .system(make_c)
+                .build();
 
             bowl.insert((A(1),)).await;
             let result = bowl.scoop::<Query<(Entity, &C)>>().await;
@@ -3277,10 +3416,10 @@ mod tests {
     #[test]
     fn derived_from_cleanup_removes_outputs_when_owner_revision_changes() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_derived_from_answer_from_view).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(make_derived_from_answer_from_view)
+                .system(cleanup_stale_derived.run_during(Phase::Settle))
+                .build();
 
             let inserted = bowl.insert((MutableA(1),)).await;
             bowl.insert((Request,)).await;
@@ -3306,11 +3445,10 @@ mod tests {
     #[test]
     fn derived_from_many_cleanup_removes_outputs_when_any_owner_revision_changes() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_multi_derived_from_answer_from_view)
-                .await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(make_multi_derived_from_answer_from_view)
+                .system(cleanup_stale_derived.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((MutableA(1),)).await;
             let label = bowl.insert((Label("before"),)).await;
@@ -3338,8 +3476,9 @@ mod tests {
     #[test]
     fn async_system_can_read_ambient_view() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(count_bs).await;
+            let bowl = Bowl::builder()
+                .system(count_bs)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
@@ -3354,25 +3493,11 @@ mod tests {
     }
 
     #[test]
-    fn system_added_after_input_runs_on_existing_rows() {
-        block_on(async {
-            let bowl = Bowl::new();
-            bowl.insert((A(41),)).await;
-            bowl.add_system(make_b_uncounted).await;
-
-            let result = bowl.scoop::<Query<(Entity, &B)>>().await;
-            let rows = result.collect();
-
-            assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0].1.0, 42);
-        });
-    }
-
-    #[test]
     fn commands_can_insert_derived_entities() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(spawn_b).await;
+            let bowl = Bowl::builder()
+                .system(spawn_b)
+                .build();
 
             bowl.insert((A(41),)).await;
             let result = bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -3386,8 +3511,9 @@ mod tests {
     #[test]
     fn with_filter_does_not_appear_in_query_item() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(count_tagged_a).await;
+            let bowl = Bowl::builder()
+                .system(count_tagged_a)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((Request, A(2))).await;
@@ -3403,8 +3529,9 @@ mod tests {
     #[test]
     fn two_query_system_runs_cross_product_rows() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(sum_a_b).await;
+            let bowl = Bowl::builder()
+                .system(sum_a_b)
+                .build();
 
             bowl.insert((A(2),)).await;
             bowl.insert((B(3),)).await;
@@ -3420,8 +3547,9 @@ mod tests {
     #[test]
     fn two_query_view_system_can_gate_on_readiness() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(count_a_when_c_exists).await;
+            let bowl = Bowl::builder()
+                .system(count_a_when_c_exists)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
@@ -3439,10 +3567,11 @@ mod tests {
     #[test]
     fn evaluate_phase_replans_before_complete_phase_runs() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(make_c_from_b).await;
-            bowl.add_system(count_cs.run_during(Phase::Complete)).await;
+            let bowl = Bowl::builder()
+                .system(make_b_uncounted)
+                .system(make_c_from_b)
+                .system(count_cs.run_during(Phase::Complete))
+                .build();
 
             bowl.insert((A(1),)).await;
 
@@ -3457,7 +3586,7 @@ mod tests {
     #[test]
     fn singleton_insert_reuses_entity() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
 
             let first = bowl
                 .insert((Singleton::<A>::new(), A(1), Request))
@@ -3481,8 +3610,9 @@ mod tests {
     #[test]
     fn derived_singleton_insert_reuses_entity() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(write_singleton_count).await;
+            let bowl = Bowl::builder()
+                .system(write_singleton_count)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((A(2),)).await;
@@ -3499,7 +3629,7 @@ mod tests {
     #[should_panic(expected = "bundles can contain at most one singleton marker")]
     fn bundle_rejects_multiple_singleton_markers() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((Singleton::<A>::new(), Singleton::<B>::new(), A(1), B(2)))
                 .await;
         });
@@ -3507,7 +3637,7 @@ mod tests {
 
     #[test]
     fn commit_limit_is_configurable() {
-        let bowl = Bowl::new();
+        let bowl = Bowl::builder().build();
 
         assert_eq!(bowl.commit_limit(), CommitLimit::Max(10_000));
 
@@ -3522,9 +3652,8 @@ mod tests {
     #[should_panic(expected = "bowl commit limit exceeded")]
     fn commit_limit_panics_on_non_converging_commits() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().system(spawn_a_from_a).build();
             bowl.set_commit_limit(CommitLimit::Max(2));
-            bowl.add_system(spawn_a_from_a).await;
 
             bowl.insert((A(1),)).await;
             bowl.scoop::<Query<Entity, With<A>>>().await;
@@ -3536,12 +3665,11 @@ mod tests {
         block_on(async {
             PHASE_LOG.lock().expect("phase log lock poisoned").clear();
 
-            let bowl = Bowl::new();
-            bowl.add_system(startup_phase.run_during(Phase::Startup))
-                .await;
-            bowl.add_system(evaluate_phase).await;
-            bowl.add_system(cleanup_phase.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(startup_phase.run_during(Phase::Startup))
+                .system(evaluate_phase)
+                .system(cleanup_phase.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -3574,7 +3702,7 @@ mod tests {
             HOOK_REMOVES.store(0, Ordering::SeqCst);
             HOOK_ENTITY_REMOVES.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             let hooked = bowl.insert((Hooked,)).await.bind();
             hooked.take::<Hooked>().await.unwrap();
 
@@ -3602,8 +3730,9 @@ mod tests {
             HOOK_REMOVES.store(0, Ordering::SeqCst);
             HOOK_ENTITY_REMOVES.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::new();
-            bowl.add_system(remove_hooked_entity).await;
+            let bowl = Bowl::builder()
+                .system(remove_hooked_entity)
+                .build();
             bowl.insert((Hooked,)).await;
 
             assert_eq!(bowl.scoop::<Query<(Entity, &Hooked)>>().await.len(), 0);
@@ -3621,8 +3750,9 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::new();
-            bowl.add_system(make_b).await;
+            let bowl = Bowl::builder()
+                .system(make_b)
+                .build();
             bowl.insert((A(1),)).await;
 
             assert_eq!(bowl.scoop::<Query<(Entity, &B)>>().await.len(), 1);
@@ -3638,7 +3768,7 @@ mod tests {
     #[test]
     fn external_queries_support_bound_where_filters() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((A(1), Label("main"), Rank(1))).await;
             bowl.insert((A(2), Label("main"), Rank(3))).await;
             bowl.insert((A(3), Label("lib"), Rank(4))).await;
@@ -3657,7 +3787,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "duplicate query argument")]
     fn query_args_reject_duplicate_arg_types_in_same_scope() {
-        let _builder = Bowl::new()
+        let _builder = Bowl::builder()
+            .build()
             .scoop::<Query<(Entity, &A), Where<Eq<Label>>>>()
             .args((Label("main"), Label("lib")));
     }
@@ -3665,7 +3796,7 @@ mod tests {
     #[test]
     fn scoop_can_return_multiple_independent_query_results() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((A(1), Label("main"))).await;
             bowl.insert((A(2), Label("lib"))).await;
 
@@ -3686,7 +3817,7 @@ mod tests {
             struct Main;
             struct Lib;
 
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((A(1), Label("main"))).await;
             bowl.insert((A(2), Label("lib"))).await;
 
@@ -3707,8 +3838,9 @@ mod tests {
     #[test]
     fn external_queries_can_mutate_bound_rows() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(copy_rank_to_count).await;
+            let bowl = Bowl::builder()
+                .system(copy_rank_to_count)
+                .build();
             bowl.insert((Label("main"), Rank(1))).await;
             bowl.insert((Label("lib"), Rank(2))).await;
 
@@ -3752,8 +3884,9 @@ mod tests {
     #[test]
     fn external_mut_handles_update_inside_scoped_closure() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(copy_rank_to_count).await;
+            let bowl = Bowl::builder()
+                .system(copy_rank_to_count)
+                .build();
             bowl.insert((Label("main"), Rank(1))).await;
             bowl.insert((Label("lib"), Rank(2))).await;
 
@@ -3793,7 +3926,7 @@ mod tests {
     #[test]
     fn external_mut_handles_without_entity_update_live_components() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((MutableA(1),)).await;
 
             let values = bowl.scoop::<Query<(Mut<MutableA>,)>>().await;
@@ -3818,8 +3951,9 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::new();
-            bowl.add_system(copy_fingerprinted_rank_to_count).await;
+            let bowl = Bowl::builder()
+                .system(copy_fingerprinted_rank_to_count)
+                .build();
             bowl.insert((FingerprintedRank(1),)).await;
 
             {
@@ -3860,8 +3994,9 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::new();
-            bowl.add_system(copy_rank_to_count_counted).await;
+            let bowl = Bowl::builder()
+                .system(copy_rank_to_count_counted)
+                .build();
             bowl.insert((Rank(1),)).await;
 
             {
@@ -3889,7 +4024,7 @@ mod tests {
     #[test]
     fn external_mut_original_rejects_stale_handles() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((Rank(1),)).await;
 
             let handle = bowl
@@ -3912,7 +4047,7 @@ mod tests {
     #[test]
     fn external_mut_does_not_require_clone() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((NonCloneAnswer(1),)).await;
 
             let handle = bowl
@@ -3934,7 +4069,7 @@ mod tests {
     #[test]
     fn external_mut_succeeds_while_structural_snapshot_is_alive() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((Rank(1),)).await;
 
             let snapshot = bowl.scoop::<Query<(Entity, &Rank)>>().await;
@@ -3959,9 +4094,10 @@ mod tests {
             let _guard = ACCESS_TEST_LOCK.lock().expect("access test lock poisoned");
             reset_access_counters();
 
-            let bowl = Bowl::new();
-            bowl.add_system(read_rank_for_access_test).await;
-            bowl.add_system(read_rank_for_access_test_again).await;
+            let bowl = Bowl::builder()
+                .system(read_rank_for_access_test)
+                .system(read_rank_for_access_test_again)
+                .build();
             bowl.insert((Rank(1),)).await;
 
             bowl.scoop::<Query<Entity>>().await;
@@ -3978,9 +4114,10 @@ mod tests {
             let _guard = ACCESS_TEST_LOCK.lock().expect("access test lock poisoned");
             reset_access_counters();
 
-            let bowl = Bowl::new();
-            bowl.add_system(read_rank_for_access_test).await;
-            bowl.add_system(write_rank_for_access_test).await;
+            let bowl = Bowl::builder()
+                .system(read_rank_for_access_test)
+                .system(write_rank_for_access_test)
+                .build();
             bowl.insert((Rank(1),)).await;
 
             bowl.scoop::<Query<Entity>>().await;
@@ -3998,8 +4135,9 @@ mod tests {
             let _guard = ACCESS_TEST_LOCK.lock().expect("access test lock poisoned");
             reset_access_counters();
 
-            let bowl = Bowl::new();
-            bowl.add_system(write_rank_for_access_test).await;
+            let bowl = Bowl::builder()
+                .system(write_rank_for_access_test)
+                .build();
             bowl.insert((Rank(1),)).await;
             bowl.insert((Rank(2),)).await;
 
@@ -4014,15 +4152,11 @@ mod tests {
     #[test]
     fn cleanup_runs_after_normal_phases_settle() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted.on_complete(|mut commands: Commands<Anything>| {
-                commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
-            }))
-            .await;
-            bowl.add_system(count_after_note.run_during(Phase::Complete))
-                .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(make_b_uncounted.on_complete(|mut commands: Commands<Anything>| { commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker)); }))
+                .system(count_after_note.run_during(Phase::Complete))
+                .system(cleanup_untracked_marker.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((A(1),)).await;
 
@@ -4036,16 +4170,12 @@ mod tests {
     #[test]
     fn on_complete_waits_for_same_phase_upstream_work_to_settle() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
-                commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
-            }))
-            .await;
-            bowl.add_system(count_bs_after_note.run_during(Phase::Complete))
-                .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(make_b_uncounted)
+                .system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker)); }))
+                .system(count_bs_after_note.run_during(Phase::Complete))
+                .system(cleanup_untracked_marker.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((B(0),)).await;
             assert_eq!(bowl.scoop::<Query<(Entity, &Count)>>().await.len(), 1);
@@ -4063,16 +4193,12 @@ mod tests {
     #[test]
     fn on_complete_does_not_publish_gate_while_upstream_work_is_pending() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
-                commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
-            }))
-            .await;
-            bowl.add_system(answer_after_untracked_marker.run_during(Phase::Complete))
-                .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(make_b_uncounted)
+                .system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker)); }))
+                .system(answer_after_untracked_marker.run_during(Phase::Complete))
+                .system(cleanup_untracked_marker.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((B(0),)).await;
             bowl.scoop::<Query<(Entity, &D)>>().await;
@@ -4086,16 +4212,12 @@ mod tests {
     #[test]
     fn on_settled_runs_before_cleanup_and_can_continue_evaluation() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(make_b_uncounted).await;
-            bowl.add_system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
-                commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
-            }))
-            .await;
-            bowl.add_system(answer_after_untracked_marker.run_during(Phase::Complete))
-                .await;
-            bowl.add_system(cleanup_untracked_marker.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(make_b_uncounted)
+                .system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker)); }))
+                .system(answer_after_untracked_marker.run_during(Phase::Complete))
+                .system(cleanup_untracked_marker.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((B(0),)).await;
             bowl.scoop::<Query<(Entity, &D)>>().await;
@@ -4120,23 +4242,9 @@ mod tests {
                 .expect("system hook log lock poisoned")
                 .clear();
 
-            let bowl = Bowl::new();
-            bowl.add_system(
-                make_b_with_hook_log
-                    .on_start(|_commands: Commands<Anything>| {
-                        SYSTEM_HOOK_LOG
-                            .lock()
-                            .expect("system hook log lock poisoned")
-                            .push("start");
-                    })
-                    .on_complete(|_commands: Commands<Anything>| {
-                        SYSTEM_HOOK_LOG
-                            .lock()
-                            .expect("system hook log lock poisoned")
-                            .push("complete");
-                    }),
-            )
-            .await;
+            let bowl = Bowl::builder()
+                .system(make_b_with_hook_log .on_start(|_commands: Commands<Anything>| { SYSTEM_HOOK_LOG .lock() .expect("system hook log lock poisoned") .push("start"); }) .on_complete(|_commands: Commands<Anything>| { SYSTEM_HOOK_LOG .lock() .expect("system hook log lock poisoned") .push("complete"); }),)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -4162,8 +4270,9 @@ mod tests {
     #[test]
     fn system_params_support_arbitrary_mixed_order() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(mixed_param_system).await;
+            let bowl = Bowl::builder()
+                .system(mixed_param_system)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
@@ -4188,8 +4297,9 @@ mod tests {
     #[test]
     fn bound_entity_take_consumes_output_and_cleans_scope() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(answer_request).await;
+            let bowl = Bowl::builder()
+                .system(answer_request)
+                .build();
 
             let request = bowl.insert((Request,)).await.bind();
             let answer = request.take::<Answer>().await.unwrap();
@@ -4202,8 +4312,9 @@ mod tests {
     #[test]
     fn bound_entity_take_does_not_require_clone() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(answer_request_with_non_clone).await;
+            let bowl = Bowl::builder()
+                .system(answer_request_with_non_clone)
+                .build();
 
             let request = bowl.insert((Request,)).await.bind();
             let answer = request.take::<NonCloneAnswer>().await.unwrap();
@@ -4219,8 +4330,9 @@ mod tests {
     #[test]
     fn bound_entity_take_supports_required_and_optional_outputs() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(answer_request).await;
+            let bowl = Bowl::builder()
+                .system(answer_request)
+                .build();
 
             let request = bowl.insert((Request,)).await.bind();
             let (answer, note) = request.take::<(Answer, Option<Note>)>().await.unwrap();
@@ -4234,8 +4346,9 @@ mod tests {
     #[test]
     fn bound_entity_take_removes_leftover_outputs() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(answer_request_with_note).await;
+            let bowl = Bowl::builder()
+                .system(answer_request_with_note)
+                .build();
 
             let request = bowl.insert((Request,)).await.bind();
             let answer = request.take::<Answer>().await.unwrap();
@@ -4285,21 +4398,18 @@ mod tests {
         DEF_COMPLETED.store(0, Ordering::SeqCst);
         DEF_ANSWERS.lock().unwrap().clear();
 
-        let bowl = Bowl::new();
-        let handle = block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
+        let bowl = Bowl::builder()
+            .system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
-            .await;
-            bowl.add_system(def_consume).await;
+            .system(def_consume)
             // Boundary writes (deferred included) restart through Startup;
             // the marker pattern registers its retraction there so gated
             // consumers rerun against the post-write derivations.
-            bowl.add_system(def_startup_retract.run_during(Phase::Startup))
-                .await;
-            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
-                .await;
-
+            .system(def_startup_retract.run_during(Phase::Startup))
+            .system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
+            .build();
+        let handle = block_on(async {
             bowl.insert((EpochSrc("old".to_string()),)).await;
             bowl.insert((EpochAsk("new".to_string()),)).await;
 
@@ -4378,10 +4488,11 @@ mod tests {
         PI_STARTED.store(0, Ordering::SeqCst);
         PI_COMPLETED.store(0, Ordering::SeqCst);
 
-        let bowl = Bowl::new();
+        let bowl = Bowl::builder()
+            .system(pi_reader)
+            .system(make_b_after_yield)
+            .build();
         block_on(async {
-            bowl.add_system(pi_reader).await;
-            bowl.add_system(make_b_after_yield).await;
             bowl.insert((D(5),)).await;
             bowl.scoop::<Query<(Entity, &Count)>>().await;
         });
@@ -4461,9 +4572,10 @@ mod tests {
         LS_HOLD.store(false, Ordering::SeqCst);
         LS_STARTED.store(0, Ordering::SeqCst);
 
-        let bowl = Bowl::new();
+        let bowl = Bowl::builder()
+            .system(ls_derive)
+            .build();
         block_on(async {
-            bowl.add_system(ls_derive).await;
             bowl.insert((D(1),)).await;
         });
         assert_eq!(
@@ -4509,7 +4621,7 @@ mod tests {
     #[test]
     fn changed_since_reads_only_rows_past_the_cursor() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             let first = bowl.insert((MutableA(1),)).await;
             bowl.insert((MutableA(2),)).await;
             bowl.scoop::<Query<(Entity, &MutableA)>>().await;
@@ -4549,7 +4661,7 @@ mod tests {
     #[test]
     fn entity_insert_targets_an_existing_entity() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             let inserted = bowl.insert((A(7),)).await;
             bowl.entity(inserted.entity()).insert((Note,)).await;
 
@@ -4567,7 +4679,7 @@ mod tests {
     #[test]
     fn drain_consumes_matched_rows() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             bowl.insert((C(1), Note)).await;
             bowl.insert((C(2), Note)).await;
             bowl.insert((C(3),)).await;
@@ -4595,9 +4707,10 @@ mod tests {
     fn next_settle_fires_after_working_settles() {
         use std::task::Context;
 
-        let bowl = Bowl::new();
+        let bowl = Bowl::builder()
+            .system(make_b_after_yield)
+            .build();
         block_on(async {
-            bowl.add_system(make_b_after_yield).await;
         });
 
         // Register the watcher deterministically (first poll registers),
@@ -4622,8 +4735,9 @@ mod tests {
     #[test]
     fn take_waits_for_pinning_query_results_to_release() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(answer_request).await;
+            let bowl = Bowl::builder()
+                .system(answer_request)
+                .build();
 
             let request = bowl.insert((Request,)).await.bind();
 
@@ -4645,8 +4759,9 @@ mod tests {
     #[test]
     fn dropped_bound_entity_is_cleaned_up_on_next_operation() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(answer_request).await;
+            let bowl = Bowl::builder()
+                .system(answer_request)
+                .build();
 
             {
                 let _request = bowl.insert((Request,)).await.bind();
@@ -4685,8 +4800,9 @@ mod tests {
     #[test]
     fn bound_eq_join_runs_only_matching_pairs() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(join_pairs).await;
+            let bowl = Bowl::builder()
+                .system(join_pairs)
+                .build();
 
             bowl.insert((A(1), FingerprintedRank(1))).await;
             bowl.insert((A(2), FingerprintedRank(2))).await;
@@ -4743,10 +4859,10 @@ mod tests {
     #[test]
     fn bound_eq_join_key_change_moves_the_pair() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(join_pairs_uncounted).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(join_pairs_uncounted)
+                .system(cleanup_stale_derived.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((A(1), FingerprintedRank(1))).await;
             bowl.insert((A(2), FingerprintedRank(2))).await;
@@ -4785,10 +4901,9 @@ mod tests {
     #[test]
     fn bound_eq_join_allows_bound_query_reading_its_own_key() {
         block_on(async {
-            let bowl = Bowl::new();
             // The bound query reads the key itself; provider resolution must
             // skip the bound param and bind to the namespace query.
-            bowl.add_system(self_keyed_join).await;
+            let bowl = Bowl::builder().system(self_keyed_join).build();
 
             bowl.insert((A(1), FingerprintedRank(1))).await;
             bowl.insert((B(2), FingerprintedRank(1))).await;
@@ -4823,8 +4938,9 @@ mod tests {
     #[test]
     fn compound_bound_join_requires_every_key_to_match() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(compound_key_join).await;
+            let bowl = Bowl::builder()
+                .system(compound_key_join)
+                .build();
 
             bowl.insert((A(1), FingerprintedRank(1), KeyB(1))).await;
             bowl.insert((A(2), FingerprintedRank(1), KeyB(2))).await;
@@ -4852,8 +4968,9 @@ mod tests {
     #[test]
     fn and_composes_plain_filters() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(and_filtered_derive).await;
+            let bowl = Bowl::builder()
+                .system(and_filtered_derive)
+                .build();
 
             bowl.insert((A(1), Note)).await;
             bowl.insert((A(2), Note, C(0))).await;
@@ -4874,8 +4991,9 @@ mod tests {
     #[should_panic(expected = "needs exactly one sibling query param")]
     fn bound_eq_without_provider_panics_at_registration() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(missing_provider_join).await;
+            let _bowl = Bowl::builder()
+                .system(missing_provider_join)
+                .build();
         });
     }
 
@@ -4891,8 +5009,9 @@ mod tests {
     #[should_panic(expected = "needs exactly one sibling query param")]
     fn bound_eq_with_ambiguous_providers_panics_at_registration() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(ambiguous_provider_join).await;
+            let _bowl = Bowl::builder()
+                .system(ambiguous_provider_join)
+                .build();
         });
     }
 
@@ -4906,8 +5025,9 @@ mod tests {
     #[should_panic(expected = "does not support bound")]
     fn bound_eq_on_view_panics_at_registration() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(view_bound_join).await;
+            let _bowl = Bowl::builder()
+                .system(view_bound_join)
+                .build();
         });
     }
 
@@ -4931,11 +5051,11 @@ mod tests {
     #[test]
     fn derived_fact_survives_upstream_rerun_with_unchanged_content() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(derive_ranked_from_a).await;
-            bowl.add_system(derive_sum_from_ranked).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(derive_ranked_from_a)
+                .system(derive_sum_from_ranked)
+                .system(cleanup_stale_derived.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((A(1),)).await;
             assert_eq!(collect_sums(&bowl).await, [6].into_iter().collect());
@@ -4962,8 +5082,9 @@ mod tests {
     #[should_panic(expected = "component(hash)")]
     fn bound_eq_join_requires_hashed_key() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(unhashed_key_join).await;
+            let bowl = Bowl::builder()
+                .system(unhashed_key_join)
+                .build();
 
             bowl.insert((Label("namespace"),)).await;
             bowl.insert((B(1), Label("namespace"))).await;
@@ -5050,9 +5171,10 @@ mod tests {
         FREEZE_RUNS.store(0, Ordering::SeqCst);
         FREEZE_HOLD.store(true, Ordering::SeqCst);
 
-        let bowl = Bowl::new();
+        let bowl = Bowl::builder()
+            .system(freeze_derive)
+            .build();
         block_on(async {
-            bowl.add_system(freeze_derive).await;
             bowl.insert((A(1),)).await;
         });
 
@@ -5123,15 +5245,12 @@ mod tests {
         LIE_CONSUMER_RUNNING.store(false, Ordering::SeqCst);
         LIE_ANSWERS.lock().unwrap().clear();
 
-        let bowl = Bowl::new();
+        let bowl = Bowl::builder()
+            .system(epoch_derive.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral)); }))
+            .system(lie_consume)
+            .system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
+            .build();
         block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
-                commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
-            }))
-            .await;
-            bowl.add_system(lie_consume).await;
-            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
-                .await;
 
             bowl.insert((EpochSrc("beta".to_string()),)).await;
             bowl.insert((EpochAsk("beta".to_string()),)).await;
@@ -5220,18 +5339,15 @@ mod tests {
         PREEMPT_STARTUP_CLEANUPS.store(0, Ordering::SeqCst);
         PREEMPT_ANSWERS.lock().unwrap().clear();
 
-        let bowl = Bowl::new();
-        let handle = block_on(async {
-            bowl.add_system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
+        let bowl = Bowl::builder()
+            .system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
                 commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
             }))
-            .await;
-            bowl.add_system(preempt_consume).await;
-            bowl.add_system(preempt_startup_retract.run_during(Phase::Startup))
-                .await;
-            bowl.add_system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
-                .await;
-
+            .system(preempt_consume)
+            .system(preempt_startup_retract.run_during(Phase::Startup))
+            .system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
+            .build();
+        let handle = block_on(async {
             bowl.insert((EpochSrc("old".to_string()),)).await;
             bowl.insert((EpochAsk("new".to_string()),)).await;
 
@@ -5329,10 +5445,10 @@ mod tests {
     #[test]
     fn derived_facts_emitted_before_same_buffer_anchor_writes_survive_cleanup() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(diagnose_then_stamp).await;
-            bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
-                .await;
+            let bowl = Bowl::builder()
+                .system(diagnose_then_stamp)
+                .system(cleanup_stale_derived.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((A(1),)).await;
 
@@ -5350,7 +5466,7 @@ mod tests {
     #[test]
     fn external_remove_retracts_a_component() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             let inserted = bowl.insert((A(1), B(2))).await;
 
             bowl.entity(inserted.entity()).remove::<B>().await;
@@ -5378,8 +5494,9 @@ mod tests {
     #[test]
     fn spawned_entities_link_by_id_within_one_buffer() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(lower_linked_pair).await;
+            let bowl = Bowl::builder()
+                .system(lower_linked_pair)
+                .build();
 
             bowl.insert((A(1),)).await;
 
@@ -5407,8 +5524,9 @@ mod tests {
     #[test]
     fn explain_surfaces_stale_ambient_views() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(count_bs).await;
+            let bowl = Bowl::builder()
+                .system(count_bs)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(1),)).await;
@@ -5455,11 +5573,10 @@ mod tests {
     #[should_panic(expected = "consumed in the same phase")]
     fn same_phase_ambient_consumption_is_flagged() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(produce_in_cleanup.run_during(Phase::Complete))
-                .await;
-            bowl.add_system(finalize_in_cleanup.run_during(Phase::Complete))
-                .await;
+            let bowl = Bowl::builder()
+                .system(produce_in_cleanup.run_during(Phase::Complete))
+                .system(finalize_in_cleanup.run_during(Phase::Complete))
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(1),)).await;
@@ -5484,8 +5601,9 @@ mod tests {
     #[test]
     fn optional_parts_match_and_track_presence_and_absence() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(count_optional_b).await;
+            let bowl = Bowl::builder()
+                .system(count_optional_b)
+                .build();
 
             let with_b = bowl.insert((A(1), B(7))).await;
             let without_b = bowl.insert((A(2),)).await;
@@ -5528,27 +5646,238 @@ mod tests {
         mut commands: Commands<(NoteParts, B)>,
     ) {
         let (entity, _a) = query.item();
-        commands.insert((Note,));
-        commands.entity(entity).insert(Count(7));
+        let note: Entity<NoteParts> = commands.insert((Note, Count(7)));
+        // Required parts can't be rewritten through the facet — the
+        // untyped handle keeps plain membership semantics.
+        commands.entity(note.untyped()).insert(Count(7));
         commands.entity(entity).insert(B(2));
     }
 
     /// Typed `Commands<S>`: declared writes (directly or through a group
     /// alias) compile and behave exactly like the wildcard; the declared
-    /// set reaches the registry. Emitting an undeclared component is a
-    /// compile error, which a test cannot demonstrate — the runtime
-    /// honesty backstop is pinned separately.
+    /// set reaches the registry. Spawns are strict — the bundle matches the
+    /// `NoteParts` shape and the returned handle is the typed facet, which
+    /// the entity builder accepts directly. Emitting an undeclared
+    /// component or spawning a partial shape is a compile error, which a
+    /// test cannot demonstrate — the runtime honesty backstop is pinned
+    /// separately.
     #[test]
     fn declared_outputs_permit_declared_writes() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(declared_writer).await;
+            let bowl = Bowl::builder()
+                .system(declared_writer)
+                .build();
             bowl.insert((A(1),)).await;
 
             let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
             assert_eq!(notes.collect().len(), 1);
             let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
             assert_eq!(counts.collect()[0].1.0, 7);
+        });
+    }
+
+    type OptionalShape = (Note, Option<Count>);
+
+    async fn spawn_with_and_without_optional(
+        query: Query<(Entity, &A)>,
+        mut commands: Commands<(OptionalShape,)>,
+    ) {
+        let (entity, _a) = query.item();
+        // Both bundles match the same shape: optional parts are exempt
+        // from the completeness half of strict matching.
+        let bare: Entity<OptionalShape> = commands.insert((Note,));
+        let full: Entity<OptionalShape> = commands.insert((Note, Count(3)));
+        // Facet handles compare across facets by identity and flow into
+        // untyped positions explicitly.
+        assert_ne!(bare, full);
+        assert_eq!(bare, bare.untyped());
+        commands.entity(full).insert(Count(3));
+        let _ = (entity, bare.untyped(), full.raw());
+    }
+
+    /// Strict spawns with `Option<T>` shape parts: a bundle matches with
+    /// or without the optional, both spawns land, and the typed facet
+    /// handle behaves as a plain id (comparison, `untyped`, builders).
+    #[test]
+    fn strict_spawns_match_shapes_with_and_without_optionals() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_with_and_without_optional)
+                .build();
+            bowl.insert((A(1),)).await;
+
+            let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            assert_eq!(notes.collect().len(), 2);
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(counts.collect().len(), 1);
+        });
+    }
+
+    /// Schema with overlapping shapes: `wide` covers everything `narrow`
+    /// does plus `B`.
+    struct OverlappingSchema;
+
+    impl crate::declare::Schema for OverlappingSchema {
+        fn shapes() -> Vec<crate::declare::ShapeDesc> {
+            use std::any::{TypeId, type_name};
+            vec![
+                crate::declare::ShapeDesc {
+                    name: "wide",
+                    required: vec![
+                        (TypeId::of::<Note>(), type_name::<Note>()),
+                        (TypeId::of::<Count>(), type_name::<Count>()),
+                        (TypeId::of::<B>(), type_name::<B>()),
+                    ],
+                    optional: Vec::new(),
+                },
+                crate::declare::ShapeDesc {
+                    name: "narrow",
+                    required: vec![
+                        (TypeId::of::<Note>(), type_name::<Note>()),
+                        (TypeId::of::<Count>(), type_name::<Count>()),
+                    ],
+                    optional: Vec::new(),
+                },
+            ]
+        }
+    }
+
+    async fn spawn_narrow(
+        query: Query<(Entity, &A)>,
+        mut commands: Commands<((Note, Count),)>,
+    ) {
+        let (_entity, _a) = query.item();
+        commands.insert((Note, Count(1)));
+    }
+
+    /// Shapes may overlap: a bundle that is covered-but-incomplete for one
+    /// shape (`wide`, iterated first) must still pass when a later shape
+    /// (`narrow`) completes — an incomplete candidate is only a failure if
+    /// no candidate passes.
+    #[test]
+    fn conformance_accepts_any_passing_candidate_among_overlapping_shapes() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .schema::<OverlappingSchema>()
+                .system(spawn_narrow)
+                .build();
+            bowl.insert((A(1),)).await;
+
+            let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
+            assert_eq!(notes.collect().len(), 1);
+        });
+    }
+
+    /// On a schema bowl multi-part row matching goes through the presence
+    /// bitmaps, so every transition must keep the bits exact: base insert
+    /// sets them, targeted removal clears them, re-insert restores them.
+    /// (Equivalence with store probing is what the assertion checks — the
+    /// probing path is the same query on a schema-less bowl.)
+    #[test]
+    fn presence_masks_track_insert_and_removal_transitions() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .schema::<OverlappingSchema>()
+                .build();
+            let inserted = bowl.insert((Note, Count(1))).await;
+
+            let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
+            assert_eq!(rows.collect().len(), 1);
+
+            bowl.entity(inserted.entity()).remove::<Count>().await;
+            let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
+            assert_eq!(
+                rows.collect().len(),
+                0,
+                "a removed component must clear its presence bit"
+            );
+            let notes = bowl.scoop::<Query<(Entity, &Note)>>().await;
+            assert_eq!(notes.collect().len(), 1, "the other bit must survive");
+
+            bowl.entity(inserted.entity()).insert((Count(2),)).await;
+            let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
+            assert_eq!(rows.collect().len(), 1, "re-insert must restore the bit");
+        });
+    }
+
+    type NoteShape = (Note, Count, Option<B>);
+
+    static FACET_ANCHOR_RUNS: AtomicUsize = AtomicUsize::new(0);
+    static FACET_TRACKED_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    async fn observe_facet(query: Query<Entity<NoteShape>>) {
+        let _facet = query.item();
+        FACET_ANCHOR_RUNS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    async fn observe_tracked_facet(query: Query<(Entity<NoteShape>, crate::Tracked<NoteShape>)>) {
+        let (_facet, _tracked) = query.item();
+        FACET_TRACKED_RUNS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Facet queries: `Entity<H>` anchors rows to entities carrying `H`'s
+    /// required set (optional parts vary freely) and contributes no memo
+    /// deps — an unread part changing must not rerun the anchor-only row.
+    /// `Tracked<H>` is the opt-in complement: it deps the row on every
+    /// part, so the same change reruns it, and an optional part appearing
+    /// invalidates the absence observation.
+    #[test]
+    fn facet_rows_match_required_sets_and_track_on_request() {
+        FACET_ANCHOR_RUNS.store(0, Ordering::SeqCst);
+        FACET_TRACKED_RUNS.store(0, Ordering::SeqCst);
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(observe_facet)
+                .system(observe_tracked_facet)
+                .build();
+
+            // Full shape, shape minus the optional, and a non-conforming
+            // entity (missing required Count).
+            let full = bowl.insert((Note, Count(1), B(1))).await;
+            bowl.insert((Note, Count(2))).await;
+            bowl.insert((Note,)).await;
+
+            let rows = bowl.scoop::<Query<Entity<NoteShape>>>().await;
+            assert_eq!(
+                rows.collect().len(),
+                2,
+                "facet rows are entities with the whole required set"
+            );
+            assert_eq!(FACET_ANCHOR_RUNS.load(Ordering::SeqCst), 2);
+            assert_eq!(FACET_TRACKED_RUNS.load(Ordering::SeqCst), 2);
+
+            // Changing a part the anchor-only row never read must not
+            // rerun it; the tracked row must rerun.
+            bowl.entity(full.entity()).insert((Count(9),)).await;
+            bowl.scoop::<Query<Entity<NoteShape>>>().await;
+            assert_eq!(
+                FACET_ANCHOR_RUNS.load(Ordering::SeqCst),
+                2,
+                "the facet anchor contributes no revision deps"
+            );
+            assert_eq!(
+                FACET_TRACKED_RUNS.load(Ordering::SeqCst),
+                3,
+                "Tracked<H> deps the row on every part"
+            );
+
+            // An optional part appearing invalidates the tracked row's
+            // absence observation (second entity gains B).
+            let notes = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let plain = notes
+                .collect()
+                .into_iter()
+                .find(|(_, count)| count.0 == 2)
+                .expect("the optional-less row exists")
+                .0;
+            bowl.entity(plain).insert((B(5),)).await;
+            bowl.scoop::<Query<Entity<NoteShape>>>().await;
+            assert_eq!(
+                FACET_TRACKED_RUNS.load(Ordering::SeqCst),
+                4,
+                "an optional part appearing must invalidate Tracked<H>"
+            );
+            assert_eq!(FACET_ANCHOR_RUNS.load(Ordering::SeqCst), 2);
         });
     }
 
@@ -5608,8 +5937,9 @@ mod tests {
     #[should_panic(expected = "emitted undeclared component")]
     fn undeclared_emission_panics_in_debug() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(dishonest_writer).await;
+            let bowl = Bowl::builder()
+                .system(dishonest_writer)
+                .build();
             bowl.insert((A(1),)).await;
             bowl.scoop::<Query<(Entity, &C)>>().await;
         });
@@ -5639,11 +5969,10 @@ mod tests {
     #[test]
     fn same_phase_flag_ignores_rows_the_viewer_cannot_match() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(restock_oranges.run_during(Phase::Complete))
-                .await;
-            bowl.add_system(count_priced_ds.run_during(Phase::Complete))
-                .await;
+            let bowl = Bowl::builder()
+                .system(restock_oranges.run_during(Phase::Complete))
+                .system(count_priced_ds.run_during(Phase::Complete))
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(1),)).await;
@@ -5672,10 +6001,10 @@ mod tests {
     #[should_panic(expected = "consumed in the same phase")]
     fn same_phase_flag_catches_writes_completing_a_viewed_row() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(sticker_d.run_during(Phase::Complete)).await;
-            bowl.add_system(count_priced_ds.run_during(Phase::Complete))
-                .await;
+            let bowl = Bowl::builder()
+                .system(sticker_d.run_during(Phase::Complete))
+                .system(count_priced_ds.run_during(Phase::Complete))
+                .build();
 
             bowl.insert((Rank(3),)).await;
             bowl.insert((B(1),)).await;
@@ -5708,8 +6037,9 @@ mod tests {
     #[test]
     fn outer_joins_run_unmatched_rows_with_none() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(resolve_or_default).await;
+            let bowl = Bowl::builder()
+                .system(resolve_or_default)
+                .build();
 
             let matched = bowl.insert((Request, FingerprintedRank(1))).await;
             let unmatched = bowl.insert((Request, FingerprintedRank(2))).await;
@@ -5799,7 +6129,7 @@ mod tests {
     #[test]
     fn relationships_maintain_an_ordered_fingerprinted_inverse() {
         block_on(async {
-            let bowl = Bowl::new();
+            let bowl = Bowl::builder().build();
             let parent = bowl.insert((A(0),)).await;
             let parent2 = bowl.insert((A(1),)).await;
             let child_b = bowl.insert((B(1), MemberOf(parent.entity()))).await;
@@ -5856,8 +6186,9 @@ mod tests {
     fn membership_changes_invalidate_tracked_consumers() {
         block_on(async {
             MEMBERS_RUNS.store(0, Ordering::SeqCst);
-            let bowl = Bowl::new();
-            bowl.add_system(observe_members).await;
+            let bowl = Bowl::builder()
+                .system(observe_members)
+                .build();
 
             let parent = bowl.insert((A(0),)).await;
             let child = bowl.insert((B(1), MemberOf(parent.entity()))).await;
@@ -5892,8 +6223,9 @@ mod tests {
     #[test]
     fn removing_the_target_retracts_source_edges() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(remove_noted).await;
+            let bowl = Bowl::builder()
+                .system(remove_noted)
+                .build();
 
             let parent = bowl.insert((A(0),)).await;
             bowl.insert((B(1), MemberOf(parent.entity()))).await;
@@ -5931,8 +6263,9 @@ mod tests {
     #[test]
     fn in_joins_pair_members_with_their_set() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(tag_members).await;
+            let bowl = Bowl::builder()
+                .system(tag_members)
+                .build();
 
             let parent = bowl.insert((A(0),)).await;
             bowl.insert((B(1), MemberOf(parent.entity()))).await;
@@ -5969,8 +6302,9 @@ mod tests {
     #[test]
     fn swept_derived_edges_retract_membership() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(spawn_member_when_ranked).await;
+            let bowl = Bowl::builder()
+                .system(spawn_member_when_ranked)
+                .build();
 
             let parent = bowl.insert((A(0),)).await;
             let driver = bowl
@@ -6005,8 +6339,9 @@ mod tests {
     #[test]
     fn settle_phase_inserts_defer_to_the_next_run() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(settle_stamp.run_during(Phase::Settle)).await;
+            let bowl = Bowl::builder()
+                .system(settle_stamp.run_during(Phase::Settle))
+                .build();
 
             bowl.insert((A(1),)).await;
             let notes = bowl.scoop::<Query<(Entity, &Note)>>().await;
@@ -6043,8 +6378,9 @@ mod tests {
     #[test]
     fn explain_reports_why_a_system_did_not_run() {
         block_on(async {
-            let bowl = Bowl::new();
-            bowl.add_system(demand_gated_check).await;
+            let bowl = Bowl::builder()
+                .system(demand_gated_check)
+                .build();
 
             bowl.insert((A(1),)).await;
             bowl.scoop::<Query<(Entity, &Count)>>().await;

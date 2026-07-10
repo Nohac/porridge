@@ -17,35 +17,28 @@
 //! systems (see [`HoverStage`]) and a service finalizer picks the winning
 //! candidate by priority (`service::hover`).
 
-use bowl::{Bowl, Commands, DerivedFrom, Entity};
+use bowl::{Commands, Entity, Registrar};
 use tracing::info;
 
 use crate::lang::{
-    entities::{
-        definition::AstDef,
-        import::ImportDecl,
-        namespace::{NamespaceDecl, NamespacePath},
-    },
-    facts::BelongsToFile,
     grammar::parser::{CstData, NodeRef},
+    schema::lang_schema,
 };
 
 /// Everything the lowering walk may emit — the shared output declaration
-/// for [`LowerStage`] and `generate_ast` (spec/declared-outputs.md).
+/// for [`LowerStage`] and `generate_ast`: a subset selection out of the
+/// bowl schema, where the shapes are defined (spec/declared-outputs.md).
 pub(crate) type AstFacts = (
-    AstDef,
-    ImportDecl,
-    NamespaceDecl,
-    NamespacePath,
-    BelongsToFile,
-    DerivedFrom,
+    lang_schema::AstDef,
+    lang_schema::Import,
+    lang_schema::Namespace,
 );
 
 pub(crate) trait LanguageEntity {
     const NAME: &'static str;
 
-    /// Register the entity's derivation and check systems on the bowl.
-    async fn register(db: &Bowl);
+    /// Register the entity's derivation and check systems.
+    fn register(reg: &mut Registrar<'_>);
 }
 
 /// Context handed to [`LowerStage::lower`] for one owned CST rule node.
@@ -70,16 +63,16 @@ pub(crate) trait LowerStage: LanguageEntity {
 /// facts, so param lists stay small no matter how many entities exist.
 /// Entities without hover behavior register nothing (explicit empty impl).
 pub(crate) trait HoverStage: LanguageEntity {
-    async fn register_hover(db: &Bowl);
+    fn register_hover(reg: &mut Registrar<'_>);
 }
 
 /// The compile-time coverage contract: an entity only registers once it has
 /// declared every stage.
-pub(crate) async fn register_entity<E>(db: &Bowl)
+pub(crate) fn register_entity<E>(reg: &mut Registrar<'_>)
 where
     E: LanguageEntity + LowerStage + HoverStage,
 {
     info!(entity = E::NAME, "register language entity");
-    E::register(db).await;
-    E::register_hover(db).await;
+    E::register(reg);
+    E::register_hover(reg);
 }

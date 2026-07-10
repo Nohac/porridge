@@ -43,6 +43,40 @@ pub struct Parity(pub u64);
 #[component(hash)]
 pub struct Def(pub String);
 
+/// Wide-row fixtures for the presence-bitmap fast path: a three-part
+/// tracked row, benchable on a schema bowl (mask matching) and a
+/// schema-less one (per-part store probing) with identical data.
+#[derive(Component, Hash, Clone)]
+#[component(hash)]
+pub struct W1(pub u64);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct W2(pub u64);
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct W3(pub u64);
+
+#[derive(bowl::Schema)]
+pub struct WideSchema {
+    wide: (W1, W2, W3),
+}
+
+/// N entities carrying the full wide row.
+pub async fn wide_row_bowl(rows: usize, schema: bool) -> Bowl {
+    let bowl = if schema {
+        Bowl::builder().schema::<WideSchema>().build()
+    } else {
+        Bowl::builder().build()
+    };
+    for index in 0..rows {
+        bowl.insert((W1(index as u64), W2(index as u64), W3(index as u64)))
+            .await;
+    }
+    bowl
+}
+
 pub async fn parse(query: Query<(Entity, &Text)>, mut commands: Commands<(Parsed,)>) {
     let (entity, text) = query.item();
     commands.entity(entity).insert(Parsed(text.0.len() as u64));
@@ -54,7 +88,7 @@ pub async fn extract_first_line(query: Query<(Entity, &Text)>, mut commands: Com
     commands.entity(entity).insert(FirstLine(line));
 }
 
-pub async fn diag_long_files(query: Query<(Entity, &Parsed)>, mut commands: Commands<(DerivedFrom, Diag)>) {
+pub async fn diag_long_files(query: Query<(Entity, &Parsed)>, mut commands: Commands<((DerivedFrom, Diag),)>) {
     let (entity, parsed) = query.item();
     if parsed.0 > 60 {
         commands.insert((
@@ -72,7 +106,7 @@ pub async fn derive_parity(query: Query<(Entity, &Src)>, mut commands: Commands<
 pub async fn check_duplicate_defs(
     query: Query<(Entity, &Def)>,
     defs: View<'_, (Entity, &Def)>,
-    mut commands: Commands<(DerivedFrom, Diag)>,
+    mut commands: Commands<((DerivedFrom, Diag),)>,
 ) {
     let (entity, def) = query.item();
 
@@ -103,10 +137,11 @@ pub fn source_text(index: usize) -> String {
 
 /// N file entities driving a three-system pipeline, not yet settled.
 pub async fn file_pipeline_bowl(files: usize) -> Bowl {
-    let bowl = Bowl::new();
-    bowl.add_system(parse).await;
-    bowl.add_system(extract_first_line).await;
-    bowl.add_system(diag_long_files).await;
+    let bowl = Bowl::builder()
+        .system(parse)
+        .system(extract_first_line)
+        .system(diag_long_files)
+        .build();
 
     for index in 0..files {
         bowl.insert((Path(file_name(index)), Text(source_text(index))))
@@ -132,8 +167,9 @@ pub async fn touch_file(bowl: &Bowl, index: usize) {
 /// N `Src` rows plus the parity system, not yet settled. All sources start
 /// even, so `Parity` is always `0`.
 pub async fn parity_bowl(rows: usize) -> Bowl {
-    let bowl = Bowl::new();
-    bowl.add_system(derive_parity).await;
+    let bowl = Bowl::builder()
+        .system(derive_parity)
+        .build();
 
     for index in 0..rows {
         bowl.insert((Src(index as u64 * 2),)).await;
@@ -155,15 +191,16 @@ pub async fn bump_all_sources(bowl: &Bowl) {
 #[component(hash)]
 pub struct ParityNote(pub u64);
 
-pub async fn spawn_parity_note(query: Query<(Entity, &Src)>, mut commands: Commands<(DerivedFrom, ParityNote)>) {
+pub async fn spawn_parity_note(query: Query<(Entity, &Src)>, mut commands: Commands<((DerivedFrom, ParityNote),)>) {
     let (entity, src) = query.item();
     commands.insert((DerivedFrom::new(entity), ParityNote(src.0 % 2)));
 }
 
 /// N `Src` rows plus a system that spawns one derived note per row.
 pub async fn spawn_parity_bowl(rows: usize) -> Bowl {
-    let bowl = Bowl::new();
-    bowl.add_system(spawn_parity_note).await;
+    let bowl = Bowl::builder()
+        .system(spawn_parity_note)
+        .build();
 
     for index in 0..rows {
         bowl.insert((Src(index as u64 * 2),)).await;
@@ -175,7 +212,7 @@ pub async fn spawn_parity_bowl(rows: usize) -> Bowl {
 /// `padding` entities that never match target queries, plus `targets` file
 /// entities. No systems.
 pub async fn scan_bowl(padding: usize, targets: usize) -> Bowl {
-    let bowl = Bowl::new();
+    let bowl = Bowl::builder().build();
 
     for index in 0..padding {
         bowl.insert((Padding(index as u64),)).await;
@@ -191,8 +228,9 @@ pub async fn scan_bowl(padding: usize, targets: usize) -> Bowl {
 /// N unique defs driving the duplicate checker. Unique names mean no outputs:
 /// the run measures pure planning/view/commit overhead.
 pub async fn defs_bowl(defs: usize) -> Bowl {
-    let bowl = Bowl::new();
-    bowl.add_system(check_duplicate_defs).await;
+    let bowl = Bowl::builder()
+        .system(check_duplicate_defs)
+        .build();
 
     for index in 0..defs {
         bowl.insert((Def(format!("def_{index}")),)).await;
@@ -237,8 +275,9 @@ pub async fn pair_items(
 /// providers × members-per-group, but naive planning probes providers ×
 /// all-items tuples per wave.
 pub async fn in_join_bowl(groups: usize, members_per_group: usize) -> (Bowl, Vec<Entity>) {
-    let bowl = Bowl::new();
-    bowl.add_system(pair_items).await;
+    let bowl = Bowl::builder()
+        .system(pair_items)
+        .build();
 
     let mut group_entities = Vec::new();
     for group in 0..groups {

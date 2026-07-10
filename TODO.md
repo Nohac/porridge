@@ -374,6 +374,43 @@ let rows = diagnostics.collect();
   a fully-memoized steady state (dsql's 30/160/80) makes waves near
   no-ops. Sound because all mutation paths — including whole-entity
   removal and the derived sweeps — now bump watermarks.
+- **Presence-bitmap planning (the schema-enabled endgame for this
+  section).** A constructor-time schema (`Bowl::of::<S>()`) closes the
+  component universe, so bit positions can be assigned once and densely
+  at construction: one presence bitmap per entity over the schema's
+  components (dsql: ~70 → two `u64` words), maintained at the same world
+  chokepoints as watermarks and the fingerprint index, copy-on-write
+  against snapshots. Everything that today probes stores becomes a mask
+  operation: a query's required set is a precomputed mask
+  (`With`/`Without` fold in as positive/negative bits, optional parts
+  contribute none, a facet `Entity<H>` is H's required mask), and row
+  enumeration is `bits & mask == mask` over a flat array instead of
+  per-store BTreeMap probing — killing the dense-scan constant. Shape
+  views are derived (`entity_bits & shape_mask`), giving the
+  same-phase-completion flag and "N entities are 2 bits short of
+  `ast_def`" explain output nearly free. Stage 2: the reverse index
+  (mask-transition → interested systems). Commits know exactly what they
+  wrote (`written_derived`), so a commit updates bitmaps and a bit
+  transition pushes precisely the (system, entity) pairs whose masks
+  became (un)satisfied into a dirty queue — planning becomes delta
+  application (dirty pairs ∪ watermark-stale pairs), and "a commit of `T`
+  wakes exactly the consumers of `T`" becomes a lookup, not a graph
+  aspiration. Presence bitmaps solve *matching*; staleness stays
+  revision/memo-based — they compose, not compete. Requires: schema at
+  construction (not `with_schema`-after), schema grown to cover *base*
+  entity shapes too (the universe must contain every queried component;
+  on a schema bowl, registering a system that queries an off-schema
+  component should refuse loudly), schema-less bowls keep the dense-scan
+  path. **Stage 1 done**: `Bowl::of::<S>()` fixes the schema at
+  construction and lays out the bit universe; presence bits are
+  maintained at all four world chokepoints (insert, targeted removal,
+  whole-entity removal, derived sweeps), copy-on-write against
+  snapshots; entity-tuple row retention takes the mask path when every
+  part is presence-expressible (`presence_scan` bench: −96%…−98% vs
+  store probing at 1k–50k rows). Still open (stage 2): the reverse
+  index / dirty queues, mask bits for `With`/`Without` filters, the
+  off-schema registration refusal, and driving *candidates* from the
+  bitmap instead of the smallest store.
 - Add ordered/range predicates as join keys (position-in-span is the
   playground's blocker): with them, the hover candidates become tracked
   joins, move to `Evaluate`, and the finalizer flattens back to a plain
@@ -533,7 +570,37 @@ Current shortcut:
   components do not false-positive. Shipped as a warning, not a refusal:
   marker-gated same-phase consumers are legitimate and undetectable
   statically; the commit-time entity-granular flag stays the precise
-  enforcement. Register `with_schema` before `add_system`.
+  enforcement. (Registration ordering is gone: schemas are fixed at
+  construction via `Bowl::of::<S>()`.)
+- Done: builder-only construction with plugin composition.
+  `Bowl::builder().schema::<S>().plugin(P).system(sys).build()` is the
+  only construction path — `Bowl::of`/`Bowl::new`/`add_system` are gone,
+  the system set is sealed at build (registration analyses and the
+  planner can treat the graph as total), and dynamic mid-life
+  registration is not supported (conditional subsystems are demand
+  markers gating planning, not registration). Plugins
+  (`trait Plugin { fn shapes(&self); fn build(&self, &mut Registrar) }`)
+  carry their schema fragment and systems as one unit, so fragment/system
+  desync is unrepresentable — this subsumed the earlier
+  `#[schema(extend)]` idea. Plugins over *app* data export schema-generic
+  systems the app instantiates at build. The playground dogfoods this
+  with `LangPlugin` plus a dummy replicon-style `ReplicationPlugin`
+  (`replication.rs`).
+- **Replication is shape-granular** (dogfooded): with an enforced schema,
+  component-granular replication could transit illegal partial entities
+  on the applying side, so the protocol unit is a *shape instance* — the
+  wire analogue of strict spawning; apply lands a whole shape bundle or
+  nothing. Subscriptions are shape aliases
+  (`.replicate::<lang_schema::SourceFile>()`), `Schema::shapes()` is the
+  enumerable manifest, and a daemon/client pair sharing one schema type
+  makes the schema the wire contract (see daemon-client porting notes).
+  Resolved: capture is now a facet query
+  (`Query<(Entity<H>, Tracked<H>)>`) — the anchor matches conforming
+  entities, `Tracked<H>` deps the row on every part, and the previously
+  pinned assertion flipped (records re-derive after any part of the
+  instance changes). Still open from the facet slice: registration-time
+  presence-typing validation of sibling parts (`&T` iff required,
+  `Option<&T>` iff optional).
 - Done: "never produce and ambiently consume in the same phase" is now
   engine-enforced in debug builds (dsql port, friction 5): a commit whose
   derived write is `View`ed by a same-phase system with matched rows

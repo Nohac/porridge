@@ -268,6 +268,10 @@ trait StoreDyn: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision>;
+    /// Number of entries in the store.
+    fn len(&self) -> usize;
+    /// Entities present in the store, ascending.
+    fn entities(&self) -> Vec<Entity>;
     /// Whether this store's component type participates in revision tracking.
     fn tracked(&self) -> bool;
     /// Highest revision at which this store changed.
@@ -383,6 +387,14 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn revision_for_entity(&self, entity: Entity) -> Option<Revision> {
         self.entries.get(&entity).map(|entry| entry.revision)
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn entities(&self) -> Vec<Entity> {
+        self.entries.keys().copied().collect()
     }
 
     fn tracked(&self) -> bool {
@@ -539,6 +551,124 @@ pub struct World {
     /// same-phase ambient consumption — a written entity races a view only
     /// if it ends up carrying *all* the components the view requires.
     written_derived: Vec<(TypeId, Entity, &'static str)>,
+    /// Presence bitmaps over the schema's closed component universe (bowls
+    /// constructed with [`Bowl::of`](crate::Bowl::of) only): one bit per
+    /// (entity, component-in-universe), maintained at the same chokepoints
+    /// as watermarks and the fingerprint index. Row matching consults this
+    /// instead of probing stores. Copy-on-write against snapshots.
+    presence: Option<PresenceIndex>,
+}
+
+/// Dense presence bits over a schema-closed component universe.
+///
+/// Bit positions are assigned once, at bowl construction, so every store
+/// and entity carries the layout from birth. `bits` is a flat row-major
+/// array (`entity id × stride` words) behind an `Arc`: snapshots share it
+/// structurally and live mutation copies on first write per generation,
+/// like the fingerprint index.
+pub(crate) struct PresenceIndex {
+    bit_for: Arc<HashMap<TypeId, u32>>,
+    /// Words per entity row.
+    stride: usize,
+    bits: Arc<Vec<u64>>,
+}
+
+impl Clone for PresenceIndex {
+    fn clone(&self) -> Self {
+        Self {
+            bit_for: Arc::clone(&self.bit_for),
+            stride: self.stride,
+            bits: Arc::clone(&self.bits),
+        }
+    }
+}
+
+impl PresenceIndex {
+    fn new(universe: Vec<TypeId>) -> Self {
+        let bit_for: HashMap<TypeId, u32> = universe
+            .into_iter()
+            .enumerate()
+            .map(|(index, type_id)| (type_id, index as u32))
+            .collect();
+        let stride = bit_for.len().div_ceil(64).max(1);
+        Self {
+            bit_for: Arc::new(bit_for),
+            stride,
+            bits: Arc::new(Vec::new()),
+        }
+    }
+
+    fn set(&mut self, type_id: TypeId, entity: Entity, present: bool) {
+        let Some(&bit) = self.bit_for.get(&type_id) else {
+            return;
+        };
+        let row = entity.raw() as usize * self.stride;
+        let bits = Arc::make_mut(&mut self.bits);
+        if bits.len() < row + self.stride {
+            if !present {
+                return;
+            }
+            bits.resize(row + self.stride, 0);
+        }
+        let word = row + (bit / 64) as usize;
+        let flag = 1u64 << (bit % 64);
+        if present {
+            bits[word] |= flag;
+        } else {
+            bits[word] &= !flag;
+        }
+    }
+
+    fn clear_entity(&mut self, entity: Entity) {
+        let row = entity.raw() as usize * self.stride;
+        if row >= self.bits.len() {
+            return;
+        }
+        let stride = self.stride;
+        let bits = Arc::make_mut(&mut self.bits);
+        bits[row..row + stride].fill(0);
+    }
+
+    /// The mask for a conjunction of required components, or `None` when a
+    /// type is outside the universe (caller falls back to store probing).
+    pub(crate) fn mask(&self, type_ids: &[TypeId]) -> Option<Vec<u64>> {
+        let mut mask = vec![0u64; self.stride];
+        for type_id in type_ids {
+            let bit = *self.bit_for.get(type_id)?;
+            mask[(bit / 64) as usize] |= 1u64 << (bit % 64);
+        }
+        Some(mask)
+    }
+
+    pub(crate) fn matches(&self, entity: Entity, mask: &[u64]) -> bool {
+        let row = entity.raw() as usize * self.stride;
+        if row + self.stride > self.bits.len() {
+            return mask.iter().all(|word| *word == 0);
+        }
+        mask.iter()
+            .zip(&self.bits[row..row + self.stride])
+            .all(|(mask_word, bits_word)| bits_word & mask_word == *mask_word)
+    }
+
+    /// All entities whose bits satisfy `mask`, scanning row-major words.
+    /// Sound only for non-empty masks: entities that never carried a
+    /// universe component have no row, which cannot matter when at least
+    /// one bit is required.
+    pub(crate) fn entities_matching(&self, mask: &[u64]) -> Vec<Entity> {
+        let rows = self.bits.len() / self.stride;
+        let mut out = Vec::new();
+        for row in 0..rows {
+            let start = row * self.stride;
+            let hit = mask
+                .iter()
+                .zip(&self.bits[start..start + self.stride])
+                .all(|(mask_word, bits_word)| bits_word & mask_word == *mask_word);
+            if hit {
+                out.push(Entity::from_raw(row as u64));
+            }
+        }
+        out
+    }
 }
 
 impl Clone for World {
@@ -568,6 +698,7 @@ impl Clone for World {
             pending_derived_from: Vec::new(),
             flushing_anchors: false,
             written_derived: Vec::new(),
+            presence: self.presence.clone(),
         }
     }
 }
@@ -605,7 +736,61 @@ impl World {
             pending_derived_from: Vec::new(),
             flushing_anchors: false,
             written_derived: Vec::new(),
+            presence: None,
         }
+    }
+
+    /// Installs the presence index over a schema-closed component universe.
+    /// Called once, at bowl construction, before any store exists.
+    pub(crate) fn init_presence(&mut self, universe: Vec<TypeId>) {
+        debug_assert!(
+            self.stores.is_empty(),
+            "presence index must be installed before any component is stored"
+        );
+        self.presence = Some(PresenceIndex::new(universe));
+    }
+
+    /// The presence index, when this bowl was constructed over a schema.
+    pub(crate) fn presence(&self) -> Option<&PresenceIndex> {
+        self.presence.as_ref()
+    }
+
+    fn presence_set(&mut self, type_id: TypeId, entity: Entity, present: bool) {
+        if let Some(presence) = &mut self.presence {
+            presence.set(type_id, entity, present);
+        }
+    }
+
+    fn presence_clear_entity(&mut self, entity: Entity) {
+        if let Some(presence) = &mut self.presence {
+            presence.clear_entity(entity);
+        }
+    }
+
+    /// Type-erased store size (`usize::MAX` for an absent store, so it is
+    /// never picked as a probing driver over a present one).
+    pub(crate) fn store_len_dyn(&self, type_id: TypeId) -> usize {
+        self.stores
+            .get(&type_id)
+            .map_or(usize::MAX, |store| store.len())
+    }
+
+    /// Type-erased store row listing, ascending; empty for an absent store.
+    pub(crate) fn entities_with_dyn(&self, type_id: TypeId) -> Vec<Entity> {
+        self.stores
+            .get(&type_id)
+            .map_or_else(Vec::new, |store| store.entities())
+    }
+
+    /// Type-erased revision lookup for facet-part deps.
+    pub(crate) fn revision_for_entity_dyn(
+        &self,
+        type_id: TypeId,
+        entity: Entity,
+    ) -> Option<Revision> {
+        self.stores
+            .get(&type_id)
+            .and_then(|store| store.revision_for_entity(entity))
     }
 
     /// Drains the derived component writes recorded since the last drain.
@@ -752,7 +937,7 @@ impl World {
 
     /// Allocates a fresh entity id in the live world.
     pub(crate) fn spawn_empty(&mut self) -> Entity {
-        Entity(self.next_entity.fetch_add(1, Ordering::Relaxed))
+        Entity::from_raw(self.next_entity.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Returns the entity for a singleton key, allocating one if needed.
@@ -876,6 +1061,7 @@ impl World {
         }
 
         let new_owner = owner.clone();
+        self.presence_set(TypeId::of::<T>(), entity, true);
         let store = self.store_mut::<T>();
         store.watermark = store.watermark.max(revision.0);
         let previous = store.entries.insert(
@@ -1103,6 +1289,7 @@ impl World {
         let Some(tracked) = store.remove_entry_owned(entity, owner) else {
             return false;
         };
+        self.presence_set(type_id, entity, false);
 
         self.mutations += 1;
         if tracked {
@@ -1203,6 +1390,7 @@ impl World {
         self.singleton_entities
             .retain(|_, singleton_entity| *singleton_entity != entity);
         self.removed_entities.push(entity);
+        self.presence_clear_entity(entity);
 
         for edge in edges {
             (edge.remove)(self, entity, edge.target);
@@ -1239,6 +1427,7 @@ impl World {
         let store = self.store_mut_existing::<T>()?;
         let removed = store.entries.remove(&entity)?;
         store.unindex_fingerprint(entity, removed.fingerprint);
+        self.presence_set(TypeId::of::<T>(), entity, false);
         let edge = removed.value.read().relationship_edge();
 
         T::on_remove(ComponentHookContext::new(entity));

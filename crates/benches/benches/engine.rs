@@ -17,9 +17,9 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use benches::{
-    Def, PairMark, Parity, ParityNote, Path, Text, bump_all_sources, defs_bowl, file_name,
-    file_pipeline_bowl, in_join_bowl, parity_bowl, scan_bowl, settle_files, spawn_parity_bowl,
-    touch_file, touch_group,
+    Def, PairMark, Parity, ParityNote, Path, Text, W1, W2, W3, bump_all_sources, defs_bowl,
+    file_name, file_pipeline_bowl, in_join_bowl, parity_bowl, scan_bowl, settle_files,
+    spawn_parity_bowl, touch_file, touch_group, wide_row_bowl,
 };
 use bowl::{Entity, Eq, Query, Where};
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -143,6 +143,39 @@ fn read_scan(c: &mut Criterion) {
     group.finish();
 }
 
+/// Multi-part row enumeration, schema bowl (presence-mask matching) vs
+/// schema-less (per-part store probing), identical data and query.
+fn presence_scan(c: &mut Criterion) {
+    let mut group = c.benchmark_group("presence_scan");
+    group.sample_size(30);
+
+    for rows in [1_000usize, 10_000, 50_000] {
+        for (label, schema) in [("probe", false), ("mask", true)] {
+            let bowl = block_on(async {
+                let bowl = wide_row_bowl(rows, schema).await;
+                bowl.scoop::<Query<(Entity, &W1, &W2, &W3)>>().await;
+                bowl
+            });
+
+            group.bench_with_input(
+                BenchmarkId::new(label, rows),
+                &rows,
+                |b, _| {
+                    b.iter(|| {
+                        block_on(async {
+                            black_box(
+                                bowl.scoop::<Query<(Entity, &W1, &W2, &W3)>>().await.len(),
+                            )
+                        })
+                    })
+                },
+            );
+        }
+    }
+
+    group.finish();
+}
+
 fn where_eq(c: &mut Criterion) {
     let mut group = c.benchmark_group("where_eq");
     group.sample_size(30);
@@ -231,6 +264,6 @@ criterion_group!(
     config = Criterion::default()
         .measurement_time(Duration::from_secs(2))
         .warm_up_time(Duration::from_millis(300));
-    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, where_eq, view_scaling, in_join_planning
+    targets = cold_settle, incremental_settle, identical_rerun, spawn_rerun, read_scan, presence_scan, where_eq, view_scaling, in_join_planning
 );
 criterion_main!(engine);

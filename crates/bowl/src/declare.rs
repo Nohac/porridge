@@ -88,6 +88,198 @@ macro_rules! impl_bundle_declared_in {
 
 all_tuples!(impl_bundle_declared_in, 1, 8, C, M);
 
+/// Membership-proof marker: a required shape part found in the bundle.
+pub struct RequiredHere<M>(M);
+/// Membership-proof marker: an optional shape part, exempt from presence.
+pub struct OptionalSkip;
+
+/// Shape part `Self` imposes its presence requirement on bundle `B`:
+/// required parts must appear in the bundle, `Option<T>` parts are exempt.
+pub trait RequiredPartIn<B, M> {}
+
+impl<T, B> RequiredPartIn<B, OptionalSkip> for Option<T> {}
+
+impl<C: Component, B, M> RequiredPartIn<B, RequiredHere<M>> for C where C: DeclaredIn<B, M> {}
+
+/// All required parts of shape `Self` are present in bundle `B` — the
+/// completeness half of strict spawn matching. (The membership half —
+/// bundle ⊆ shape — is [`BundleDeclaredIn`] with the shape as the set.)
+pub trait CoveredBy<B, M> {}
+
+/// A bare component as a degenerate one-part shape.
+impl<C: Component, B, M> CoveredBy<B, RequiredHere<M>> for C where C: DeclaredIn<B, M> {}
+
+macro_rules! impl_covered_by {
+    ($(($P:ident, $M:ident)),*) => {
+        impl<B, $($P,)* $($M,)*> CoveredBy<B, ($($M,)*)> for ($($P,)*)
+        where
+            $($P: RequiredPartIn<B, $M>,)*
+        {
+        }
+    };
+}
+
+all_tuples!(impl_covered_by, 1, 8, P, M);
+
+/// Bundle `Self` *matches* shape `H`: every bundle component is part of
+/// the shape, and every required part of the shape is in the bundle.
+#[diagnostic::on_unimplemented(
+    message = "bundle `{Self}` does not match shape `{H}`",
+    label = "bundle/shape mismatch",
+    note = "a spawn bundle must carry every required (non-`Option`) part of the shape and nothing outside it"
+)]
+pub trait MatchesShape<H, M> {}
+
+impl<B, H, M1, M2> MatchesShape<H, (M1, M2)> for B
+where
+    B: BundleDeclaredIn<H, M1>,
+    H: CoveredBy<B, M2>,
+{
+}
+
+/// Bundle `Self` matches exactly one shape declared in `S`; `Shape` names
+/// it. This is what makes spawns *strict*: `Commands<S>::insert` requires
+/// the bundle to be a complete instance of one declared shape (membership
+/// alone no longer admits partial entities), and returns the typed handle
+/// `Entity<Shape>` for it.
+///
+/// Uniqueness is by inference: a bundle matching two declared shapes makes
+/// the proof ambiguous ("type annotations needed") — keep shapes disjoint.
+#[diagnostic::on_unimplemented(
+    message = "bundle `{Self}` does not match any shape declared in this `Commands<..>` output set",
+    label = "no matching shape",
+    note = "spawns must fully match one declared shape: all required parts present, nothing undeclared; declare shapes as tuples (`Commands<((A, B, Option<C>),)>`) or schema aliases (`Commands<(my_schema::Thing,)>`)"
+)]
+pub trait SpawnsAs<S, M> {
+    /// The matched shape, i.e. the facet of the returned `Entity<Shape>`.
+    type Shape;
+}
+
+macro_rules! impl_spawns_as_tuple {
+    ($H:ident $(, $T:ident)*) => {
+        impl<B, $H, $($T,)* M> SpawnsAs<($H, $($T,)*), Here<M>> for B
+        where
+            B: MatchesShape<$H, M>,
+        {
+            type Shape = $H;
+        }
+
+        impl<B, $H, $($T,)* M> SpawnsAs<($H, $($T,)*), There<M>> for B
+        where
+            B: SpawnsAs<($($T,)*), M>,
+        {
+            type Shape = <B as SpawnsAs<($($T,)*), M>>::Shape;
+        }
+    };
+}
+
+all_tuples!(impl_spawns_as_tuple, 1, 8, T);
+
+/// The engine's own buffers stay wildcard: any bundle spawns untyped.
+impl<B> SpawnsAs<Anything, WildcardMatch> for B {
+    type Shape = crate::entity::Untyped;
+}
+
+/// Component `Self` may be written incrementally through a facet handle
+/// `Entity<H>`.
+///
+/// Through a real facet only the shape's `Option<T>` parts qualify:
+/// required parts exist by construction (strict spawning), so writing one
+/// through a facet is either redundant or a shape violation in the making.
+/// The untyped handle imposes no shape bound — membership against the
+/// `Commands` declaration still applies, with the commit-time conformance
+/// check as the runtime backstop.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an `Option<..>` part of shape `{H}`",
+    label = "not an optional part of the facet",
+    note = "a facet handle `Entity<H>` only accepts the shape's optional parts; required parts are complete at spawn — use an untyped handle (`.untyped()`) for cross-shape writes"
+)]
+pub trait IncrementOf<H, M> {}
+
+impl<C: Component> IncrementOf<crate::entity::Untyped, ExactMatch> for C {}
+
+impl<C: Component> IncrementOf<Option<C>, Optionally<ExactMatch>> for C {}
+
+macro_rules! impl_increment_of_tuple {
+    ($H:ident $(, $T:ident)*) => {
+        impl<C, $H, $($T,)* M> IncrementOf<($H, $($T,)*), Here<M>> for C
+        where
+            C: IncrementOf<$H, M>,
+        {
+        }
+
+        impl<C, $H, $($T,)* M> IncrementOf<($H, $($T,)*), There<M>> for C
+        where
+            C: IncrementOf<($($T,)*), M>,
+        {
+        }
+    };
+}
+
+all_tuples!(impl_increment_of_tuple, 1, 8, T);
+
+/// One part of a facet, as seen at runtime.
+#[derive(Clone, Copy)]
+pub struct FacetPart {
+    pub type_id: TypeId,
+    pub name: &'static str,
+    pub optional: bool,
+    /// Whether the component participates in revision tracking (untracked
+    /// parts contribute no deps, as everywhere else).
+    pub tracked: bool,
+}
+
+/// A shape element contributing its runtime description to a facet.
+pub trait ShapePart {
+    fn part() -> FacetPart;
+}
+
+impl<C: Component> ShapePart for C {
+    fn part() -> FacetPart {
+        FacetPart {
+            type_id: TypeId::of::<C>(),
+            name: std::any::type_name::<C>(),
+            optional: false,
+            tracked: C::tracked(),
+        }
+    }
+}
+
+impl<T: Component> ShapePart for Option<T> {
+    fn part() -> FacetPart {
+        FacetPart {
+            type_id: TypeId::of::<T>(),
+            name: std::any::type_name::<T>(),
+            optional: true,
+            tracked: T::tracked(),
+        }
+    }
+}
+
+/// A facet usable on `Entity<H>`: the untyped handle (no parts, plain
+/// identity) or a shape tuple whose required parts drive row matching.
+pub trait FacetKind: 'static {
+    fn parts() -> Vec<FacetPart>;
+}
+
+impl FacetKind for crate::entity::Untyped {
+    fn parts() -> Vec<FacetPart> {
+        Vec::new()
+    }
+}
+
+macro_rules! impl_facet_kind {
+    ($($P:ident),*) => {
+        impl<$($P: ShapePart + 'static,)*> FacetKind for ($($P,)*) {
+            fn parts() -> Vec<FacetPart> {
+                vec![$($P::part(),)*]
+            }
+        }
+    };
+}
+
+all_tuples!(impl_facet_kind, 1, 8, P);
+
 /// Runtime enumeration of a declaration: the component `TypeId`s it
 /// covers, or `None` for the wildcard. This is what makes tuple-alias
 /// groups usable by the dependency graph — a closed tuple type can be

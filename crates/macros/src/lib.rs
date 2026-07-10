@@ -193,12 +193,28 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
     }
 
     let module = snake_case(&name);
+    // The struct is a type-level artifact — never constructed — so its
+    // fields would trip dead_code; reading each one here silences that
+    // without the derive having to modify the item itself.
+    let field_reads = fields
+        .iter()
+        .map(|(field_name, _)| format!("let _ = &s.{field_name};"))
+        .collect::<String>();
     format!(
         "impl ::bowl::Schema for {name} {{
             fn shapes() -> ::std::vec::Vec<::bowl::ShapeDesc> {{
                 ::std::vec![{shape_descs}]
             }}
         }}
+
+        const _: () = {{
+            // allow(dead_code) roots the fn in the liveness pass, so its
+            // reads keep the shape fields live.
+            #[allow(dead_code)]
+            fn __touch_fields(s: &{name}) {{
+                {field_reads}
+            }}
+        }};
 
         {assoc_impls}
 

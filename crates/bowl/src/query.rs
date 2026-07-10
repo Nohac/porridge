@@ -9,6 +9,7 @@ use variadics_please::all_tuples;
 
 use crate::{
     Bowl, Component, Entity,
+    declare::FacetKind,
     world::{ComponentMut, ComponentRef, Revision, Snapshot, World},
 };
 
@@ -914,12 +915,52 @@ where
     }
 }
 
-impl QueryParam for Entity {
+/// Rows an untyped or facet handle enumerates: every allocated id for
+/// `Untyped`, entities carrying the facet's whole required set otherwise
+/// (via the presence mask on schema bowls, store probing elsewhere).
+pub(crate) fn facet_rows<H: FacetKind>(snapshot: &Snapshot) -> Vec<Entity> {
+    let required: Vec<std::any::TypeId> = H::parts()
+        .into_iter()
+        .filter(|part| !part.optional)
+        .map(|part| part.type_id)
+        .collect();
+    if required.is_empty() {
+        return (0..snapshot.next_entity_raw())
+            .map(Entity::from_raw)
+            .collect();
+    }
+    if let Some(mask) = snapshot
+        .presence()
+        .and_then(|presence| presence.mask(&required))
+    {
+        return snapshot
+            .presence()
+            .expect("mask came from this presence index")
+            .entities_matching(&mask);
+    }
+    // Probing fallback: drive from the smallest required store.
+    let driver = required
+        .iter()
+        .copied()
+        .min_by_key(|type_id| snapshot.store_len_dyn(*type_id))
+        .expect("required set is non-empty");
+    snapshot
+        .entities_with_dyn(driver)
+        .into_iter()
+        .filter(|entity| {
+            required
+                .iter()
+                .all(|type_id| snapshot.has_dyn(*type_id, *entity))
+        })
+        .collect()
+}
+
+impl<H: FacetKind> QueryParam for Entity<H> {
     type State = Entity;
-    type Item<'a> = Entity;
+    type Item<'a> = Entity<H>;
 
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
-        (0..snapshot.next_entity_raw()).map(Entity).collect()
+        facet_rows::<H>(snapshot)
     }
 
     fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
@@ -930,6 +971,9 @@ impl QueryParam for Entity {
         vec![*state]
     }
 
+    // The facet anchor contributes row matching but no revision deps:
+    // siblings' reads stay the memo deps, so an unread part changing
+    // value does not rerun the row. Whole-shape tracking is `Tracked<H>`.
     fn deps(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Dep> {
         Vec::new()
     }
@@ -948,11 +992,11 @@ impl QueryParam for Entity {
         state: &Self::State,
         _guards: &mut GuardStore,
     ) -> Self::Item<'a> {
-        *state
+        state.retype()
     }
 }
 
-impl ExternalReadQueryParam for Entity {}
+impl<H: FacetKind> ExternalReadQueryParam for Entity<H> {}
 
 impl<T: Component> QueryParam for &T {
     type State = Entity;
@@ -1078,6 +1122,17 @@ impl<T: Component> QueryParam for (MutRef<'_, T>,) {
 
 /// One entry in an entity query tuple.
 #[doc(hidden)]
+/// How a query part's row matching relates to component presence, for the
+/// bitmap fast path on schema bowls.
+pub enum PresenceReq {
+    /// Matching is not expressible as presence; probe the stores.
+    Opaque,
+    /// The part never constrains the row (optional parts).
+    Free,
+    /// The part requires exactly this component present.
+    Requires(TypeId),
+}
+
 pub trait QueryPart {
     type Item<'a>: Send;
 
@@ -1089,6 +1144,12 @@ pub trait QueryPart {
     /// Entities this part could match, ascending.
     fn candidates(snapshot: &Snapshot) -> Vec<Entity>;
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
+    /// This part's presence requirement, when `matches` is pure presence.
+    /// Must agree with `matches` exactly; parts whose matching does more
+    /// keep the `Opaque` default and the row falls back to probing.
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Opaque
+    }
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
     fn access_all() -> Access;
@@ -1138,6 +1199,10 @@ impl<T: Component> QueryPart for &T {
 
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
         snapshot.has::<T>(entity)
+    }
+
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Requires(TypeId::of::<T>())
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1200,11 +1265,15 @@ impl<T: Component> QueryPart for Option<&T> {
     fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
         // Only reachable when every part is optional: fall back to the
         // dense id scan, like the bare `Entity` param.
-        (0..snapshot.next_entity_raw()).map(Entity).collect()
+        (0..snapshot.next_entity_raw()).map(Entity::from_raw).collect()
     }
 
     fn matches(_snapshot: &Snapshot, _entity: Entity) -> bool {
         true
+    }
+
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Free
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1237,6 +1306,85 @@ impl<T: Component> QueryPart for Option<&T> {
 
 impl<T: Component> ExternalReadQueryPart for Option<&T> {}
 
+/// Whole-shape tracking part: depends on every part of facet `H` without
+/// borrowing any data.
+///
+/// The facet anchor `Entity<H>` deliberately contributes no revision deps
+/// (unread parts changing must not rerun component-granular readers);
+/// `Tracked<H>` is the opt-in complement for shape-granular consumers —
+/// replication capture being the motivating case — whose row must rerun
+/// when *any* part of the instance changes, appears, or disappears.
+pub struct Tracked<H>(std::marker::PhantomData<fn() -> H>);
+
+impl<H: FacetKind> QueryPart for Tracked<H> {
+    type Item<'a> = Tracked<H>;
+
+    fn store_len(_snapshot: &Snapshot) -> usize {
+        // Tracking never constrains or drives the row set; the facet
+        // anchor (or sibling parts) do.
+        usize::MAX
+    }
+
+    fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
+        facet_rows::<H>(snapshot)
+    }
+
+    fn matches(_snapshot: &Snapshot, _entity: Entity) -> bool {
+        true
+    }
+
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Free
+    }
+
+    fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+        H::parts()
+            .into_iter()
+            .filter(|part| part.tracked)
+            .map(|part| Dep {
+                type_id: part.type_id,
+                entity,
+                // Present parts record their revision; absent (optional)
+                // parts record the absence, going stale on appearance —
+                // the same observation semantics as `Option<&T>`.
+                revision: snapshot.revision_for_entity_dyn(part.type_id, entity),
+                store_scoped: false,
+            })
+            .collect()
+    }
+
+    fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
+        H::parts()
+            .into_iter()
+            .map(|part| Access {
+                kind: AccessKind::Read,
+                component: part.type_id,
+                entity: Some(entity),
+            })
+            .collect()
+    }
+
+    fn access_all() -> Access {
+        // Erased multi-type access has no single-type summary; the
+        // per-row access set above is what scheduling consults. Use a
+        // read on the marker itself as a harmless placeholder.
+        Access {
+            kind: AccessKind::Read,
+            component: std::any::TypeId::of::<Tracked<H>>(),
+            entity: None,
+        }
+    }
+
+    fn fetch<'a>(
+        _bowl: &Bowl,
+        _snapshot: &'a Snapshot,
+        _entity: Entity,
+        _guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
+        Tracked(std::marker::PhantomData)
+    }
+}
+
 impl<T: Component> QueryPart for MutRef<'_, T> {
     type Item<'a> = MutRef<'a, T>;
 
@@ -1250,6 +1398,10 @@ impl<T: Component> QueryPart for MutRef<'_, T> {
 
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
         snapshot.has::<T>(entity)
+    }
+
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Requires(TypeId::of::<T>())
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1282,15 +1434,51 @@ impl<T: Component> QueryPart for MutRef<'_, T> {
     }
 }
 
+/// Drops candidates that don't match every part of an entity-tuple query.
+/// On schema bowls, when every part's matching is pure presence, one
+/// bitmap mask check per candidate replaces the per-part store probing.
+macro_rules! retain_matching_parts {
+    ($snapshot:ident, $candidates:ident, $($P:ident),*) => {{
+        let mask = $snapshot.presence().and_then(|presence| {
+            let mut required = Vec::new();
+            $(match $P::presence_requirement() {
+                PresenceReq::Opaque => return None,
+                PresenceReq::Free => {}
+                PresenceReq::Requires(type_id) => required.push(type_id),
+            })*
+            presence.mask(&required)
+        });
+        match (mask, $snapshot.presence()) {
+            (Some(mask), Some(presence)) => {
+                $candidates.retain(|entity| presence.matches(*entity, &mask));
+            }
+            _ => {
+                $candidates.retain(|entity| true $(&& $P::matches($snapshot, *entity))*);
+            }
+        }
+    }};
+}
+
 macro_rules! impl_entity_query_param {
     ($($P:ident),*) => {
-        impl<$($P: QueryPart),*> QueryParam for (Entity, $($P,)*)
+        impl<FH: FacetKind, $($P: QueryPart),*> QueryParam for (Entity<FH>, $($P,)*)
         {
             type State = Entity;
-            type Item<'a> = (Entity, $(<$P as QueryPart>::Item<'a>,)*);
+            type Item<'a> = (Entity<FH>, $(<$P as QueryPart>::Item<'a>,)*);
 
             fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
                 const PARTS: usize = [$(stringify!($P)),*].len();
+
+                // A facet anchor drives row matching by its required set;
+                // parts then filter. The untyped anchor keeps the
+                // smallest-part-store driver.
+                if FH::parts().iter().any(|part| !part.optional) {
+                    let mut candidates = facet_rows::<FH>(snapshot);
+                    if PARTS > 0 {
+                        retain_matching_parts!(snapshot, candidates, $($P),*);
+                    }
+                    return candidates;
+                }
 
                 let mut best_len = usize::MAX;
                 let mut best_index = 0usize;
@@ -1318,7 +1506,7 @@ macro_rules! impl_entity_query_param {
                 // A single part's candidates are exactly its matches; only
                 // multi-part queries need to probe the non-primary stores.
                 if PARTS > 1 {
-                    candidates.retain(|entity| true $(&& $P::matches(snapshot, *entity))*);
+                    retain_matching_parts!(snapshot, candidates, $($P),*);
                 }
 
                 candidates
@@ -1327,7 +1515,19 @@ macro_rules! impl_entity_query_param {
             fn rows_hinted(snapshot: &Snapshot, hint: Option<Vec<Entity>>) -> Vec<Self::State> {
                 match hint {
                     Some(mut candidates) => {
-                        candidates.retain(|entity| true $(&& $P::matches(snapshot, *entity))*);
+                        let facet_required: Vec<TypeId> = FH::parts()
+                            .into_iter()
+                            .filter(|part| !part.optional)
+                            .map(|part| part.type_id)
+                            .collect();
+                        if !facet_required.is_empty() {
+                            candidates.retain(|entity| {
+                                facet_required
+                                    .iter()
+                                    .all(|type_id| snapshot.has_dyn(*type_id, *entity))
+                            });
+                        }
+                        retain_matching_parts!(snapshot, candidates, $($P),*);
                         candidates
                     }
                     None => Self::rows(snapshot),
@@ -1344,6 +1544,7 @@ macro_rules! impl_entity_query_param {
                 $(deps.extend($P::deps(snapshot, *state));)*
                 deps
             }
+
 
             fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
                 let mut access = Vec::new();
@@ -1392,13 +1593,16 @@ macro_rules! impl_entity_query_param {
                 guards: &mut GuardStore,
             ) -> Self::Item<'a> {
                 (
-                    *state,
+                    state.retype(),
                     $($P::fetch(bowl, snapshot, *state, guards),)*
                 )
             }
         }
 
-        impl<$($P: ExternalReadQueryPart),*> ExternalReadQueryParam for (Entity, $($P,)*) {}
+        impl<FH: FacetKind, $($P: ExternalReadQueryPart),*> ExternalReadQueryParam
+            for (Entity<FH>, $($P,)*)
+        {
+        }
     };
 }
 
@@ -2124,7 +2328,7 @@ fn optional_component_dep<T: Component>(snapshot: &Snapshot, entity: Entity) -> 
 pub(crate) fn store_watermark_dep(snapshot: &Snapshot, type_id: TypeId) -> Dep {
     Dep {
         type_id,
-        entity: Entity(0),
+        entity: Entity::from_raw(0),
         revision: Some(Revision(snapshot.store_watermark(type_id))),
         store_scoped: true,
     }

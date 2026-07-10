@@ -18,8 +18,14 @@ use crate::lang::{
 };
 
 async fn language_bowl() -> Bowl {
-    let db = Bowl::new();
-    lang::register_language(&db).await;
+    let db = Bowl::builder()
+        .plugin(lang::LangPlugin)
+        .plugin(
+            crate::replication::ReplicationPlugin::new()
+                .replicate::<lang::schema::lang_schema::SourceFile>()
+                .replicate::<lang::schema::lang_schema::AstDef>(),
+        )
+        .build();
     db.insert((
         Singleton::<SystemImportDb>::new(),
         SystemImportDb::default(),
@@ -137,6 +143,76 @@ fn diagnostics_compute_only_on_demand() {
     });
 }
 
+/// The replication plugin dogfoods the plugin surface: its schema
+/// fragment joins the bowl universe through `Plugin::shapes`, and its
+/// generic tracking system is instantiated with app types at build time
+/// without the plugin ever naming them. One replica record per subscribed
+/// *shape instance* — component-granular replication could transit
+/// illegal partial entities, so the shape is the protocol unit — kept
+/// current through `DerivedFrom` by the language plugin's cleanup
+/// system.
+#[test]
+fn replication_plugin_maintains_replica_records() {
+    block_on(async {
+        let db = language_bowl().await;
+
+        db.insert((
+            FilePath("repl.porridge".to_string()),
+            FileText("fn one() { return 1; }".to_string()),
+        ))
+        .await;
+
+        let result = db
+            .scoop::<Query<(Entity, &crate::replication::Replica)>>()
+            .await;
+        let replicas = result.collect();
+        // One record for the file text, one for the lowered definition.
+        assert_eq!(replicas.len(), 2, "one replica per subscribed row");
+        assert!(
+            replicas
+                .iter()
+                .any(|(_, replica)| replica.shape.contains("FileText")),
+            "source-file shape subscription must be tracked"
+        );
+        assert!(
+            replicas
+                .iter()
+                .any(|(_, replica)| replica.shape.contains("AstDef")),
+            "definition shape subscription must be tracked"
+        );
+
+        // An edit reaps and re-derives; a second definition means a third
+        // record.
+        let files = db
+            .scoop::<Query<(Entity, bowl::Mut<FileText>), Where<bowl::Eq<FilePath>>>>()
+            .args(FilePath("repl.porridge".to_string()))
+            .await;
+        for (_, text) in files.collect() {
+            text.with_latest(|text| text.0.push_str("\nfn two() { return 2; }"))
+                .await;
+        }
+        let result = db
+            .scoop::<Query<(Entity, &crate::replication::Replica)>>()
+            .await;
+        let replicas = result.collect();
+        // Definition replicas follow: the old def entities were reaped with
+        // their replicas, and the two new defs got fresh records.
+        assert_eq!(
+            replicas
+                .iter()
+                .filter(|(_, replica)| replica.shape.contains("AstDef"))
+                .count(),
+            2,
+            "definition replicas must follow the derivation"
+        );
+        // The source-file record survives the edit: `Tracked<H>` deps the
+        // capture row on every part of the shape, so the `FileText` bump
+        // reran it and re-derived the record cleanup had reaped. (This
+        // assertion was pinned at 2 before facet queries landed.)
+        assert_eq!(replicas.len(), 3, "replicas must follow the derivation");
+    });
+}
+
 /// A large component whose change detection runs off an explicit revision
 /// counter instead of hashing the payload — the payload is deliberately not
 /// `Hash` (an `f64`). Rewriting with an unchanged revision must be a
@@ -162,8 +238,7 @@ async fn observe_blob(query: Query<(Entity, &Blob)>) {
 #[test]
 fn revision_fingerprints_cut_off_reruns_without_hashing_payloads() {
     block_on(async {
-        let db = Bowl::new();
-        db.add_system(observe_blob).await;
+        let db = Bowl::builder().system(observe_blob).build();
 
         let inserted = db
             .insert((Blob {
@@ -236,8 +311,7 @@ struct Rostered;
 #[test]
 fn derived_relationship_attributes_maintain_the_inverse() {
     block_on(async {
-        let db = Bowl::new();
-        db.add_system(roster).await;
+        let db = Bowl::builder().system(roster).build();
 
         let leader = db.insert((Callsign("lead"),)).await;
         let m1 = db
@@ -286,24 +360,28 @@ struct ReviewSchema {
 
 async fn write_report(
     query: Query<(Entity, &Position)>,
-    // The shape doubles as the output declaration via the companion trait.
-    mut commands: bowl::Commands<review_schema::Report>,
+    // The shape doubles as the output declaration via the companion alias.
+    mut commands: bowl::Commands<(review_schema::Report,)>,
 ) {
     let (entity, _pos) = query.item();
-    commands.insert((
+    // Strict spawn: the bundle matches the shape (optional part included
+    // here) and the returned handle carries the facet.
+    let report: bowl::Entity<review_schema::Report> = commands.insert((
         Report("ok"),
         Grade(5),
         bowl::DerivedFrom::new(entity),
         Reviewed,
     ));
+    let _ = report.untyped();
 }
 
 #[test]
 fn schema_shapes_declare_and_conform() {
     block_on(async {
-        let db = Bowl::new();
-        db.with_schema::<ReviewSchema>().await;
-        db.add_system(write_report).await;
+        let db = Bowl::builder()
+            .schema::<ReviewSchema>()
+            .system(write_report)
+            .build();
 
         db.insert((Position { offset: 0 },)).await;
         let reports = db.scoop::<Query<(Entity, &Report)>>().await;
@@ -316,17 +394,23 @@ async fn write_incomplete_report(
     mut commands: bowl::Commands<(Report, bowl::DerivedFrom)>,
 ) {
     let (entity, _pos) = query.item();
-    // Missing the required Grade: the shape check must name it.
-    commands.insert((Report("bad"), bowl::DerivedFrom::new(entity)));
+    // Strict spawning makes an incomplete spawn a compile error, so the
+    // runtime conformance check guards the door that stays open:
+    // incremental writes onto an existing entity that fit a shape but
+    // never complete it. Missing the required Grade: the check must name
+    // it.
+    commands.entity(entity).insert(Report("bad"));
+    commands.entity(entity).insert(bowl::DerivedFrom::new(entity));
 }
 
 #[test]
 #[should_panic(expected = "left required component(s) missing")]
 fn incomplete_shapes_panic_with_the_missing_component() {
     block_on(async {
-        let db = Bowl::new();
-        db.with_schema::<ReviewSchema>().await;
-        db.add_system(write_incomplete_report).await;
+        let db = Bowl::builder()
+            .schema::<ReviewSchema>()
+            .system(write_incomplete_report)
+            .build();
 
         db.insert((Position { offset: 0 },)).await;
         db.scoop::<Query<(Entity, &Report)>>().await;

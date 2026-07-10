@@ -322,3 +322,32 @@ re-settle):
 The improvement grows with size because the product term is gone; the
 remaining cost is the real pair work (invocations, deps, commits). The
 rest of the suite is unchanged within the documented noise band.
+
+## Presence-bitmap row matching round
+
+Trigger: the schema arc closed the component universe at construction
+(`Bowl::of::<S>()`), enabling the TODO §7 presence-bitmap design: one
+dense bitmap per entity over the schema's components, maintained at the
+same world chokepoints as watermarks and the fingerprint index,
+copy-on-write against snapshots.
+
+Change: multi-part row matching stops probing stores. When every part of
+an entity-tuple query is presence-expressible (`&T`/`MutRef` require
+their bit, `Option<&T>` is free), candidate retention is one mask check
+(`bits & mask == mask`, one or two word loads) instead of a
+`HashMap<TypeId>` + `BTreeMap<Entity>` probe per part per candidate.
+Schema-less bowls and queries touching off-universe components keep the
+probing path unchanged.
+
+New bench `presence_scan` (N wide rows, `(Entity, &W1, &W2, &W3)` scoop;
+probe = schema-less bowl, mask = schema bowl, identical data):
+
+| rows   | probe    | mask     | change |
+|--------|----------|----------|--------|
+| 1 000  | 60.8 µs  | 2.6 µs   | −96%   |
+| 10 000 | 1.11 ms  | 24.4 µs  | −98%   |
+| 50 000 | 6.32 ms  | 143 µs   | −98%   |
+
+The delta is pure matching cost (both variants materialize identically).
+Stage 2 — the reverse index turning bit transitions into per-system dirty
+queues (delta planning) — is recorded in TODO §7.
