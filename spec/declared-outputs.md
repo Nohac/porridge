@@ -84,8 +84,9 @@ struct LangSchema {
   what `e` already carries, which no static check can see, and the probes
   already exist (`written_derived` + `has_dyn`, the entity-granular flag
   machinery).
-- Registered via `Bowl::with_schema::<LangSchema>()`; a bowl without a
-  schema skips conformance entirely.
+- Installed at construction (`Bowl::builder().schema::<LangSchema>()` or
+  a plugin's fragment); a bowl without a schema skips conformance
+  entirely.
 - **Shapes are reusable declaration types.** The derive generates a
   companion *module* (snake-cased schema name) with one type alias per
   shape, so `lang_schema::Diagnostic` names the shape tuple in type
@@ -119,7 +120,7 @@ system graph. Staged consumers, in order:
    same-phase consumers — whose gate defers them a generation — are
    legitimate and undetectable statically; the commit-time flag remains
    the precise enforcement with its dynamic zero-row exemption. Requires a
-   registered schema; register `with_schema` before `add_system`.
+   schema; the builder installs it before any system by construction.
 2. **Interest sets for planner gating**: declared outputs + input types
    give exact wake lists; demand-gated subsystems (dsql: five markers
    gating ~20 of 36 systems) skip at zero planning cost.
@@ -215,7 +216,7 @@ union enum readers as sugar.
    `SystemParam::declared_outputs` registry on `BoxedSystem`, debug panic
    on undeclared derived writes.
 2. **`#[derive(Schema)]`**: macro, shape metadata, commit-time conformance
-   with named-shape messages, `with_schema` registration.
+   with named-shape messages, builder-time schema installation.
 3. **Registration-time phase refusal** (needs 1 + 2 for precision).
 4. **Graph consumers** (gating, stratification, event-driven): separate
    efforts, each with benches.

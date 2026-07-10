@@ -105,7 +105,11 @@ See:
   field verbatim, so large components change-detect without hashing (or
   being able to hash) their payload; mutually exclusive with
   `#[component(hash)]`. Friction 6.
-- Keep the README aligned with the final mental model:
+- Rewrite the README for the schema era — it predates declared outputs,
+  schemas, strict spawns, facets, the builder, and plugins, so its
+  examples (bare `Commands`, `Bowl::new()`, `add_system`) no longer
+  compile. Full rewrite, not a patch. Keep it aligned with the final
+  mental model:
   - components-only storage
   - immutable snapshots for reads
   - clone-on-write external updates

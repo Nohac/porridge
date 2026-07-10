@@ -655,10 +655,14 @@ macro_rules! impl_system_param_tuple {
 
                 for_each_state!(snapshot, states, []; $($P),*);
 
-                let has_bound = false
-                    $(|| !$P::bound_key_types().is_empty())*
-                    $(|| !$P::in_key_types().is_empty())*;
-                if has_bound {
+                // Pair-expanded params are key-equal by construction (their
+                // rows come from the provider's member list or fingerprint
+                // bucket), so only *non-expandable* bound params — compound
+                // multi-key joins — still need the product prune.
+                let needs_prune = false
+                    $(|| (!$P::bound_key_types().is_empty() || !$P::in_key_types().is_empty())
+                        && !$P::pair_expandable())*;
+                if needs_prune {
                     states.retain(|state| Self::binding_matches(snapshot, state));
                 }
 

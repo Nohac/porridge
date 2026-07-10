@@ -22,8 +22,9 @@ use std::any::TypeId;
 use crate::Component;
 use variadics_please::all_tuples;
 
-/// Wildcard output declaration: the system may emit anything. The default
-/// for bare `Commands`, and a wildcard edge in the dependency graph.
+/// Wildcard output declaration, crate-internal only: the runner's raw
+/// per-invocation buffer and engine tests. There is no public wildcard —
+/// every system declares its output set.
 pub struct Anything;
 
 /// Membership-proof marker: matched by reflexivity.
@@ -336,8 +337,9 @@ all_tuples!(impl_declaration_list_tuple, 1, 8, T);
 
 /// A bowl-level entity schema: the set of entity *shapes* derived writes
 /// are allowed to produce. Implemented by `#[derive(Schema)]` on a
-/// named-field struct whose field types are shape tuples; register with
-/// [`Bowl::with_schema`](crate::Bowl::with_schema).
+/// named-field struct whose field types are shape tuples; installed at
+/// construction via [`BowlBuilder::schema`](crate::BowlBuilder::schema)
+/// or a plugin's fragment.
 pub trait Schema: 'static {
     fn shapes() -> Vec<ShapeDesc>;
 }
