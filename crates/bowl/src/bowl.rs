@@ -1054,10 +1054,12 @@ impl Drop for ScopeTimer<'_> {
 /// A spawned system run that aborts if the runner drops it (preemption
 /// discards read-only work; a detached task must not keep holding cell
 /// guards).
+#[cfg(feature = "parallel")]
 struct SpawnedRun<T> {
     handle: tokio::task::JoinHandle<T>,
 }
 
+#[cfg(feature = "parallel")]
 impl<T> std::future::Future for SpawnedRun<T> {
     type Output = T;
 
@@ -1071,10 +1073,29 @@ impl<T> std::future::Future for SpawnedRun<T> {
     }
 }
 
+#[cfg(feature = "parallel")]
 impl<T> Drop for SpawnedRun<T> {
     fn drop(&mut self) {
         self.handle.abort();
     }
+}
+
+/// Dispatches a planned run: onto ambient tokio workers under the
+/// `parallel` feature (falling back to cooperative polling without a
+/// runtime), always cooperative otherwise — the engine itself stays
+/// executor-agnostic.
+fn dispatch_run(
+    run: impl std::future::Future<Output = (SystemInvocation, SystemRun)> + Send + 'static,
+) -> futures::future::BoxFuture<'static, (SystemInvocation, SystemRun)> {
+    #[cfg(feature = "parallel")]
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            return Box::pin(SpawnedRun {
+                handle: handle.spawn(run),
+            });
+        }
+    }
+    Box::pin(run)
 }
 
 /// Poll-time measuring wrapper: charges only the time spent inside the
@@ -2224,21 +2245,12 @@ impl Bowl {
                             let run = timed.await;
                             (owner, run)
                         };
-                        // Parallel execution when an executor is ambient:
-                        // planned runs are owned + `Send`, `Access`
-                        // scheduling already keeps conflicting rows apart,
-                        // and commits stay serialized on the driver. Without
-                        // a runtime (plain block_on tests) runs poll
-                        // cooperatively on the driver, as before.
-                        let run: futures::future::BoxFuture<
-                            'static,
-                            (SystemInvocation, SystemRun),
-                        > = match tokio::runtime::Handle::try_current() {
-                            Ok(handle) => Box::pin(SpawnedRun {
-                                handle: handle.spawn(run),
-                            }),
-                            Err(_) => Box::pin(run),
-                        };
+                        // Parallel execution when an executor is ambient
+                        // (feature `parallel`): planned runs are owned +
+                        // `Send`, `Access` scheduling already keeps
+                        // conflicting rows apart, and commits stay
+                        // serialized on the driver.
+                        let run = dispatch_run(run);
                         if writer {
                             write_runs.push(run);
                         } else {

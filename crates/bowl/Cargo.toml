@@ -8,5 +8,12 @@ async_fn_traits = "0.1.1"
 futures = "0.3.31"
 macros = { path = "../macros" }
 tracing = "0.1"
-tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio = { version = "1", default-features = false, features = ["rt"], optional = true }
 variadics_please = "2.0.0"
+
+[features]
+# Spawn planned system runs onto an ambient tokio runtime's workers when
+# one is present. On by default; disable for a runtime-agnostic engine
+# (runs then poll cooperatively on the driver).
+default = ["parallel"]
+parallel = ["dep:tokio"]
