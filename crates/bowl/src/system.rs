@@ -1152,6 +1152,15 @@ pub(crate) trait Runnable: Send + Sync {
     }
 }
 
+/// Per-system profiling counters (nanoseconds; poll-time attribution, so
+/// concurrent awaiting of *other* systems is not charged here).
+#[derive(Default)]
+pub struct SystemStats {
+    pub plan_nanos: std::sync::atomic::AtomicU64,
+    pub run_nanos: std::sync::atomic::AtomicU64,
+    pub runs: std::sync::atomic::AtomicU64,
+}
+
 /// Type-erased registered system.
 #[derive(Clone)]
 pub struct BoxedSystem {
@@ -1173,6 +1182,8 @@ pub struct BoxedSystem {
     /// against; planning is skipped while no interested store moves past
     /// it. Reset on conflict deferral and stale commits.
     pub(crate) planned_mark: Arc<std::sync::atomic::AtomicU64>,
+    /// Profiling counters, surfaced by [`crate::Bowl::profile_all`].
+    pub(crate) stats: Arc<SystemStats>,
 }
 
 impl BoxedSystem {
@@ -1191,6 +1202,7 @@ impl BoxedSystem {
             declared_outputs: declared_outputs.map(Arc::new),
             interest: interest.map(Arc::new),
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stats: Arc::new(SystemStats::default()),
         }
     }
 
@@ -1686,6 +1698,7 @@ where
             declared_outputs,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stats: Arc::new(SystemStats::default()),
         }
     }
 }
@@ -1719,6 +1732,7 @@ where
             declared_outputs,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stats: Arc::new(SystemStats::default()),
         }
     }
 }
@@ -1752,6 +1766,7 @@ where
             declared_outputs,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stats: Arc::new(SystemStats::default()),
         }
     }
 }

@@ -926,6 +926,62 @@ impl BowlBuilder {
 /// Debug counters for profiling settle behavior (debug builds only).
 pub static SETTLE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static GENERATION_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Engine-internal time buckets (nanoseconds, process-global): where a
+/// settle's wall time goes when it is not inside a system.
+pub static SNAPSHOT_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static COMMIT_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static SETTLE_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static WAVE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// One system's profile row: registration name plus cumulative counters.
+pub struct ProfileEntry {
+    pub name: &'static str,
+    pub runs: u64,
+    pub plan_nanos: u64,
+    pub run_nanos: u64,
+}
+
+/// Adds elapsed time to a global bucket on drop.
+struct ScopeTimer<'a>(&'a std::sync::atomic::AtomicU64, std::time::Instant);
+
+impl Drop for ScopeTimer<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_add(
+            self.1.elapsed().as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    }
+}
+
+/// Poll-time measuring wrapper: charges only the time spent inside the
+/// inner future's `poll` to the owning system, so awaiting siblings in the
+/// same wave is not misattributed.
+struct TimedRun<F> {
+    inner: F,
+    stats: Arc<crate::system::SystemStats>,
+}
+
+impl<F: std::future::Future + Unpin> std::future::Future for TimedRun<F> {
+    type Output = F::Output;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let start = std::time::Instant::now();
+        let result = std::pin::Pin::new(&mut self.inner).poll(cx);
+        self.stats.run_nanos.fetch_add(
+            start.elapsed().as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        if result.is_ready() {
+            self.stats
+                .runs
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        result
+    }
+}
 
 impl Bowl {
     /// Starts building a bowl — the only construction path. See
@@ -1166,6 +1222,28 @@ impl Bowl {
     /// rows memoized, the wrong phase, the wrong system name entirely — or
     /// ambient staleness, where the system's `View`s moved but its tracked
     /// deps did not ([`ExplainReport::stale_views`]).
+    /// Cumulative per-system profile (plan time, poll time, completed
+    /// runs) in registration order.
+    pub async fn profile_all(&self) -> Vec<ProfileEntry> {
+        let state = self.inner.state.lock().await;
+        state
+            .systems
+            .iter()
+            .map(|system| ProfileEntry {
+                name: system.name,
+                runs: system.stats.runs.load(std::sync::atomic::Ordering::Relaxed),
+                plan_nanos: system
+                    .stats
+                    .plan_nanos
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                run_nanos: system
+                    .stats
+                    .run_nanos
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            })
+            .collect()
+    }
+
     /// [`Bowl::explain`] for every registered system, in registration
     /// order, with each system's name — the end-of-run diagnostic dump.
     pub async fn explain_all(&self) -> Vec<(&'static str, ExplainReport)> {
@@ -1432,6 +1510,8 @@ impl Bowl {
         if cfg!(debug_assertions) {
             SETTLE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
+        let settle_start = std::time::Instant::now();
+        let _settle_timer = ScopeTimer(&SETTLE_NANOS, settle_start);
         // Settled fast path: with nothing pending, running, changed, or
         // deferred there is no epoch to drive (and none to freeze), so the
         // guard bookkeeping is skipped entirely — settled reads keep their
@@ -1829,7 +1909,13 @@ impl Bowl {
 
             if needs_plan {
                 deferred_conflicts = false;
+                WAVE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let snapshot_start = std::time::Instant::now();
                 let snapshot = self.snapshot().await;
+                SNAPSHOT_NANOS.fetch_add(
+                    snapshot_start.elapsed().as_nanos() as u64,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 // Planner memoization: a system whose interested stores
                 // haven't moved past its last planned mark cannot have new
                 // rows or stale deps. When *no* system needs planning the
@@ -1877,45 +1963,53 @@ impl Bowl {
                         }
                     }
                 }
-                for planned in systems
+                for system in systems
                     .iter()
-                    .filter(|system| {
-                        system.phase == phase && system.needs_planning(&snapshot)
-                    })
-                    .flat_map(|system| {
-                        system.stream_runs(self.clone(), Arc::clone(&snapshot), memo)
-                    })
+                    .filter(|system| system.phase == phase && system.needs_planning(&snapshot))
                 {
-                    if !running.insert(planned.owner.clone()) {
-                        continue;
-                    }
+                    let plan_start = std::time::Instant::now();
+                    let planned_runs =
+                        system.stream_runs(self.clone(), Arc::clone(&snapshot), memo);
+                    system.stats.plan_nanos.fetch_add(
+                        plan_start.elapsed().as_nanos() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                    for planned in planned_runs {
+                        if !running.insert(planned.owner.clone()) {
+                            continue;
+                        }
 
-                    if conflicts_with_running(&planned.access, &running_access) {
-                        running.remove(&planned.owner);
-                        deferred_conflicts = true;
-                        // The deferred row must be replanned once the
-                        // conflict frees, even if no store moves.
-                        systems[planned.owner.system.0].reset_planned_mark();
-                        continue;
-                    }
+                        if conflicts_with_running(&planned.access, &running_access) {
+                            running.remove(&planned.owner);
+                            deferred_conflicts = true;
+                            // The deferred row must be replanned once the
+                            // conflict frees, even if no store moves.
+                            systems[planned.owner.system.0].reset_planned_mark();
+                            continue;
+                        }
 
-                    let writer = planned
-                        .access
-                        .iter()
-                        .any(|access| access.kind == AccessKind::Write);
-                    let owner = planned.owner;
-                    running_access.insert(owner.clone(), planned.access);
-                    if !writer {
-                        read_owners.insert(owner.clone());
-                    }
-                    let run = async move {
-                        let run = planned.run.await;
-                        (owner, run)
-                    };
-                    if writer {
-                        write_runs.push(run);
-                    } else {
-                        read_runs.push(run);
+                        let writer = planned
+                            .access
+                            .iter()
+                            .any(|access| access.kind == AccessKind::Write);
+                        let owner = planned.owner;
+                        running_access.insert(owner.clone(), planned.access);
+                        if !writer {
+                            read_owners.insert(owner.clone());
+                        }
+                        let timed = TimedRun {
+                            inner: planned.run,
+                            stats: Arc::clone(&system.stats),
+                        };
+                        let run = async move {
+                            let run = timed.await;
+                            (owner, run)
+                        };
+                        if writer {
+                            write_runs.push(run);
+                        } else {
+                            read_runs.push(run);
+                        }
                     }
                 }
             }
@@ -2573,6 +2667,7 @@ async fn commit_system_runs(
     state: &Mutex<State>,
     runs: Vec<SystemRun>,
 ) -> CommitProgress {
+    let _commit_timer = ScopeTimer(&COMMIT_NANOS, std::time::Instant::now());
     let mut progress = CommitProgress::default();
     for run in runs {
         let next = commit_system_run(memo, state, run, None).await;

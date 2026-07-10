@@ -231,22 +231,31 @@ async fn main() {
         count = hover_facts.collect().len(),
         "hover facts after request"
     );
-    // End-of-run engine diagnostics: per-system explain reports plus the
-    // settle counters, so a slow run explains itself.
+    // End-of-run engine diagnostics: per-system explain + profile plus
+    // the engine-internal time buckets, so a slow run explains itself.
+    let (settle_us, snapshot_us, commit_us, waves) = bowl::bowl_debug_buckets();
     eprintln!(
-        "\n== explain ==  settles: {}  generations: {}",
+        "\n== engine ==  settles: {}  generations: {}  waves: {}",
         bowl::bowl_debug_settles(),
-        bowl::bowl_debug_generations()
+        bowl::bowl_debug_generations(),
+        waves,
     );
     eprintln!(
-        "{:<58} {:>9} {:>8} {:>9} {:>11}",
-        "system", "phase", "matched", "memoized", "stale_views"
+        "settle total: {settle_us}us  snapshots: {snapshot_us}us  commits: {commit_us}us"
     );
-    for (name, report) in db.explain_all().await {
+    let profiles = db.profile_all().await;
+    let mut rows: Vec<_> = db.explain_all().await.into_iter().zip(profiles).collect();
+    // Biggest timesink first.
+    rows.sort_by_key(|(_, profile)| std::cmp::Reverse(profile.plan_nanos + profile.run_nanos));
+    eprintln!(
+        "{:<58} {:>9} {:>8} {:>9} {:>6} {:>9} {:>9}",
+        "system", "phase", "matched", "memoized", "runs", "plan_us", "run_us"
+    );
+    for ((name, report), profile) in rows {
         // Strip module paths (also inside generics) for a readable table.
         let name = strip_module_paths(name);
         eprintln!(
-            "{:<58} {:>9} {:>8} {:>9} {:>11}",
+            "{:<58} {:>9} {:>8} {:>9} {:>6} {:>9} {:>9}",
             name,
             report
                 .phase
@@ -254,7 +263,9 @@ async fn main() {
                 .unwrap_or_default(),
             report.matched_rows,
             report.memoized_rows,
-            report.stale_views
+            profile.runs,
+            profile.plan_nanos / 1_000,
+            profile.run_nanos / 1_000,
         );
     }
 }

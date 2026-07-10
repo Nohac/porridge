@@ -99,8 +99,8 @@ mod world;
 
 pub use bowl::{
     BoundEntity, Bowl, BowlBuilder, BowlEntity, Bundle, CommitLimit, ExplainReport, ExternalScoop,
-    InsertBuilder, InsertedEntity, Plugin, Registrar, RemoveBuilder, ScoopBuilder, TakeBundle,
-    TakeError,
+    InsertBuilder, InsertedEntity, Plugin, ProfileEntry, Registrar, RemoveBuilder, ScoopBuilder,
+    TakeBundle, TakeError,
 };
 pub use commands::{Commands, EntityCommands};
 pub use declare::{
@@ -133,6 +133,18 @@ pub fn bowl_debug_settles() -> u64 {
 #[doc(hidden)]
 pub fn bowl_debug_generations() -> u64 {
     bowl::GENERATION_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+/// Engine-internal time buckets in microseconds:
+/// (settle total, snapshot, commit, waves).
+#[doc(hidden)]
+pub fn bowl_debug_buckets() -> (u64, u64, u64, u64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (
+        bowl::SETTLE_NANOS.load(Relaxed) / 1_000,
+        bowl::SNAPSHOT_NANOS.load(Relaxed) / 1_000,
+        bowl::COMMIT_NANOS.load(Relaxed) / 1_000,
+        bowl::WAVE_COUNT.load(Relaxed),
+    )
 }
 
 pub use macros::SystemParam;
