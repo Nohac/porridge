@@ -1853,14 +1853,13 @@ impl Bowl {
                         }
                     }
                 }
-                let memo_snapshot = Arc::new(memo.clone());
                 for planned in systems
                     .iter()
                     .filter(|system| {
                         system.phase == phase && system.needs_planning(&snapshot)
                     })
                     .flat_map(|system| {
-                        system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo_snapshot)
+                        system.stream_runs(self.clone(), Arc::clone(&snapshot), memo)
                     })
                 {
                     if !running.insert(planned.owner.clone()) {

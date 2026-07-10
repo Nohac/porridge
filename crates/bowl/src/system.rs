@@ -1143,7 +1143,7 @@ pub(crate) trait Runnable: Send + Sync {
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>>;
 
     fn run_settled<'a>(
@@ -1435,11 +1435,18 @@ where
 
     fn stream_runs<'a>(
         &'a self,
-        _bowl: Bowl,
+        bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        if !self.has_work(&snapshot, memo) {
+        // Pre-plan the inner system now (planning is deterministic over the
+        // captured snapshot + memo), so the run future carries the planned
+        // rows instead of a memo snapshot — this is what lets the runner
+        // stop cloning the memo per wave.
+        let inner = self
+            .system
+            .stream_runs(bowl, Arc::clone(&snapshot), memo);
+        if inner.is_empty() {
             return Vec::new();
         }
 
@@ -1447,8 +1454,30 @@ where
             system: self.id,
             keys: Vec::new(),
         };
-        let memo = Arc::clone(memo);
-        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
+        let hook_owner = owner.clone();
+        let run = async move {
+            // The hook fires before the batch, its output prepended.
+            let commands =
+                Commands::new(snapshot.spawn_slots(&hook_owner), snapshot.entity_allocator());
+            self.callback.run(commands.retype());
+            let start_output = SystemOutput {
+                owner: hook_owner,
+                commands: commands.take(),
+            };
+
+            let runs = join_all(inner.into_iter().map(|planned| planned.run)).await;
+            let mut merged = SystemRun::empty();
+            merged.completed = true;
+            for inner_run in runs {
+                merged.completed &= inner_run.completed;
+                merged.outputs.extend(inner_run.outputs);
+                merged.memo_updates.extend(inner_run.memo_updates);
+                merged.writes.extend(inner_run.writes);
+            }
+            merged.outputs.insert(0, start_output);
+            merged
+        }
+        .boxed();
 
         vec![PlannedSystemRun {
             owner,
@@ -1505,11 +1534,16 @@ where
 
     fn stream_runs<'a>(
         &'a self,
-        _bowl: Bowl,
+        bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
-        if !self.has_work(&snapshot, memo) {
+        // Pre-planned like `OnStart`; the completion hook appends its
+        // output after the batch, only when the batch produced outputs.
+        let inner = self
+            .system
+            .stream_runs(bowl, Arc::clone(&snapshot), memo);
+        if inner.is_empty() {
             return Vec::new();
         }
 
@@ -1517,8 +1551,33 @@ where
             system: self.id,
             keys: Vec::new(),
         };
-        let memo = Arc::clone(memo);
-        let run = async move { self.run(_bowl, &snapshot, &memo).await }.boxed();
+        let hook_owner = owner.clone();
+        let run = async move {
+            let runs = join_all(inner.into_iter().map(|planned| planned.run)).await;
+            let mut merged = SystemRun::empty();
+            merged.completed = true;
+            for inner_run in runs {
+                merged.completed &= inner_run.completed;
+                merged.outputs.extend(inner_run.outputs);
+                merged.memo_updates.extend(inner_run.memo_updates);
+                merged.writes.extend(inner_run.writes);
+            }
+
+            if !merged.outputs.is_empty() {
+                let commands = Commands::new(
+                    snapshot.spawn_slots(&hook_owner),
+                    snapshot.entity_allocator(),
+                );
+                self.callback.run(commands.retype());
+                merged.outputs.push(SystemOutput {
+                    owner: hook_owner,
+                    commands: commands.take(),
+                });
+            }
+
+            merged
+        }
+        .boxed();
 
         vec![PlannedSystemRun {
             owner,
@@ -1558,7 +1617,7 @@ where
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
         self.system.stream_runs(bowl, snapshot, memo)
     }
@@ -1749,7 +1808,7 @@ impl BoxedSystem {
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
         self.runnable.stream_runs(bowl, snapshot, memo)
     }
@@ -1873,7 +1932,7 @@ where
         &'a self,
         bowl: Bowl,
         snapshot: Arc<Snapshot>,
-        memo: &Arc<HashMap<SystemInvocation, MemoEntry>>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
     ) -> Vec<PlannedSystemRun<'a>> {
         plan_invocations::<F::Param>(self.id, &snapshot, memo)
             .invocations
