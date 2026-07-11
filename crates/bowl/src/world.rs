@@ -1583,6 +1583,12 @@ impl World {
         }
 
         if changed {
+            // External mutation moves the store for planner gating and
+            // delta hints, exactly like the insert and removal paths.
+            if let Some(store) = self.store_mut_existing::<T>() {
+                store.watermark = store.watermark.max(next_revision.0);
+            }
+            self.log_write(TypeId::of::<T>(), entity);
             self.revision = next_revision;
         }
 
@@ -1629,6 +1635,12 @@ impl World {
         }
 
         if changed {
+            // External mutation moves the store for planner gating and
+            // delta hints, exactly like the insert and removal paths.
+            if let Some(store) = self.store_mut_existing::<T>() {
+                store.watermark = store.watermark.max(next_revision.0);
+            }
+            self.log_write(TypeId::of::<T>(), entity);
             self.revision = next_revision;
         }
 

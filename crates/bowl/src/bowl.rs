@@ -2001,6 +2001,12 @@ impl Bowl {
                         let mut state = lock_state(&self.inner.state).await;
                         state.preempt_restart = false;
                     }
+                    // Aborted in-flight runs advanced planned marks for
+                    // work that never committed; force full replans so the
+                    // restarted phases see those rows again.
+                    for system in systems.iter() {
+                        system.reset_full();
+                    }
                     // A preempted generation restarts through the Startup
                     // slot so settle-scoped claims can be retracted before
                     // fresh derivations plan (spec/epochs.md).
@@ -2157,7 +2163,7 @@ impl Bowl {
                                 commit_budget.record(progress.commits);
                                 phase_changed |= progress.needs_followup;
                                 if progress.stale {
-                                    systems[owner.system.0].reset_planned_mark();
+                                    systems[owner.system.0].force_replan(&owner.keys);
                                 }
                             }
                             continue;
@@ -2173,6 +2179,7 @@ impl Bowl {
                     // this epoch plans only the entities written since its
                     // last plan; anything else (fresh registration, epoch
                     // roll, resets) plans fully once and joins the deltas.
+                    let forced = system.take_forced_dirty();
                     let hint: Option<Vec<Entity>> = if system.delta_eligible
                         && system
                             .plan_epoch
@@ -2190,10 +2197,12 @@ impl Bowl {
                             .filter(|(type_id, _)| interest.contains(type_id))
                             .map(|(_, entity)| *entity)
                             .collect();
+                        entities.extend(forced);
                         entities.sort_unstable();
                         entities.dedup();
                         Some(entities)
                     } else {
+                        // Full plan covers any forced rows implicitly.
                         None
                     };
                     let planned_runs = system.stream_runs(
@@ -2220,11 +2229,13 @@ impl Bowl {
                         }
 
                         if conflicts_with_running(&planned.access, &running_access) {
-                            running.remove(&planned.owner);
                             deferred_conflicts = true;
                             // The deferred row must be replanned once the
-                            // conflict frees, even if no store moves.
-                            systems[planned.owner.system.0].reset_planned_mark();
+                            // conflict frees, even if no store moves —
+                            // row-granular, so the rest of the system's
+                            // plan stays memoized.
+                            systems[planned.owner.system.0].force_replan(&planned.owner.keys);
+                            running.remove(&planned.owner);
                             continue;
                         }
 
@@ -2293,8 +2304,8 @@ impl Bowl {
                 followup |= progress.needs_followup;
                 if progress.stale {
                     // A discarded stale run leaves its row memo-invalid;
-                    // force its system back through planning.
-                    systems[owner.system.0].reset_planned_mark();
+                    // force it (row-granular) back through planning.
+                    systems[owner.system.0].force_replan(&owner.keys);
                 }
                 stale |= progress.stale;
             }
@@ -2691,6 +2702,12 @@ impl Drop for EvaluationGuard {
         state.running_generation = None;
         if state.pending_generation.is_none() {
             state.pending_generation = Some(self.generation);
+        }
+        // The abandoned run advanced planned marks and delta cursors for
+        // work it never committed; force every system through a full plan
+        // so the promoted driver sees the uncommitted rows again.
+        for system in &state.systems {
+            system.reset_full();
         }
         // Abandoned run: wake everyone regardless of target, so a waiter
         // can be promoted to a fresh driver.
@@ -6294,6 +6311,52 @@ mod tests {
         });
     }
 
+    static GATED_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    async fn gated_stage(
+        demand: Query<Entity, With<Note>>,
+        rows: Query<(Entity, &A)>,
+        mut commands: Commands<(B,)>,
+    ) {
+        let _gate = demand.item();
+        let (entity, a) = rows.item();
+        GATED_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(entity).insert(B(a.0));
+    }
+
+    /// Multi-driver delta narrowing: a tiny gate query (≤1 row by store
+    /// bound) must not disqualify the row query from delta planning — one
+    /// touched row replans one product row. A *dirty* gate invalidates
+    /// every product row, so it falls back to the full plan.
+    #[test]
+    fn multi_driver_systems_stay_delta_planned() {
+        GATED_RUNS.store(0, Ordering::SeqCst);
+        block_on(async {
+            let bowl = Bowl::builder().system(gated_stage).build();
+
+            bowl.insert((Note,)).await;
+            let mut entities = Vec::new();
+            for index in 0..10 {
+                entities.push(bowl.insert((A(index),)).await);
+            }
+            bowl.scoop::<Query<(Entity, &B)>>().await;
+            assert_eq!(GATED_RUNS.load(Ordering::SeqCst), 10);
+
+            // One touched row: exactly one product rerun.
+            bowl.entity(entities[2].entity()).insert((A(100),)).await;
+            bowl.scoop::<Query<(Entity, &B)>>().await;
+            assert_eq!(
+                GATED_RUNS.load(Ordering::SeqCst),
+                11,
+                "a tiny gate must not force full replans"
+            );
+
+            // Idle settle: nothing.
+            bowl.scoop::<Query<(Entity, &B)>>().await;
+            assert_eq!(GATED_RUNS.load(Ordering::SeqCst), 11);
+        });
+    }
+
     type NoteShape = (Note, Count, Option<B>);
 
     static FACET_ANCHOR_RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -6714,6 +6777,62 @@ mod tests {
                 .await;
             let noted = bowl.scoop::<Query<Entity, With<Note>>>().await;
             assert_eq!(noted.collect().len(), 3);
+        });
+    }
+
+    struct Stamp(u32);
+    impl Component for Stamp {}
+
+    async fn stamp_member_value(
+        parents: Query<(Entity, &A, &Members)>,
+        member: Query<(Entity, &B), Where<In<Members>>>,
+        mut commands: Commands<Anything>,
+    ) {
+        let (_parent, _a, _members) = parents.item();
+        let (member_entity, b) = member.item();
+        commands.entity(member_entity).insert(Stamp(b.0));
+    }
+
+    /// A member's pure *value* change never moves the inverse's
+    /// fingerprint (membership is entity-id based) nor any provider
+    /// store, so a delta-hinted provider row set would miss the pair —
+    /// unless the hint translates member writes to their providers
+    /// through the edge. Two providers keep the driver large enough to
+    /// actually plan from hints instead of full-enumerating.
+    #[test]
+    fn member_value_changes_replan_hinted_pairs() {
+        block_on(async {
+            let bowl = Bowl::builder().system(stamp_member_value).build();
+
+            let parent_one = bowl.insert((A(1),)).await;
+            let parent_two = bowl.insert((A(2),)).await;
+            let member = bowl.insert((B(10), MemberOf(parent_one.entity()))).await;
+            bowl.insert((B(20), MemberOf(parent_two.entity()))).await;
+
+            let stamps = bowl.scoop::<Query<(Entity, &Stamp)>>().await;
+            let mut values: Vec<u32> =
+                stamps.collect().into_iter().map(|(_, s)| s.0).collect();
+            values.sort_unstable();
+            assert_eq!(values, vec![10, 20]);
+
+            // External mutation of the member's value: only the B store
+            // moves; the provider row is untouched.
+            let sources = bowl.scoop::<Query<(Entity, Mut<B>)>>().await;
+            for (entity, value) in sources.collect() {
+                if entity == member.entity() {
+                    value.with_latest(|b| b.0 = 11).await;
+                }
+            }
+
+            let stamps = bowl.scoop::<Query<(Entity, &Stamp)>>().await;
+            let mut values: Vec<u32> =
+                stamps.collect().into_iter().map(|(_, s)| s.0).collect();
+            values.sort_unstable();
+            assert_eq!(
+                values,
+                vec![11, 20],
+                "the changed member's pair must replan through the edge translation"
+            );
         });
     }
 

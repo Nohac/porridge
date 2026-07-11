@@ -18,7 +18,8 @@ use std::time::Duration;
 
 use benches::{
     Def, Digest, PairMark, Parity, ParityNote, Path, Text, W1, W2, W3, bump_all_sources,
-    compute_bowl, defs_bowl, file_name, file_pipeline_bowl, fleet_bowl, in_join_bowl,
+    compute_bowl, defs_bowl, file_name, file_pipeline_bowl, fleet_bowl, gated_fleet_bowl,
+    in_join_bowl,
     parity_bowl, scan_bowl, settle_files, spawn_parity_bowl, touch_file, touch_group,
     touch_slot0, wide_row_bowl,
 };
@@ -241,6 +242,23 @@ fn planner_gating(c: &mut Criterion) {
                 black_box(block_on(touch_slot0(&bowl, target, bump)))
             })
         });
+    }
+
+    // The dsql shape: every system pairs its row query with a demand gate
+    // and singleton config (multi-driver products).
+    for rows in [64usize, 512] {
+        let (bowl, target) = block_on(gated_fleet_bowl(rows));
+        let mut bump = 0u64;
+        group.bench_with_input(
+            BenchmarkId::new("gated", rows),
+            &rows,
+            |b, _| {
+                b.iter(|| {
+                    bump += 1;
+                    black_box(block_on(touch_slot0(&bowl, target, bump)))
+                })
+            },
+        );
     }
 
     group.finish();

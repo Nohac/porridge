@@ -512,6 +512,38 @@ let rows = diagnostics.collect();
   execute), and a heavier-row bench matrix. Pure racing readers use
   `.last_settled()` to skip the settle queue (dogfooded in the storm;
   commit-bucket lock waits collapsed 108ms → 6.6ms).
+- **Delta widening round (dsql callgrind feedback: plan_invocations was
+  77% of the main thread because every real system is multi-Query).**
+  Done: multi-driver systems stay delta-eligible — `states_hinted`
+  narrows at plan time (hint the one driver whose `row_bound` — O(1)
+  store-size lookups, never enumerating — exceeds 1; tiny gates like
+  demand markers and singleton configs enumerate fully; a *dirty* tiny
+  gate or several large drivers fall back to the full product). Done:
+  conflict-deferral and stale-commit replans are row-granular
+  (`force_replan(keys)` folds the rows into the next hint) instead of
+  resetting the system to a full plan — the suspected source of dsql's
+  absolute planning growth on write-heavy waves. New
+  `planner_gating/gated` bench models the dsql shape (demand + config +
+  row query). Still open, next in line: **hint Eq/In joins** — pairs to
+  enumerate = dirty providers' pairs ∪ pairs of dirty members (member →
+  provider via the edge component for `In`, via the fingerprint bucket
+  for `Eq`); the pair expansion machinery already has both lookups.
+  Validate against dsql's edit_cost harness
+  (`EDIT_COST_PROJECT=... cargo test -p dsql-project --test edit_cost`).
+- **Schema authoring feedback (dsql migration)**: (a) shapes cap at 8
+  parts and overflow fails as an inscrutable "no matching shape" — the
+  `#[derive(Schema)]` macro should emit a compile error naming the cap
+  (and the `all_tuples!` ceilings could lift to 12); (b) document that
+  conformance accumulates a system's writes per entity, so
+  spawn-then-stamp merges into one bundle check (move linking components
+  into the spawn bundle, two-variant match like the playground's
+  namespace pattern); (c) the "keep groups disjoint" rule undersells the
+  ambiguity: a component reachable through two groups in one
+  `Commands<S>` breaks bare `entity().insert(X)` proofs while full
+  bundles still work — needs a doc section and ideally a better
+  diagnostic; (d) document the convention that engine-maintained
+  inverses (`Children`-style) get degenerate one-part shapes for
+  universe closure.
 - **Congestion roadmap** (from the lock/read telemetry). Done:
   generation-targeted waiter wakeups (waiters register once per wait and
   only satisfied ones wake; the abandoned-run path still broadcasts so a

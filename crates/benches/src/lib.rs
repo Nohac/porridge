@@ -4,7 +4,7 @@
 //! a derive pipeline, per-row checks with an ambient `View`) without the toy
 //! language, so benchmark numbers isolate engine costs from parsing.
 
-use bowl::{Bowl, Commands, Component, Cow, DerivedFrom, Entity, Eq, In, Query, View, Where};
+use bowl::{Bowl, Commands, Component, Cow, DerivedFrom, Entity, Eq, In, Query, View, Where, With};
 
 #[derive(Component, Hash, Clone, PartialEq, std::cmp::Eq)]
 #[component(hash)]
@@ -371,4 +371,45 @@ pub async fn compute_bowl(rows: usize) -> Bowl {
         bowl.insert((Work(index as u64),)).await;
     }
     bowl
+}
+
+/// dsql-shaped fleet: every slot system pairs its row query with a tiny
+/// demand gate and a singleton config — the multi-driver profile that
+/// used to fall out of delta planning entirely.
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct FleetDemand;
+
+#[derive(Component, Hash)]
+#[component(hash)]
+pub struct FleetConfig(pub u64);
+
+pub async fn observe_slot_gated<const N: usize>(
+    demand: Query<Entity, With<FleetDemand>>,
+    config: Query<(Entity, &FleetConfig)>,
+    rows: Query<(Entity, &Slot<N>)>,
+) {
+    let _gate = demand.item();
+    let (_config_entity, _config) = config.item();
+    let (_entity, _slot) = rows.item();
+}
+
+macro_rules! gated_fleet_builder {
+    ($($n:literal),*) => {{
+        let builder = Bowl::builder();
+        $(let builder = builder.system(observe_slot_gated::<$n>);)*
+        builder.build()
+    }};
+}
+
+/// 32 gated slot systems, `rows` entities per slot, settled.
+pub async fn gated_fleet_bowl(rows: usize) -> (Bowl, Entity) {
+    let bowl = gated_fleet_builder!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+    bowl.insert((FleetDemand,)).await;
+    bowl.insert((FleetConfig(1),)).await;
+    fleet_insert!(bowl, rows; 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+    let inserted = bowl.insert((Slot::<0>(999),)).await;
+    let target = inserted.entity();
+    bowl.scoop::<Query<(Entity, &Slot<0>)>>().await;
+    (bowl, target)
 }

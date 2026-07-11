@@ -8,7 +8,7 @@ use std::{
 use variadics_please::all_tuples;
 
 use crate::{
-    Bowl, Component, Entity,
+    Bowl, Component, Entity, RelationshipTarget,
     declare::FacetKind,
     world::{ComponentMut, ComponentRef, Revision, Snapshot, World},
 };
@@ -807,6 +807,10 @@ pub trait QueryParam {
     fn interest_types() -> Option<Vec<TypeId>> {
         None
     }
+    /// Cheap upper bound on this param's row count (O(1) store sizes).
+    fn row_bound(_snapshot: &Snapshot) -> usize {
+        usize::MAX
+    }
     /// Returns entity keys that identify the invocation for this row.
     fn keys(state: &Self::State) -> Vec<Entity>;
     /// Returns tracked component revisions that should invalidate this row.
@@ -1570,6 +1574,35 @@ macro_rules! impl_entity_query_param {
                 }
             }
 
+            fn interest_types() -> Option<Vec<TypeId>> {
+                const PARTS: usize = [$(stringify!($P)),*].len();
+                let mut interest: Vec<TypeId> = FH::parts()
+                    .into_iter()
+                    .map(|part| part.type_id)
+                    .collect();
+                if PARTS == 0 && interest.is_empty() {
+                    // Bare untyped anchor: the dense id scan. A
+                    // candidate-driving filter can still bound the query
+                    // (see `Query::interest_types`).
+                    return None;
+                }
+                $(interest.extend($P::interest_types()?);)*
+                Some(interest)
+            }
+
+            fn row_bound(snapshot: &Snapshot) -> usize {
+                // The row set is at most the smallest driving store —
+                // parts or the facet's required stores; optional and
+                // tracking parts report `usize::MAX` and never bound.
+                let mut bound = usize::MAX;
+                $(bound = bound.min($P::store_len(snapshot));)*
+                for part in FH::parts() {
+                    if !part.optional {
+                        bound = bound.min(snapshot.store_len_dyn(part.type_id));
+                    }
+                }
+                bound
+            }
 
             fn keys(state: &Self::State) -> Vec<Entity> {
                 vec![*state]
@@ -1667,6 +1700,26 @@ pub trait QueryFilter<Q: QueryParam> {
     fn interest_types() -> Option<Vec<TypeId>> {
         None
     }
+    /// Cheap upper bound on how many entities this filter can match
+    /// (O(1) store-size lookups only). `usize::MAX` = unbounded.
+    fn candidate_bound(_snapshot: &Snapshot) -> usize {
+        usize::MAX
+    }
+    /// Whether this filter *drives* candidate enumeration
+    /// (`entity_candidates` returns `Some`), making an otherwise
+    /// unbounded row set store-determined. Negative filters (`Without`)
+    /// prune but never drive, and must stay `false`.
+    fn drives_candidates() -> bool {
+        false
+    }
+    /// Providers whose pairs include a hinted member entity. Bound joins
+    /// enumerate rows from their provider during product construction, so
+    /// a member-side write replans by hinting the provider it pairs with;
+    /// a pure value change never moves the provider's own stores, which
+    /// is why this translation exists.
+    fn hint_providers(_snapshot: &Snapshot, _hint: &[Entity]) -> Vec<Entity> {
+        Vec::new()
+    }
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access>;
     /// Component-level access covering every row this filter inspects.
@@ -1729,6 +1782,14 @@ where
 {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
         snapshot.has::<T>(state.entity())
+    }
+
+    fn candidate_bound(snapshot: &Snapshot) -> usize {
+        snapshot.store_len_dyn(TypeId::of::<T>()).min(usize::MAX - 1)
+    }
+
+    fn drives_candidates() -> bool {
+        true
     }
 
     fn interest_types() -> Option<Vec<TypeId>> {
@@ -1800,13 +1861,27 @@ where
     fn bound_key_types() -> Vec<(TypeId, &'static str)> {
         vec![(TypeId::of::<T>(), std::any::type_name::<T>())]
     }
+
+    fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
+        // A changed member pairs with every entity sharing its key
+        // fingerprint; the bucket includes fellow members, which is
+        // harmless (extra hint entities are just extra probes).
+        let mut providers = Vec::new();
+        for member in hint {
+            if let Some(fingerprint) = snapshot.fingerprint::<T>(*member) {
+                providers
+                    .extend(snapshot.fingerprint_candidates(TypeId::of::<T>(), fingerprint));
+            }
+        }
+        providers
+    }
 }
 
 impl<Q, T> QueryFilter<Q> for Where<In<T>>
 where
     Q: QueryParam,
     Q::State: EntityQueryState,
-    T: Component,
+    T: RelationshipTarget,
 {
     fn matches(_snapshot: &Snapshot, _state: &Q::State) -> bool {
         // Membership pruning happens in the tuple binding pass, against the
@@ -1835,6 +1910,20 @@ where
     fn in_key_types() -> Vec<(TypeId, &'static str)> {
         vec![(TypeId::of::<T>(), std::any::type_name::<T>())]
     }
+
+    fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
+        // A member's pure value change never moves the inverse's
+        // fingerprint (membership is entity-id based), so the provider is
+        // found through the member's edge component instead.
+        hint.iter()
+            .filter_map(|member| {
+                snapshot
+                    .get::<T::Edge>(*member)
+                    .and_then(|edge| edge.relationship_edge())
+                    .map(|edge| edge.target)
+            })
+            .collect()
+    }
 }
 
 /// Conjunction of two system-side filters.
@@ -1850,6 +1939,17 @@ where
 {
     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
         L::matches(snapshot, state) && R::matches(snapshot, state)
+    }
+
+    fn drives_candidates() -> bool {
+        // An intersection is driven when either side is.
+        L::drives_candidates() || R::drives_candidates()
+    }
+
+    fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
+        let mut providers = L::hint_providers(snapshot, hint);
+        providers.extend(R::hint_providers(snapshot, hint));
+        providers
     }
 
     fn interest_types() -> Option<Vec<TypeId>> {

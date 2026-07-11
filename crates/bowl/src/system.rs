@@ -172,8 +172,15 @@ pub enum DeltaShape {
     /// Drives entity rows and can enumerate them from a dirty-entity hint
     /// (a plain tracked `Query`).
     Driver,
-    /// Cannot be hinted (joins, outer joins, always-run params, custom
-    /// params): the owning system always plans fully.
+    /// A single-key bound join (`Where<Eq<K>>`/`Where<In<T>>`): never
+    /// enumerated independently — its rows come from the provider's pair
+    /// list during product construction, so a hinted provider row set
+    /// covers it. Member-side writes replan through
+    /// [`SystemParam::hint_providers`].
+    PairBound,
+    /// Cannot be hinted (compound multi-key joins, outer joins,
+    /// always-run params, custom params): the owning system always plans
+    /// fully.
     Opaque,
 }
 
@@ -192,6 +199,19 @@ pub trait SystemParam {
     /// This param's relation to delta planning; conservative default.
     fn delta_shape() -> DeltaShape {
         DeltaShape::Opaque
+    }
+    /// Providers whose product rows must replan because a hinted entity
+    /// is their pair partner — the member-side translation for bound
+    /// joins. Empty for everything else.
+    fn hint_providers(_snapshot: &Snapshot, _hint: &[Entity]) -> Vec<Entity> {
+        Vec::new()
+    }
+    /// Cheap upper bound on this param's row count (O(1) store sizes
+    /// only; never enumerates). Drivers bounded at ≤1 are "tiny" for
+    /// multi-driver delta narrowing: demand markers and singleton config
+    /// rows stay out of the way of the real row query's hint.
+    fn row_bound(_snapshot: &Snapshot) -> usize {
+        usize::MAX
     }
     fn keys(state: &Self::State) -> Vec<Entity>;
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
@@ -326,9 +346,18 @@ where
     type Item<'a> = Query<Q::Item<'a>, Filter>;
 
     fn interest_types() -> Option<Vec<TypeId>> {
-        let mut interest = Q::interest_types()?;
-        interest.extend(<Filter as QueryFilter<Q>>::interest_types()?);
-        Some(interest)
+        let filter = <Filter as QueryFilter<Q>>::interest_types();
+        match Q::interest_types() {
+            Some(mut interest) => {
+                interest.extend(filter?);
+                Some(interest)
+            }
+            // A dense-scan row set (bare `Query<Entity>`) is still
+            // store-determined when the filter drives its candidate
+            // enumeration (`With<T>`).
+            None if <Filter as QueryFilter<Q>>::drives_candidates() => filter,
+            None => None,
+        }
     }
 
     fn states(snapshot: &Snapshot) -> Vec<Self::State> {
@@ -339,16 +368,27 @@ where
         filtered_rows_from_candidates::<Q, Filter>(snapshot, hint.to_vec())
     }
 
+    fn row_bound(snapshot: &Snapshot) -> usize {
+        Q::row_bound(snapshot).min(<Filter as QueryFilter<Q>>::candidate_bound(snapshot))
+    }
+
     fn delta_shape() -> DeltaShape {
-        // Bound joins enumerate from providers, not hints; everything else
-        // about a plain tracked query is hintable.
         if <Filter as QueryFilter<Q>>::bound_key_types().is_empty()
             && <Filter as QueryFilter<Q>>::in_key_types().is_empty()
         {
             DeltaShape::Driver
+        } else if Self::pair_expandable() {
+            // Single-key bound join: rows come from the provider's pair
+            // list, so a hinted provider covers it; member-side writes
+            // translate through `hint_providers`.
+            DeltaShape::PairBound
         } else {
             DeltaShape::Opaque
         }
+    }
+
+    fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
+        <Filter as QueryFilter<Q>>::hint_providers(snapshot, hint)
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
@@ -725,9 +765,13 @@ macro_rules! impl_system_param_tuple {
                 $(match $P::delta_shape() {
                     DeltaShape::Opaque => return DeltaShape::Opaque,
                     DeltaShape::Driver => drivers += 1,
-                    DeltaShape::Inert => {}
+                    DeltaShape::PairBound | DeltaShape::Inert => {}
                 })*
-                if drivers == 1 {
+                if drivers >= 1 {
+                    // Multi-driver products stay eligible: states_hinted
+                    // narrows at plan time (hint the one non-tiny driver,
+                    // full-plan when several are large or a tiny one is
+                    // dirty).
                     DeltaShape::Driver
                 } else {
                     DeltaShape::Opaque
@@ -735,12 +779,62 @@ macro_rules! impl_system_param_tuple {
             }
 
             fn states_hinted(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Self::State> {
-                // Only reachable when delta-eligible: exactly one driver,
-                // no pair-expandable params, no bound pruning needed.
-                let mut states = Vec::new();
+                // Multi-driver narrowing: real systems pair one large row
+                // query with tiny gates (demand markers, singleton
+                // config). Hint only the large driver; tiny drivers
+                // enumerate fully (bounded ≤1 by O(1) store sizes, so
+                // this never enumerates a big store to find out). Several
+                // large drivers, or a *dirty* tiny driver (its change
+                // invalidates every product row), fall back to the full
+                // product.
+                let mut large = 0usize;
                 $(
-                    let $P = $P::states_hinted(snapshot, hint);
+                    if matches!($P::delta_shape(), DeltaShape::Driver)
+                        && $P::row_bound(snapshot) > 1
+                    {
+                        large += 1;
+                    }
                 )*
+                if large > 1 {
+                    return Self::states(snapshot);
+                }
+
+                // Member-side writes on bound joins replan through the
+                // provider they pair with: expand the hint before the
+                // driver enumerates, so a changed member's provider row
+                // (and with it the pair) is re-planned.
+                let mut expanded: Vec<Entity> = hint.to_vec();
+                $(expanded.extend($P::hint_providers(snapshot, hint));)*
+                expanded.sort_unstable();
+                expanded.dedup();
+                let hint = expanded.as_slice();
+
+                $(
+                    let $P = if matches!($P::delta_shape(), DeltaShape::PairBound) {
+                        // Pair-expandable: rows come from the picked
+                        // provider's pair list during product construction.
+                        ::std::vec::Vec::new()
+                    } else if matches!($P::delta_shape(), DeltaShape::Driver)
+                        && $P::row_bound(snapshot) > 1
+                    {
+                        $P::states_hinted(snapshot, hint)
+                    } else {
+                        let states = $P::states(snapshot);
+                        if matches!($P::delta_shape(), DeltaShape::Driver) {
+                            let tiny_dirty = states.iter().any(|state| {
+                                $P::keys(state)
+                                    .iter()
+                                    .any(|key| hint.contains(key))
+                            });
+                            if tiny_dirty {
+                                return Self::states(snapshot);
+                            }
+                        }
+                        states
+                    };
+                )*
+
+                let mut states = Vec::new();
                 for_each_state!(snapshot, states, []; $($P),*);
                 states
             }
@@ -1286,6 +1380,11 @@ pub struct BoxedSystem {
     /// Cursor into the settle-scoped write log: entries before this were
     /// covered by the system's last plan.
     pub(crate) log_pos: Arc<std::sync::atomic::AtomicU64>,
+    /// Rows forced back into planning by conflict deferral or stale
+    /// commits: their entities join the next delta hint instead of
+    /// resetting the whole system to a full plan (which showed up as
+    /// planning growth on write-heavy waves).
+    pub(crate) forced_dirty: Arc<std::sync::Mutex<Vec<Entity>>>,
 }
 
 impl BoxedSystem {
@@ -1309,6 +1408,7 @@ impl BoxedSystem {
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -1318,6 +1418,14 @@ impl BoxedSystem {
     /// Advances the mark to the snapshot's level when planning proceeds.
     /// Pure form of [`BoxedSystem::needs_planning`]: no mark advance.
     pub(crate) fn peek_needs_planning(&self, snapshot: &Snapshot) -> bool {
+        if !self
+            .forced_dirty
+            .lock()
+            .expect("forced-dirty lock poisoned")
+            .is_empty()
+        {
+            return true;
+        }
         let Some(interest) = &self.interest else {
             return true;
         };
@@ -1345,15 +1453,40 @@ impl BoxedSystem {
         true
     }
 
-    /// Forces the next wave to replan this system (conflict deferrals and
-    /// stale commits invalidate the planned mark). Delta cursors are
-    /// invalidated too: a deferred or discarded row's entity may have no
-    /// new writes, so only a full plan is guaranteed to see it again.
-    pub(crate) fn reset_planned_mark(&self) {
+    /// Forces specific rows back through planning after a conflict
+    /// deferral or stale commit. Delta-eligible systems keep their cursor
+    /// and fold the rows into the next hint; everything else falls back
+    /// to a full replan.
+    pub(crate) fn force_replan(&self, keys: &[Entity]) {
+        if self.delta_eligible && !keys.is_empty() {
+            self.forced_dirty
+                .lock()
+                .expect("forced-dirty lock poisoned")
+                .extend_from_slice(keys);
+            return;
+        }
+        self.reset_full();
+    }
+
+    /// Invalidates the planned mark and delta cursor outright: the next
+    /// wave plans this system fully. For aborted work where no row list
+    /// exists; row-granular invalidation goes through
+    /// [`BoxedSystem::force_replan`].
+    pub(crate) fn reset_full(&self) {
         self.planned_mark
             .store(0, std::sync::atomic::Ordering::Relaxed);
         self.plan_epoch
             .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Drains rows forced back into planning since the last plan.
+    pub(crate) fn take_forced_dirty(&self) -> Vec<Entity> {
+        std::mem::take(
+            &mut *self
+                .forced_dirty
+                .lock()
+                .expect("forced-dirty lock poisoned"),
+        )
     }
 
     fn run_during(mut self, phase: Phase) -> Self {
@@ -1818,6 +1951,7 @@ where
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -1856,6 +1990,7 @@ where
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -1894,6 +2029,7 @@ where
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 }
