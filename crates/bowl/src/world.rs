@@ -487,10 +487,10 @@ impl<T: Component> StoreDyn for Store<T> {
         T::on_entity_remove(context);
         T::on_remove(context);
 
-        if T::tracked() {
-            bump(revision);
-            self.watermark = self.watermark.max(revision.0);
-        }
+        // Symmetric ordering visibility: untracked entries move the
+        // store too (no deps recorded, so nothing invalidates).
+        bump(revision);
+        self.watermark = self.watermark.max(revision.0);
 
         Some(removed.owner)
     }
@@ -1087,6 +1087,13 @@ impl World {
                 }
             }
         } else {
+            // Untracked writes are ordering-visible but dependency-
+            // invisible: no dep ever records them (no invalidation), but
+            // the write must still move the store watermark or gate
+            // markers become invisible to planner gating — a marker-gated
+            // system would never wake when nothing tracked moved in the
+            // same wave.
+            bump(&mut self.revision);
             self.revision
         };
 
@@ -1334,12 +1341,12 @@ impl World {
         self.log_write(type_id, entity);
 
         self.mutations += 1;
-        if tracked {
-            bump(&mut self.revision);
-            let watermark = self.revision.0;
-            if let Some(store) = self.stores.get_mut(&type_id) {
-                store.bump_watermark(watermark);
-            }
+        // Symmetric ordering visibility for untracked entries too.
+        let _ = tracked;
+        bump(&mut self.revision);
+        let watermark = self.revision.0;
+        if let Some(store) = self.stores.get_mut(&type_id) {
+            store.bump_watermark(watermark);
         }
 
         // Sweeps are a removal path like any other: a swept edge retracts
@@ -1488,12 +1495,13 @@ impl World {
         T::on_remove(ComponentHookContext::new(entity));
 
         self.mutations += 1;
-        if T::tracked() {
-            bump(&mut self.revision);
-            let watermark = self.revision.0;
-            if let Some(store) = self.store_mut_existing::<T>() {
-                store.watermark = store.watermark.max(watermark);
-            }
+        // Ordering visibility is symmetric with inserts: untracked
+        // removals also move the store (gates, `Without<Untracked>`
+        // rows), while still recording no deps.
+        bump(&mut self.revision);
+        let watermark = self.revision.0;
+        if let Some(store) = self.store_mut_existing::<T>() {
+            store.watermark = store.watermark.max(watermark);
         }
 
         if let Some(owner) = &removed.owner {

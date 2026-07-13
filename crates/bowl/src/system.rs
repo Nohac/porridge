@@ -62,8 +62,15 @@ pub(crate) struct MemoEntry {
     deps: Vec<Dep>,
     /// World revision of the snapshot this invocation last planned from.
     /// Compared against viewed-store watermarks by `explain` to surface
-    /// ambient staleness (views moved, nothing reran).
+    /// ambient staleness (views moved, nothing reran) and by the settle's
+    /// ambient healing pass.
     pub(crate) planned_revision: u64,
+    /// The settle epoch this entry was committed in, stamped at commit.
+    /// Healing only considers current-epoch entries: a `View` consumer
+    /// whose views move *across* settles deliberately stays memoized;
+    /// one whose views move within the settle it ran in violates the
+    /// phase barrier's contract and reruns.
+    pub(crate) settle_epoch: u64,
 }
 
 /// Buffered output from one system invocation.
@@ -284,6 +291,11 @@ pub trait SystemParam {
     /// (a written entity races a view only if it carries the whole set)
     /// and by `explain`'s stale-view detection.
     fn view_sets(_out: &mut Vec<Vec<TypeId>>) {}
+    /// Component stores whose movement makes this param's *ambient* reads
+    /// stale — everything a `View` (rows and filters) touches. Distinct
+    /// from `view_sets`, which carries required row shapes for race
+    /// detection (`Without<T>` belongs here but not there).
+    fn view_freshness(_out: &mut Vec<TypeId>) {}
     /// Component types this param may emit. `Some(empty)` for non-writers
     /// (the default), `Some(list)` for a typed `Commands<S>`, `None` for
     /// the wildcard (bare `Commands`).
@@ -623,6 +635,11 @@ where
                 .map(|access| access.component)
                 .collect(),
         );
+    }
+
+    fn view_freshness(out: &mut Vec<TypeId>) {
+        out.extend(Q::access_all().iter().map(|access| access.component));
+        out.extend(Filter::access_all().iter().map(|access| access.component));
     }
 
     fn fetch<'a>(
@@ -1079,6 +1096,10 @@ macro_rules! impl_system_param_tuple {
                 $($P::view_sets(out);)*
             }
 
+            fn view_freshness(out: &mut Vec<TypeId>) {
+                $($P::view_freshness(out);)*
+            }
+
             fn declared_outputs() -> Option<Vec<TypeId>> {
                 let mut out = Vec::new();
                 $(
@@ -1263,6 +1284,8 @@ fn finish_invocation(
         MemoEntry {
             deps,
             planned_revision,
+            // Stamped with the live epoch when the commit applies it.
+            settle_epoch: 0,
         },
     );
 
@@ -1359,6 +1382,10 @@ pub struct BoxedSystem {
     /// the components an entity must carry to appear in that view. For the
     /// same-phase production flag and `explain`'s stale-view report.
     pub(crate) view_sets: Arc<Vec<Vec<TypeId>>>,
+    /// Every store the system's `View`s can read (rows *and* filters):
+    /// the freshness set the settle's ambient healing pass compares
+    /// against watermarks. Empty for view-less systems.
+    pub(crate) view_freshness: Arc<Vec<TypeId>>,
     /// Component types the system declared it may emit (`Commands<S>`);
     /// `None` is the wildcard (bare `Commands` or hook-driven writers).
     pub(crate) declared_outputs: Option<Arc<Vec<TypeId>>>,
@@ -1392,6 +1419,7 @@ impl BoxedSystem {
         runnable: Arc<dyn Runnable>,
         name: &'static str,
         view_sets: Vec<Vec<TypeId>>,
+        view_freshness: Vec<TypeId>,
         declared_outputs: Option<Vec<TypeId>>,
         interest: Option<Vec<TypeId>>,
         delta_eligible: bool,
@@ -1401,6 +1429,7 @@ impl BoxedSystem {
             phase: Phase::Evaluate,
             name,
             view_sets: Arc::new(view_sets),
+            view_freshness: Arc::new(view_freshness),
             declared_outputs: declared_outputs.map(Arc::new),
             delta_eligible: delta_eligible && interest.is_some(),
             interest: interest.map(Arc::new),
@@ -1928,6 +1957,7 @@ where
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        let view_freshness = Arc::clone(&system.view_freshness);
         // The hook declares its outputs too; merge them into the
         // system's entry.
         let declared_outputs =
@@ -1944,6 +1974,7 @@ where
             phase,
             name,
             view_sets,
+            view_freshness,
             declared_outputs,
             delta_eligible: system_delta_eligible,
             interest,
@@ -1967,6 +1998,7 @@ where
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        let view_freshness = Arc::clone(&system.view_freshness);
         // The hook declares its outputs too; merge them into the
         // system's entry.
         let declared_outputs =
@@ -1983,6 +2015,7 @@ where
             phase,
             name,
             view_sets,
+            view_freshness,
             declared_outputs,
             delta_eligible: system_delta_eligible,
             interest,
@@ -2006,6 +2039,7 @@ where
         let phase = system.phase;
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
+        let view_freshness = Arc::clone(&system.view_freshness);
         // The hook declares its outputs too; merge them into the
         // system's entry.
         let declared_outputs =
@@ -2022,6 +2056,7 @@ where
             phase,
             name,
             view_sets,
+            view_freshness,
             declared_outputs,
             delta_eligible: system_delta_eligible,
             interest,
@@ -2317,6 +2352,10 @@ where
 
         let mut view_sets = Vec::new();
         F::Param::view_sets(&mut view_sets);
+        let mut view_freshness = Vec::new();
+        F::Param::view_freshness(&mut view_freshness);
+        view_freshness.sort_unstable();
+        view_freshness.dedup();
         BoxedSystem::new(
             Arc::new(FunctionSystem {
                 id,
@@ -2325,6 +2364,7 @@ where
             }),
             std::any::type_name::<F>(),
             view_sets,
+            view_freshness,
             F::Param::declared_outputs(),
             F::Param::interest_types(),
             F::Param::delta_shape() == DeltaShape::Driver,

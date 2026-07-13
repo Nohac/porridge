@@ -170,6 +170,11 @@ struct State {
     /// generation restarts through `Phase::Startup` so settle-scoped claims
     /// can be retracted before fresh derivations plan.
     preempt_restart: bool,
+    /// Monotonic healing-epoch counter, bumped whenever the settled
+    /// revision advances (`publish_settled_revision`) — i.e. at settle
+    /// *completion*. Stamped onto memo entries at commit; the ambient
+    /// healing pass only considers entries from the in-flight epoch.
+    settle_epoch: u64,
     /// Generation waiters, each tagged with the generation it needs.
     /// Completions wake only satisfied waiters — the rest stay registered,
     /// so a waiter locks the state once per wait, not once per generation
@@ -480,7 +485,7 @@ where
             cleanup_bound_entity(&mut state, entity);
         }
         if was_settled {
-            state.settled_revision = state.world.revision_raw();
+            publish_settled_revision(&mut state);
         }
 
         result
@@ -724,7 +729,7 @@ impl BoundEntity {
             // `drain_deferred_bound_cleanup` for why an unconditional sync
             // here starves other callers' pending settles.
             if was_settled {
-                state.settled_revision = state.world.revision_raw();
+                publish_settled_revision(&mut state);
             }
             break result;
         };
@@ -1162,6 +1167,7 @@ impl Bowl {
                     settling: 0,
                     preempt_window: false,
                     preempt_restart: false,
+                    settle_epoch: 0,
                     waiters: Vec::new(),
                     boundary_waiters: Vec::new(),
                     settled_revision: 0,
@@ -1459,12 +1465,10 @@ impl Bowl {
         // planned from is ambient staleness: the view changed, nothing
         // reran, and nothing ever will unless a tracked dep moves too.
         let system_id = SystemId(index);
-        let mut viewed: Vec<TypeId> = target
-            .view_sets
-            .iter()
-            .flatten()
-            .copied()
-            .collect();
+        // Freshness covers everything the views can read — rows and
+        // filters — unlike `view_sets`, which carries required row shapes
+        // for race detection only.
+        let mut viewed: Vec<TypeId> = target.view_freshness.to_vec();
         viewed.sort_unstable();
         viewed.dedup();
         let stale_views = viewed
@@ -1673,7 +1677,7 @@ impl Bowl {
         // pass that re-materializes gate markers), and syncing here would
         // let that caller's `settle()` exit through the revision fast path.
         if was_settled {
-            state.settled_revision = state.world.revision_raw();
+            publish_settled_revision(&mut state);
         }
     }
 
@@ -1707,6 +1711,7 @@ impl Bowl {
 
         let epoch = EpochGuard::enter(self).await;
         let mut commit_budget = CommitBudget::new(self.commit_limit());
+        let mut heal_attempts: HashMap<SystemInvocation, u32> = HashMap::new();
 
         loop {
             let target = {
@@ -1748,6 +1753,14 @@ impl Bowl {
             };
 
             if clean_and_settled {
+                // Heal before hooks and settled reads: neither may observe
+                // output a mid-settle View consumer computed from
+                // non-final facts.
+                if self.heal_stale_ambient(&mut heal_attempts).await {
+                    self.enqueue_next_generation().await;
+                    continue;
+                }
+
                 if self.run_settled_hooks(&mut commit_budget).await {
                     self.enqueue_next_generation().await;
                     continue;
@@ -1771,6 +1784,84 @@ impl Bowl {
 
             self.enqueue_next_generation().await;
         }
+    }
+
+    /// The settle's ambient healing pass (the phase barrier's contract,
+    /// extended across the generations of one settle): a `View`-carrying
+    /// invocation that committed *during this settle* while its viewed
+    /// stores kept moving afterwards holds output computed from non-final
+    /// facts — on a content revisit its tracked deps can be
+    /// fingerprint-equal to the final state, so dep invalidation never
+    /// reruns it (the A→B→A staleness bug). Healing removes the violating
+    /// memo entries and forces those rows back through planning; the
+    /// rerun commits against final views with a fresh planned revision,
+    /// so even a fingerprint-equal output clears the violation. Entries
+    /// from earlier epochs are deliberately exempt: `View`s not
+    /// invalidating across settles is their contract.
+    ///
+    /// Healing does not verify the row still matches: a violating entry
+    /// whose row vanished mid-settle is deleted outright (that deletion
+    /// is also the no-spin guarantee), which means a row that re-matches
+    /// in a *later* settle reruns instead of reviving a memo computed
+    /// from another era's views — the same posture as the memo purge on
+    /// entity removal.
+    async fn heal_stale_ambient(
+        &self,
+        heal_attempts: &mut HashMap<SystemInvocation, u32>,
+    ) -> bool {
+        let mut state = lock_state(&self.inner.state).await;
+        let epoch = state.settle_epoch;
+        let mut victims: Vec<SystemInvocation> = Vec::new();
+        for (owner, entry) in &state.memo {
+            if entry.settle_epoch != epoch {
+                continue;
+            }
+            let Some(system) = state.systems.get(owner.system.0) else {
+                continue;
+            };
+            if system.phase == Phase::Settle || system.view_freshness.is_empty() {
+                continue;
+            }
+            let stale = system
+                .view_freshness
+                .iter()
+                .any(|type_id| state.world.store_watermark(*type_id) > entry.planned_revision);
+            if stale {
+                victims.push(owner.clone());
+            }
+        }
+
+        if victims.is_empty() {
+            return false;
+        }
+
+        for owner in victims {
+            let attempts = heal_attempts.entry(owner.clone()).or_insert(0);
+            *attempts += 1;
+            if *attempts > 128 {
+                let system = &state.systems[owner.system.0];
+                let entry = &state.memo[&owner];
+                panic!(
+                    "ambient healing did not converge: system `{}` invocation {:?} \
+                     healed {} times this settle (planned_revision {}, viewed stores {:?} \
+                     with watermarks {:?}); a View feedback cycle keeps moving its own \
+                     inputs — break the cycle with a tracked input or a phase boundary",
+                    system.name,
+                    owner.keys,
+                    *attempts,
+                    entry.planned_revision,
+                    system.view_freshness,
+                    system
+                        .view_freshness
+                        .iter()
+                        .map(|type_id| state.world.store_watermark(*type_id))
+                        .collect::<Vec<_>>(),
+                );
+            }
+            state.memo.remove(&owner);
+            state.systems[owner.system.0].force_replan(&owner.keys);
+        }
+        true
     }
 
     async fn run_settled_hooks(&self, commit_budget: &mut CommitBudget) -> bool {
@@ -1799,7 +1890,7 @@ impl Bowl {
         let mut state = lock_state(&self.inner.state).await;
         state.memo = memo;
         if !progress.needs_followup {
-            state.settled_revision = state.world.revision_raw();
+            publish_settled_revision(&mut state);
         }
 
         progress.needs_followup
@@ -1836,7 +1927,7 @@ impl Bowl {
 
         let mut state = lock_state(&self.inner.state).await;
         state.memo = memo;
-        state.settled_revision = state.world.revision_raw();
+        publish_settled_revision(&mut state);
     }
 
     async fn enqueue_next_generation(&self) {
@@ -2630,6 +2721,24 @@ fn refresh_settled_snapshot(inner: &Inner, state: &mut State) {
         .expect("settled-read slot poisoned") = Some(snapshot);
 }
 
+/// Publishes a newly settled revision and, when it actually advanced,
+/// closes the current healing epoch.
+///
+/// The epoch boundary is settle *completion*: everything committed since
+/// the last settled state — including generations driven by awaited
+/// inserts outside any `settle()` call — belongs to the in-flight
+/// convergence and stays healable; entries at or before a completed
+/// settle are the deliberate cross-settle ambient case. No-op settles
+/// and overlapping settlers exiting through quiescent paths do not
+/// advance the settled revision, so they cannot retag an active epoch.
+fn publish_settled_revision(state: &mut State) {
+    let revision = state.world.revision_raw();
+    if state.settled_revision != revision {
+        state.settled_revision = revision;
+        state.settle_epoch += 1;
+    }
+}
+
 /// Promotes deferred inputs whose arrival tag is covered by `watermark`.
 /// Returns whether anything was promoted.
 fn promote_deferred_inputs(state: &mut State, watermark: u64) -> bool {
@@ -3098,6 +3207,7 @@ async fn commit_system_run(
     state.world.reconcile_written(&writes);
     for (owner, mut entry) in memo_updates {
         entry.refresh_written(&state.world, &writes);
+        entry.settle_epoch = state.settle_epoch;
         memo.insert(owner, entry);
     }
 
@@ -6308,6 +6418,219 @@ mod tests {
             assert_eq!(DELTA_STAGE1_RUNS.load(Ordering::SeqCst), 12);
             assert_eq!(DELTA_STAGE2_RUNS.load(Ordering::SeqCst), 12);
             assert_eq!(counts.collect().len(), 11);
+        });
+    }
+
+    struct RSrc(u64);
+    impl Component for RSrc {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(self.0)
+        }
+    }
+
+    struct RResolved(u64);
+    impl Component for RResolved {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(self.0)
+        }
+    }
+
+    struct RReport(u64);
+    impl Component for RReport {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(self.0)
+        }
+    }
+
+    struct RFinal(u64);
+    impl Component for RFinal {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(self.0)
+        }
+    }
+
+    struct RReady;
+    impl Component for RReady {
+        fn tracked() -> bool {
+            false
+        }
+    }
+
+    struct REphemeral;
+    impl Component for REphemeral {
+        fn tracked() -> bool {
+            false
+        }
+    }
+
+    /// Resolution arrives a generation late: gated on the settled-hook
+    /// marker, so within each settle the reporter's first run reads
+    /// stale/absent resolutions — the deterministic mid-settle window.
+    async fn revisit_resolve(
+        gate: Query<Entity, With<RReady>>,
+        rows: Query<(Entity, &RSrc)>,
+        mut commands: Commands<(RResolved,)>,
+    ) {
+        let _gate = gate.item();
+        let (entity, src) = rows.item();
+        commands.entity(entity).insert(RResolved(src.0 * 10));
+    }
+
+    /// Complete-phase ambient consumer: tracked on its row's source,
+    /// ambient over every resolution — the dsql `check_selections` shape.
+    async fn revisit_report(
+        rows: Query<(Entity, &RSrc)>,
+        resolved: View<'_, (Entity, &RResolved)>,
+        mut commands: Commands<(RReport,)>,
+    ) {
+        let (entity, _src) = rows.item();
+        let sum: u64 = resolved.iter().map(|(_, r)| r.0).sum();
+        commands.entity(entity).insert(RReport(sum));
+    }
+
+    /// Second-stage ambient consumer on the legal cross-phase back-edge:
+    /// an Evaluate-phase viewer of the Complete-phase consumer's output,
+    /// so healing must propagate across passes (heal the reporter, then
+    /// the aggregate that viewed the stale report).
+    async fn revisit_final(
+        rows: Query<(Entity, &RSrc)>,
+        reports: View<'_, (Entity, &RReport)>,
+        mut commands: Commands<(RFinal,)>,
+    ) {
+        let (entity, _src) = rows.item();
+        let sum: u64 = reports.iter().map(|(_, r)| r.0).sum();
+        commands.entity(entity).insert(RFinal(sum));
+    }
+
+    /// No-output observer carrying the settled hook: completed with no
+    /// outputs and nothing owned, so the hook arms the marker once per
+    /// settle (the epoch-marker pattern).
+    async fn revisit_probe(query: Query<(Entity, &RSrc)>) {
+        let (_entity, _src) = query.item();
+    }
+
+    async fn cleanup_r_ephemeral(
+        query: Query<Entity, With<REphemeral>>,
+        mut commands: Commands<()>,
+    ) {
+        commands.remove(query.item());
+    }
+
+    /// The A→B→A staleness bug (dsql: 'staleness on content revisit'):
+    /// a Complete-phase `View` consumer runs mid-settle, its viewed
+    /// resolutions finalize a generation later (marker-gated), and its
+    /// tracked deps end fingerprint-equal to the final state — dep
+    /// invalidation never reruns it. The settle's ambient healing pass
+    /// must rerun it against final views before settled reads return,
+    /// through a two-stage view chain.
+    #[test]
+    fn ambient_view_consumers_heal_within_a_settle() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(revisit_probe.on_settled(|mut commands: Commands<Anything>| {
+                    commands.insert((Singleton::<RReady>::new(), RReady, REphemeral));
+                }))
+                .system(revisit_resolve)
+                .system(revisit_report.run_during(Phase::Complete))
+                .system(revisit_final)
+                .system(cleanup_r_ephemeral.run_during(Phase::Settle))
+                .build();
+
+            let doc = bowl.insert((RSrc(1),)).await;
+            let reports = bowl.scoop::<Query<(Entity, &RReport)>>().await;
+            assert_eq!(reports.collect()[0].1.0, 10, "initial settle resolves");
+
+            // Edit to B.
+            bowl.entity(doc.entity()).insert((RSrc(2),)).await;
+            let reports = bowl.scoop::<Query<(Entity, &RReport)>>().await;
+            assert_eq!(reports.collect()[0].1.0, 20, "edit B must be seen");
+
+            // Revisit A: tracked deps return to fingerprint-equal values
+            // while the resolution only finalizes in the reopened
+            // generation.
+            bowl.entity(doc.entity()).insert((RSrc(1),)).await;
+            let reports = bowl.scoop::<Query<(Entity, &RReport)>>().await;
+            assert_eq!(
+                reports.collect()[0].1.0,
+                10,
+                "revisit must not strand a stale ambient report"
+            );
+            let finals = bowl.scoop::<Query<(Entity, &RFinal)>>().await;
+            assert_eq!(
+                finals.collect()[0].1.0,
+                10,
+                "healing must propagate through view chains"
+            );
+        });
+    }
+
+    struct RGate;
+    impl Component for RGate {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(1)
+        }
+    }
+
+    /// Complete-phase ambient consumer whose row can vanish mid-settle.
+    async fn revisit_gated_report(
+        rows: Query<(Entity, &RSrc), With<RGate>>,
+        resolved: View<'_, (Entity, &RResolved)>,
+        mut commands: Commands<(RReport,)>,
+    ) {
+        let (entity, _src) = rows.item();
+        let sum: u64 = resolved.iter().map(|(_, r)| r.0).sum();
+        commands.entity(entity).insert(RReport(sum));
+    }
+
+    /// Marker-gated un-gater: removes the consumer's gate in the reopened
+    /// generation, so the consumer's stale-view memo entry belongs to a
+    /// row that no longer matches when healing runs.
+    async fn revisit_ungate(
+        gate: Query<Entity, With<RReady>>,
+        rows: Query<(Entity, &RSrc)>,
+        mut commands: Commands<()>,
+    ) {
+        let _gate = gate.item();
+        let (entity, _src) = rows.item();
+        commands.entity(entity).remove::<RGate>();
+    }
+
+    /// A violating memo entry whose row vanished mid-settle is deleted
+    /// outright — healing must neither spin on it nor revive it: the
+    /// settle completes, and a later re-match reruns fresh instead of
+    /// reusing output computed from another era's views.
+    #[test]
+    fn healing_deletes_unmatched_entries_without_spinning() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(revisit_probe.on_settled(|mut commands: Commands<Anything>| {
+                    commands.insert((Singleton::<RReady>::new(), RReady, REphemeral));
+                }))
+                .system(revisit_resolve)
+                .system(revisit_ungate)
+                .system(revisit_gated_report.run_during(Phase::Complete))
+                .system(cleanup_r_ephemeral.run_during(Phase::Settle))
+                .build();
+
+            // Gen 1: the gated report runs against absent resolutions;
+            // gen 2 (marker-reopened): resolutions land AND the gate is
+            // removed, so the violating entry's row no longer matches.
+            let doc = bowl.insert((RSrc(1), RGate)).await;
+            let reports = bowl.scoop::<Query<(Entity, &RReport)>>().await;
+            // The settle completed (no heal spin); the lingering output is
+            // the standard removed-row semantics.
+            assert_eq!(reports.collect().len(), 1);
+
+            // Re-gating re-matches the row: the memo was deleted, so the
+            // consumer reruns against final views instead of reviving the
+            // stale entry.
+            bowl.entity(doc.entity()).insert((RGate,)).await;
+            let reports = bowl.scoop::<Query<(Entity, &RReport)>>().await;
+            assert_eq!(
+                reports.collect()[0].1.0,
+                10,
+                "a re-matched row must rerun fresh, not revive a stale memo"
+            );
         });
     }
 

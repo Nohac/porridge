@@ -512,6 +512,23 @@ let rows = diagnostics.collect();
   execute), and a heavier-row bench matrix. Pure racing readers use
   `.last_settled()` to skip the settle queue (dogfooded in the storm;
   commit-bucket lock waits collapsed 108ms → 6.6ms).
+- **Done: ambient healing (the A→B→A staleness fix).** Settle-epoch-
+  tagged memo entries (epoch = settle *completion* boundary, so
+  insert-await generations stay healable); at convergence, before hooks
+  and `Phase::Settle`, `View`-carrying invocations committed this epoch
+  whose viewed stores moved past their planned revision are healed
+  (memo entry removed + row force-replanned; removal is the no-spin
+  guarantee for unmatched rows; 128-attempt cap panics with full
+  diagnostics). Also fixed: untracked writes now move watermarks
+  (ordering-visible, dependency-invisible) — gate markers were invisible
+  to planner gating. Still open from codex's review: untracked viewed
+  stores in the freshness set rely on the new watermark visibility (now
+  covered), and a per-store structural counter remains the cleaner
+  long-term shape if untracked revision-bumping ever shows costs.
+  dsql follow-through: un-ignore
+  `checks::content_roundtrip_edits_rederive_cleanly`, then delete the
+  `Session::seen_hashes` full-reload workaround (covers the LSP undo
+  path that the workaround missed).
 - **Delta widening round (dsql callgrind feedback: plan_invocations was
   77% of the main thread because every real system is multi-Query).**
   Done: multi-driver systems stay delta-eligible — `states_hinted`
