@@ -7368,6 +7368,87 @@ mod tests {
         });
     }
 
+    static PAIR_CONTENT_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Clone, PartialEq)]
+    struct SourceHash(u64);
+    impl Component for SourceHash {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+    }
+
+    async fn digest_member_content(
+        parents: Query<(Entity, &A, &Members)>,
+        member: Query<(Entity, &SourceHash), Where<In<Members>>>,
+        mut commands: Commands<Anything>,
+    ) {
+        let (_parent, _a, _members) = parents.item();
+        let (member_entity, hash) = member.item();
+        PAIR_CONTENT_RUNS.fetch_add(1, Ordering::SeqCst);
+        commands.entity(member_entity).insert(Stamp(hash.0 as u32));
+    }
+
+    /// Content hashes belong on the *member side* of an `In` join: each
+    /// (set-holder, member) pair memoizes the member row's revisions, so
+    /// a fingerprint-cut content change reruns exactly that pair. The
+    /// inverse never sees the change (membership is entity-id based), so
+    /// no *rerun* amplification — siblings of the edited member stay
+    /// memoized. (The run counter cannot distinguish hinted planning
+    /// from a full plan that memo-skips; this pins execution
+    /// granularity, not planning cost.) This is the invalidation
+    /// granularity a content-aware inverse would buy, available today
+    /// by reading the hash in the bound query.
+    #[test]
+    fn member_content_changes_rerun_only_their_pair() {
+        block_on(async {
+            PAIR_CONTENT_RUNS.store(0, Ordering::SeqCst);
+            let bowl = Bowl::builder().system(digest_member_content).build();
+
+            // Two providers keep the driver non-tiny, so the edit below
+            // plans through the hinted path (edge translation), not the
+            // tiny-driver full-plan fallback.
+            let parent = bowl.insert((A(0),)).await;
+            let parent_two = bowl.insert((A(1),)).await;
+            let edited = bowl
+                .insert((SourceHash(10), MemberOf(parent.entity())))
+                .await;
+            bowl.insert((SourceHash(20), MemberOf(parent.entity()))).await;
+            bowl.insert((SourceHash(30), MemberOf(parent.entity()))).await;
+            bowl.insert((SourceHash(40), MemberOf(parent_two.entity())))
+                .await;
+            bowl.settle().await;
+            assert_eq!(PAIR_CONTENT_RUNS.load(Ordering::SeqCst), 4);
+
+            // Rewriting one member's content with an unchanged hash is
+            // fingerprint-cut: no pair reruns at all.
+            bowl.entity(edited.entity()).insert((SourceHash(10),)).await;
+            bowl.settle().await;
+            assert_eq!(
+                PAIR_CONTENT_RUNS.load(Ordering::SeqCst),
+                4,
+                "an unchanged fingerprint must not rerun any pair"
+            );
+
+            // A real content change reruns the edited member's pair and
+            // nothing else.
+            bowl.entity(edited.entity()).insert((SourceHash(11),)).await;
+            bowl.settle().await;
+            assert_eq!(
+                PAIR_CONTENT_RUNS.load(Ordering::SeqCst),
+                5,
+                "one member's content change is one pair rerun, not a \
+                 whole-group sweep"
+            );
+
+            let stamps = bowl.scoop::<Query<(Entity, &Stamp)>>().await;
+            let mut values: Vec<u32> =
+                stamps.collect().into_iter().map(|(_, s)| s.0).collect();
+            values.sort_unstable();
+            assert_eq!(values, vec![11, 20, 30, 40]);
+        });
+    }
+
     async fn spawn_member_when_ranked(
         query: Query<(Entity, &ParentLink, &FingerprintedRank)>,
         mut commands: Commands<Anything>,

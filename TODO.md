@@ -609,10 +609,20 @@ let rows = diagnostics.collect();
   derive attributes — the edge's first tuple field is the target entity,
   the inverse is a tuple struct over `Vec<Entity>` with its fingerprint
   generated from the member list (combining with
-  `#[component(hash)]`/`revision` is rejected). Still open: playground
-  adoption to retire the `DefIndex` set-fingerprint pattern, and
-  edge-traversal joins (child rows joining their parent's facts through
-  the edge — the dsql resolver's ask).
+  `#[component(hash)]`/`revision` is rejected). Done (answering dsql's
+  content-invalidation ask): content hashes belong on the *member side*
+  of the `In` join — `member_content_changes_rerun_only_their_pair`
+  proves a fingerprinted `&SourceHash` in the bound query gives per-pair
+  *rerun* invalidation (fingerprint-cut; zero reruns on an equal hash,
+  one on a real change) with no engine feature. The test pins execution
+  granularity, not planning cost — the counter cannot distinguish
+  hinted planning from a full plan that memo-skips; a content-aware inverse (incremental
+  domain-separated XOR aggregate, reverse watcher index, `Missing`
+  contribution) is only worth building if a consumer reads *just* the
+  inverse — no such consumer exists in dsql today. Still open:
+  playground adoption to retire the `DefIndex` set-fingerprint pattern,
+  and edge-traversal joins (child rows joining their parent's facts
+  through the edge — the dsql resolver's ask).
 
 Current shortcut:
 - Queries iterate component stores (smallest participating store for tuples).
