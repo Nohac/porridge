@@ -149,6 +149,9 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
         if elements.is_empty() {
             return compile_error("a schema shape cannot be empty");
         }
+        if let Some(message) = shape_width_error(field_name, elements.len()) {
+            return compile_error(&message);
+        }
         let assoc = pascal_case(field_name);
         let full_tuple = elements
             .iter()
@@ -868,4 +871,35 @@ fn render_tokens(tokens: &[TokenTree]) -> String {
     let mut stream = TokenStream::new();
     stream.extend(tokens.iter().cloned());
     stream.to_string()
+}
+
+/// The shape-width cap: 12 parts, the ceiling of the engine's tuple impls
+/// (`all_tuples!` in `declare.rs` and `Bundle`). Kept as a pure helper so
+/// the diagnostic's exact wording is unit-testable.
+const SHAPE_WIDTH_CAP: usize = 12;
+
+fn shape_width_error(field_name: &str, width: usize) -> Option<String> {
+    (width > SHAPE_WIDTH_CAP).then(|| {
+        format!(
+            "schema shape `{field_name}` has {width} parts; shapes support \
+             at most {SHAPE_WIDTH_CAP} (the engine's tuple-impl ceiling)"
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shape_width_error;
+
+    #[test]
+    fn shape_width_diagnostic_names_field_width_and_cap() {
+        assert_eq!(shape_width_error("def", 12), None);
+        assert_eq!(
+            shape_width_error("def", 13).as_deref(),
+            Some(
+                "schema shape `def` has 13 parts; shapes support at most \
+                 12 (the engine's tuple-impl ceiling)"
+            )
+        );
+    }
 }

@@ -54,7 +54,27 @@ async fn check_imports(
   production and stay unbounded.
 - Known wart: a component reachable through two declared items makes the
   membership proof ambiguous ("type annotations needed"). Rule: don't
-  double-declare; keep groups disjoint.
+  double-declare; keep groups disjoint. This bites harder than it reads:
+  a lowering-walk *union* group (several shapes sharing `DerivedFrom`,
+  `BelongsToFile`, …) breaks bare `entity(..).insert(X)` proofs for the
+  shared components while full spawn bundles keep compiling (`SpawnsAs`
+  resolves per shape, membership resolves per component). When an
+  increment turns ambiguous, split or narrow the writer's `Commands`
+  declaration so the increment has one owning shape
+  (`Commands<(my_schema::Thing,)>` locally) — don't thin the shapes
+  themselves to dodge the overlap.
+- Shape width caps at **12 parts** (the tuple-impl ceiling; the derive
+  rejects wider shapes by name with the actual width). Conformance
+  merges *within one invocation's command buffer*: a spawn plus
+  same-entity stamps from the same invocation check as one bundle — it
+  is not a merge across independent system commits, so a linking
+  component (`ChildOf`) belongs in the spawn bundle; use two shape
+  variants when it is conditional.
+- Engine-maintained inverses (`Children`-style `#[relationship_target]`
+  components) get **degenerate one-part shapes** in the schema. This is
+  a write-bundle conformance convention — it names the inverse for
+  universe closure and lets the maintenance writes conform — not a
+  claim that the target entity carries nothing else.
 - ~~Runtime honesty backstop~~ (retired): with no public wildcard and
   strict spawns, undeclared emission became unrepresentable, so the
   debug-build commit check was removed — the type system carries the

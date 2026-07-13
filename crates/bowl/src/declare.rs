@@ -68,7 +68,7 @@ macro_rules! impl_declared_in_tuple {
     };
 }
 
-all_tuples!(impl_declared_in_tuple, 1, 8, T);
+all_tuples!(impl_declared_in_tuple, 1, 12, T);
 
 /// Every component of bundle `Self` is declared in `S`.
 #[diagnostic::on_unimplemented(
@@ -87,7 +87,7 @@ macro_rules! impl_bundle_declared_in {
     };
 }
 
-all_tuples!(impl_bundle_declared_in, 1, 8, C, M);
+all_tuples!(impl_bundle_declared_in, 1, 12, C, M);
 
 /// Membership-proof marker: a required shape part found in the bundle.
 pub struct RequiredHere<M>(M);
@@ -120,7 +120,7 @@ macro_rules! impl_covered_by {
     };
 }
 
-all_tuples!(impl_covered_by, 1, 8, P, M);
+all_tuples!(impl_covered_by, 1, 12, P, M);
 
 /// Bundle `Self` *matches* shape `H`: every bundle component is part of
 /// the shape, and every required part of the shape is in the bundle.
@@ -174,7 +174,7 @@ macro_rules! impl_spawns_as_tuple {
     };
 }
 
-all_tuples!(impl_spawns_as_tuple, 1, 8, T);
+all_tuples!(impl_spawns_as_tuple, 1, 12, T);
 
 /// The engine's own buffers stay wildcard: any bundle spawns untyped.
 impl<B> SpawnsAs<Anything, WildcardMatch> for B {
@@ -217,7 +217,7 @@ macro_rules! impl_increment_of_tuple {
     };
 }
 
-all_tuples!(impl_increment_of_tuple, 1, 8, T);
+all_tuples!(impl_increment_of_tuple, 1, 12, T);
 
 /// One part of a facet, as seen at runtime.
 #[derive(Clone, Copy)]
@@ -279,7 +279,7 @@ macro_rules! impl_facet_kind {
     };
 }
 
-all_tuples!(impl_facet_kind, 1, 8, P);
+all_tuples!(impl_facet_kind, 1, 12, P);
 
 /// Runtime enumeration of a declaration: the component `TypeId`s it
 /// covers, or `None` for the wildcard. This is what makes tuple-alias
@@ -333,7 +333,7 @@ macro_rules! impl_declaration_list_tuple {
     };
 }
 
-all_tuples!(impl_declaration_list_tuple, 1, 8, T);
+all_tuples!(impl_declaration_list_tuple, 1, 12, T);
 
 /// A bowl-level entity schema: the set of entity *shapes* derived writes
 /// are allowed to produce. Implemented by `#[derive(Schema)]` on a

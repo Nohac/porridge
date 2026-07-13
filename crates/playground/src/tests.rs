@@ -416,3 +416,107 @@ fn incomplete_shapes_panic_with_the_missing_component() {
         db.scoop::<Query<(Entity, &Report)>>().await;
     });
 }
+
+/// The shape ceiling is 12 (dsql's `def` shape hit 9 under the old cap of
+/// 8, failing as an inscrutable "no matching shape"); pin that a wide
+/// shape derives, spawns strictly, and conforms.
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W01(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W02(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W03(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W04(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W05(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W06(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W07(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W08(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W09(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W10(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W11(u8);
+#[derive(Component, Hash)]
+#[component(hash)]
+struct W12(u8);
+
+#[derive(bowl::Schema)]
+struct WideShapeSchema {
+    wide: (W01, W02, W03, W04, W05, W06, W07, W08, W09, W10, W11, Option<W12>),
+}
+
+async fn spawn_wide(
+    query: Query<(Entity, &Position)>,
+    mut commands: bowl::Commands<(wide_shape_schema::Wide,)>,
+) {
+    let (_entity, _pos) = query.item();
+    // Full-width spawn: a 12-component bundle at the exact ceiling.
+    commands.insert((
+        W01(1),
+        W02(2),
+        W03(3),
+        W04(4),
+        W05(5),
+        W06(6),
+        W07(7),
+        W08(8),
+        W09(9),
+        W10(10),
+        W11(11),
+        W12(12),
+    ));
+    // Required-only spawn plus a typed increment through the facet
+    // handle: `IncrementOf`/`DeclaredIn` recursion at position 12.
+    let handle = commands.insert((
+        W01(21),
+        W02(22),
+        W03(23),
+        W04(24),
+        W05(25),
+        W06(26),
+        W07(27),
+        W08(28),
+        W09(29),
+        W10(30),
+        W11(31),
+    ));
+    commands.entity(handle).insert(W12(32));
+}
+
+#[test]
+fn twelve_part_shapes_spawn_and_conform() {
+    block_on(async {
+        let db = Bowl::builder()
+            .schema::<WideShapeSchema>()
+            .system(spawn_wide)
+            .build();
+        db.insert((Position { offset: 0 },)).await;
+        // The facet anchor matches both spawns (required set present).
+        let facets = db
+            .scoop::<Query<Entity<wide_shape_schema::Wide>>>()
+            .await;
+        assert_eq!(facets.collect().len(), 2);
+        let tails = db.scoop::<Query<(Entity, &W12)>>().await;
+        let mut values: Vec<u8> =
+            tails.collect().into_iter().map(|(_, w)| w.0).collect();
+        values.sort_unstable();
+        assert_eq!(values, vec![12, 32]);
+    });
+}

@@ -3367,7 +3367,7 @@ macro_rules! impl_bundle {
     };
 }
 
-all_tuples!(impl_bundle, 1, 8, T);
+all_tuples!(impl_bundle, 1, 12, T);
 
 #[cfg(test)]
 mod tests {

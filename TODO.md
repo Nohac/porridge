@@ -547,20 +547,17 @@ let rows = diagnostics.collect();
   for `Eq`); the pair expansion machinery already has both lookups.
   Validate against dsql's edit_cost harness
   (`EDIT_COST_PROJECT=... cargo test -p dsql-project --test edit_cost`).
-- **Schema authoring feedback (dsql migration)**: (a) shapes cap at 8
-  parts and overflow fails as an inscrutable "no matching shape" — the
-  `#[derive(Schema)]` macro should emit a compile error naming the cap
-  (and the `all_tuples!` ceilings could lift to 12); (b) document that
-  conformance accumulates a system's writes per entity, so
-  spawn-then-stamp merges into one bundle check (move linking components
-  into the spawn bundle, two-variant match like the playground's
-  namespace pattern); (c) the "keep groups disjoint" rule undersells the
-  ambiguity: a component reachable through two groups in one
-  `Commands<S>` breaks bare `entity().insert(X)` proofs while full
-  bundles still work — needs a doc section and ideally a better
-  diagnostic; (d) document the convention that engine-maintained
-  inverses (`Children`-style) get degenerate one-part shapes for
-  universe closure.
+- **Done: schema authoring feedback (dsql migration)**: (a) all tuple
+  ceilings (`declare.rs` traits + `Bundle`) lifted 8 → 12 and the
+  `#[derive(Schema)]` macro now rejects wider shapes with an error
+  naming the field, its width, and the cap (12-part fixture in the
+  playground); (b)–(d) documented in `spec/declared-outputs.md`:
+  conformance merges within *one invocation's* command buffer (linking
+  components belong in the spawn bundle, two-variant match), the
+  group-ambiguity trap (union groups break bare `entity().insert(X)`
+  proofs while full spawn bundles keep compiling; route the increment
+  through the owning shape alias), and the degenerate one-part inverse
+  shape as a write-bundle conformance convention.
 - **Congestion roadmap** (from the lock/read telemetry). Done:
   generation-targeted waiter wakeups (waiters register once per wait and
   only satisfied ones wake; the abandoned-run path still broadcasts so a
