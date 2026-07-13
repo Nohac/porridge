@@ -98,9 +98,9 @@ mod system;
 mod world;
 
 pub use bowl::{
-    BoundEntity, Bowl, BowlBuilder, BowlEntity, Bundle, CommitLimit, ExplainReport, ExternalScoop,
-    InsertBuilder, InsertedEntity, Plugin, ProfileEntry, Registrar, RemoveBuilder, ScoopBuilder,
-    TakeBundle, TakeError,
+    BoundEntity, Bowl, BowlBuilder, BowlEntity, Bundle, CommitLimit, DespawnBuilder,
+    ExplainReport, ExternalScoop, InsertBuilder, InsertedEntity, Plugin, ProfileEntry, Registrar,
+    RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
 };
 pub use commands::{Commands, EntityCommands};
 pub use declare::{

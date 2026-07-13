@@ -298,3 +298,14 @@ impl<T: Component> BaseCommandOp for RemoveComponentBaseCommand<T> {
         world.remove_component::<T>(self.entity);
     }
 }
+
+/// Base whole-entity removal queued by external `bowl.entity(..).despawn()`.
+pub(crate) struct DespawnBaseCommand {
+    pub(crate) entity: Entity,
+}
+
+impl BaseCommandOp for DespawnBaseCommand {
+    fn apply(self: Box<Self>, world: &mut World) {
+        world.remove_entity(self.entity);
+    }
+}

@@ -90,11 +90,15 @@ See:
 - Done: external component removal — `bowl.entity(e).remove::<T>()`
   mirrors targeted inserts with the same epoch semantics (deferred
   mid-epoch, `.preempting()` to force a boundary); friction 2.
-- Add external despawn: `bowl.entity(e).despawn()` removing the whole
-  entity with the same epoch semantics (the `remove_entity` machinery,
-  relationship retraction included, already exists — only the external
-  plumbing is missing). Needed for hand-rolled request entities and any
-  externally-owned lifecycle (dsql feedback).
+- Done: external despawn — `bowl.entity(e).despawn()` removes the whole
+  entity with the same epoch semantics as targeted removal (deferred
+  mid-epoch, `.preempting()` to force a boundary), riding the existing
+  `remove_entity` machinery (relationship retraction included). The
+  runner reconciles at evaluation start: memo entries touching removed
+  entities drop, and derived outputs anchored to them cascade
+  (transitively) through the `derived_owners` index. Needed for
+  hand-rolled request entities and externally-owned lifecycles (dsql
+  feedback).
 - Done: `Commands::insert` returns the reserved `Entity` so a system can
   link parent/child facts by entity id within one buffer. Ids reserve at
   buffer time against the invocation's previous spawn slots (shared atomic

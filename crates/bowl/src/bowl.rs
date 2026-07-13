@@ -19,7 +19,10 @@ use variadics_please::all_tuples;
 
 use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
-    commands::{BaseCommandOp, CommandOp, InsertBaseCommand, RemoveComponentBaseCommand},
+    commands::{
+        BaseCommandOp, CommandOp, DespawnBaseCommand, InsertBaseCommand,
+        RemoveComponentBaseCommand,
+    },
     declare::{Schema, ShapeDesc},
     query::{
         Access, AccessKind, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
@@ -267,6 +270,50 @@ impl BowlEntity {
             preempting: false,
             _marker: std::marker::PhantomData,
         }
+    }
+
+    /// Queues removal of the whole entity and every attached component,
+    /// including relationship retraction on both sides. Same epoch
+    /// semantics as [`Bowl::insert`], including `.preempting()`.
+    ///
+    /// Externally-owned lifecycles need this: a hand-rolled request
+    /// entity or a closed document is despawned by its owner, not by
+    /// `DerivedFrom` cleanup.
+    pub fn despawn(&self) -> DespawnBuilder {
+        DespawnBuilder {
+            bowl: self.bowl.clone(),
+            entity: self.entity,
+            preempting: false,
+        }
+    }
+}
+
+/// Builder for [`BowlEntity::despawn`]; awaiting it queues the removal.
+pub struct DespawnBuilder {
+    bowl: Bowl,
+    entity: Entity,
+    preempting: bool,
+}
+
+impl DespawnBuilder {
+    /// Forces an epoch boundary instead of deferring to the next epoch (see
+    /// [`InsertBuilder::preempting`]).
+    pub fn preempting(mut self) -> Self {
+        self.preempting = true;
+        self
+    }
+}
+
+impl IntoFuture for DespawnBuilder {
+    type Output = ();
+    type IntoFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(async move {
+            self.bowl
+                .despawn_inner(self.entity, self.preempting)
+                .await;
+        })
     }
 }
 
@@ -1490,6 +1537,51 @@ impl Bowl {
         }
     }
 
+    /// See [`BowlEntity::despawn`]: whole-entity removal, deferred
+    /// mid-epoch unless `.preempting()` forces a boundary.
+    async fn despawn_inner(&self, entity: Entity, preempting: bool) {
+        let mut commands: Vec<Box<dyn BaseCommandOp>> =
+            vec![Box::new(DespawnBaseCommand { entity })];
+
+        {
+            let mut state = lock_state(&self.inner.state).await;
+            let next_generation = state.next_generation;
+
+            if state.settling == 0 {
+                state.pending_inputs.append(&mut commands);
+                state.pending_generation.get_or_insert(next_generation);
+                return;
+            }
+
+            if !preempting {
+                state.input_seq += 1;
+                let tag = state.input_seq;
+                state
+                    .deferred_inputs
+                    .extend(commands.into_iter().map(|command| (tag, command)));
+                return;
+            }
+        }
+
+        let mut waiter = PreemptWaiter::new(self, false);
+        loop {
+            let boundary = {
+                let mut state = lock_state(&self.inner.state).await;
+                if waiter.boundary_reached(&mut state) {
+                    waiter.finish();
+                    state.pending_inputs.append(&mut commands);
+                    let next_generation = state.next_generation;
+                    state.pending_generation.get_or_insert(next_generation);
+                    return;
+                }
+                let (sender, receiver) = oneshot::channel();
+                state.boundary_waiters.push(sender);
+                receiver
+            };
+            let _ = boundary.await;
+        }
+    }
+
     /// Queues an external component removal with the same epoch semantics
     /// as [`Bowl::insert`]: idle bowls queue it for the next pending
     /// generation, active epochs defer it to the next one, and
@@ -2528,6 +2620,29 @@ impl Bowl {
         // declared-output honesty) do not misattribute them to that
         // commit's writer.
         let _ = state.world.take_written_derived();
+
+        // Base-input removals (external despawns) must reconcile memo and
+        // derived state here: no commit may follow this generation to
+        // drain `removed_entities`, and a despawned driver's derived
+        // outputs can live on *other* entities. Deliberately weaker than
+        // bound-entity cleanup: memo entries and outputs are dropped only
+        // when *keyed* by a removed entity, so a live invocation that also
+        // wrote onto the despawned entity keeps its memo and its sibling
+        // outputs (its next rerun replaces them; the despawned entity's
+        // share is already gone with the entity).
+        let removed = state.world.take_removed_entities();
+        if !removed.is_empty() {
+            let mut seen: HashSet<Entity> = removed.iter().copied().collect();
+            let mut frontier: HashSet<Entity> = seen.clone();
+            while !frontier.is_empty() {
+                remove_memo_touched_by(&mut state.memo, &frontier);
+                let next = state.world.remove_derived_touched_by(&frontier);
+                frontier = next
+                    .into_iter()
+                    .filter(|entity| seen.insert(*entity))
+                    .collect();
+            }
+        }
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
@@ -6632,6 +6747,100 @@ mod tests {
                 "a re-matched row must rerun fresh, not revive a stale memo"
             );
         });
+    }
+
+    /// Despawning a driver must cascade: derived outputs its invocations
+    /// own on *other* entities are reconciled at input apply, even when
+    /// no system commit follows to drain `removed_entities` (codex review
+    /// finding on the base-op removal path).
+    async fn spawn_note_for_a(
+        query: Query<(Entity, &A)>,
+        mut commands: Commands<((Note, DerivedFrom),)>,
+    ) {
+        let (entity, _a) = query.item();
+        commands.insert((Note, DerivedFrom::new(entity)));
+    }
+
+    #[test]
+    fn despawning_a_driver_reconciles_derived_outputs_elsewhere() {
+        block_on(async {
+            let bowl = Bowl::builder().system(spawn_note_for_a).build();
+            let driver = bowl.insert((A(7),)).await;
+            // The system spawns a separate Note entity derived from the
+            // driver's invocation.
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 1);
+
+            bowl.entity(driver.entity()).despawn().await;
+
+            // No system has any reason to run this settle; the cascade at
+            // input apply must have removed the orphaned derived output.
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 0);
+        });
+    }
+
+    /// External despawn removes the whole entity — components, derived
+    /// facts keyed on it, and its query rows — with the same epoch
+    /// semantics as targeted removal.
+    #[test]
+    fn external_despawn_removes_the_whole_entity() {
+        block_on(async {
+            let bowl = Bowl::builder().system(make_b_uncounted).build();
+            let doomed = bowl.insert((A(1), Note)).await;
+            let kept = bowl.insert((A(2),)).await;
+
+            assert_eq!(bowl.scoop::<Query<(Entity, &B)>>().await.len(), 2);
+
+            bowl.entity(doomed.entity()).despawn().await;
+
+            let rows = bowl.scoop::<Query<(Entity, &A)>>().await;
+            let rows = rows.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, kept.entity());
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 0);
+        });
+    }
+
+    /// A despawn arriving mid-epoch is deferred to the next epoch (the
+    /// in-flight settle completes on its frozen input set), same as
+    /// inserts and targeted removals; `.preempting()` is the opt-out.
+    #[test]
+    fn external_despawn_mid_epoch_defers_to_the_next_epoch() {
+        use std::future::IntoFuture;
+        use std::task::Context;
+
+        FREEZE_RUNS.store(0, Ordering::SeqCst);
+        FREEZE_HOLD.store(true, Ordering::SeqCst);
+
+        let bowl = Bowl::builder().system(freeze_derive).build();
+        let doomed = block_on(async { bowl.insert((A(1),)).await });
+
+        // Become the epoch driver and suspend inside the first generation.
+        let waker = futures::task::noop_waker();
+        let mut context = Context::from_waker(&waker);
+        let mut driver = Box::pin(bowl.scoop::<Query<(Entity, &B)>>().into_future());
+        for _ in 0..100 {
+            if FREEZE_RUNS.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            assert!(driver.as_mut().poll(&mut context).is_pending());
+        }
+        assert_eq!(FREEZE_RUNS.load(Ordering::SeqCst), 1);
+
+        // Despawn arriving mid-epoch: deferred, not drained into the
+        // running epoch.
+        block_on(bowl.entity(doomed.entity()).despawn().into_future());
+
+        FREEZE_HOLD.store(false, Ordering::SeqCst);
+        let rows = block_on(driver).len();
+        assert_eq!(
+            rows, 1,
+            "the in-flight epoch must complete on its frozen input set"
+        );
+
+        // The next settle processes the despawn: entity and derived row
+        // are gone.
+        assert_eq!(block_on(bowl.scoop::<Query<(Entity, &A)>>().into_future()).len(), 0);
+        assert_eq!(block_on(bowl.scoop::<Query<(Entity, &B)>>().into_future()).len(), 0);
     }
 
     static GATED_RUNS: AtomicUsize = AtomicUsize::new(0);
