@@ -1858,11 +1858,27 @@ impl Bowl {
                     continue;
                 }
 
-                self.run_settle_phase().await;
+                // Settle-phase removals (stale-derived reaping) move
+                // viewed stores AFTER the healing pass above: a consumer
+                // that ran against rows the reap just removed holds
+                // non-final output and must heal now, or the settled
+                // reads below observe it (the A->B->A revisit strands
+                // exactly this way — the reap of the intermediate
+                // version's facts is the last store movement of the
+                // settle).
+                if self.run_settle_phase().await
+                    && self.heal_stale_ambient(&mut heal_attempts).await
+                {
+                    self.enqueue_next_generation().await;
+                    continue;
+                }
                 let mut state = lock_state(&self.inner.state).await;
                 if promote_deferred_inputs(&mut state, epoch.watermark) {
                     continue;
                 }
+                // Settle completion: close the healing epoch here (not in
+                // the settle phase, which may reopen the convergence).
+                publish_settled_revision(&mut state);
                 refresh_settled_snapshot(&self.inner, &mut state);
                 // This settle performed work: fire the settle watchers.
                 let settled_revision = state.settled_revision;
@@ -1981,9 +1997,8 @@ impl Bowl {
 
         let mut state = lock_state(&self.inner.state).await;
         state.memo = memo;
-        if !progress.needs_followup {
-            publish_settled_revision(&mut state);
-        }
+        // No publish here: the settle phase (and its healing pass) still
+        // follow — the epoch closes on the loop's completion path.
 
         progress.needs_followup
     }
@@ -1991,10 +2006,17 @@ impl Bowl {
     /// Runs the `Phase::Settle` systems once, at convergence. Their removal
     /// commands apply within the settle (reaping stale facts before settled
     /// reads return); their insert/spawn commands defer to the next run.
-    async fn run_settle_phase(&self) {
-        let (systems, mut memo) = {
+    /// Returns whether the settle phase committed anything: its removals
+    /// move viewed stores like every other commit, so the settle loop
+    /// must offer the ambient healing pass one more look afterwards.
+    async fn run_settle_phase(&self) -> bool {
+        let (systems, mut memo, revision_before) = {
             let mut state = lock_state(&self.inner.state).await;
-            (state.systems.clone(), std::mem::take(&mut state.memo))
+            (
+                state.systems.clone(),
+                std::mem::take(&mut state.memo),
+                state.world.revision_raw(),
+            )
         };
 
         let snapshot = self.snapshot().await;
@@ -2019,7 +2041,10 @@ impl Bowl {
 
         let mut state = lock_state(&self.inner.state).await;
         state.memo = memo;
-        publish_settled_revision(&mut state);
+        // No publish here: the epoch boundary is settle COMPLETION, and a
+        // progressing settle phase reopens healing (the loop publishes on
+        // its completion path).
+        state.world.revision_raw() != revision_before
     }
 
     async fn enqueue_next_generation(&self) {
@@ -6745,6 +6770,62 @@ mod tests {
                 reports.collect()[0].1.0,
                 10,
                 "a re-matched row must rerun fresh, not revive a stale memo"
+            );
+        });
+    }
+
+    struct RVictim(u64);
+    impl Component for RVictim {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(self.0)
+        }
+    }
+
+    /// Complete-phase ambient consumer over rows a Settle-phase cleanup
+    /// reaps within the same settle.
+    async fn revisit_victim_report(
+        rows: Query<(Entity, &RSrc)>,
+        victims: View<'_, (Entity, &RVictim)>,
+        mut commands: Commands<(RReport,)>,
+    ) {
+        let (entity, _src) = rows.item();
+        let sum: u64 = victims.iter().map(|(_, victim)| victim.0).sum();
+        commands.entity(entity).insert(RReport(sum));
+    }
+
+    async fn cleanup_victims(
+        query: Query<Entity, With<RVictim>>,
+        mut commands: Commands<()>,
+    ) {
+        commands.remove(query.item());
+    }
+
+    /// Settle-phase removals move viewed stores AFTER the settle's last
+    /// healing pass: a Complete-phase consumer that summed rows the reap
+    /// then removed holds non-final output, and settled reads must not
+    /// observe it (`Phase::Settle`'s contract: removals apply before
+    /// settled reads return). The settle loop must offer the healing
+    /// pass one more look after a progressing settle phase — which also
+    /// requires the healing epoch to stay open until settle COMPLETION
+    /// (neither hooks nor the settle phase may close it mid-settle).
+    #[test]
+    fn settle_phase_reaps_heal_ambient_consumers() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(revisit_victim_report.run_during(Phase::Complete))
+                .system(cleanup_victims.run_during(Phase::Settle))
+                .build();
+
+            bowl.insert((RSrc(1),)).await;
+            bowl.insert((RVictim(100),)).await;
+
+            let victims = bowl.scoop::<Query<(Entity, &RVictim)>>().await;
+            assert_eq!(victims.collect().len(), 0, "the settle phase reaps");
+            let reports = bowl.scoop::<Query<(Entity, &RReport)>>().await;
+            assert_eq!(
+                reports.collect()[0].1.0,
+                0,
+                "settled reads must not observe output computed from reaped rows"
             );
         });
     }
