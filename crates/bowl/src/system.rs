@@ -207,6 +207,11 @@ pub trait SystemParam {
     fn delta_shape() -> DeltaShape {
         DeltaShape::Opaque
     }
+    /// Whether this param contains a pair-bound join whose invocation
+    /// identity must retire when one of its partner entities disappears.
+    fn has_pair_bound() -> bool {
+        false
+    }
     /// Providers whose product rows must replan because a hinted entity
     /// is their pair partner — the member-side translation for bound
     /// joins. Empty for everything else.
@@ -399,6 +404,10 @@ where
         }
     }
 
+    fn has_pair_bound() -> bool {
+        !Filter::bound_key_types().is_empty() || !Filter::in_key_types().is_empty()
+    }
+
     fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
         <Filter as QueryFilter<Q>>::hint_providers(snapshot, hint)
     }
@@ -480,6 +489,10 @@ where
 
     fn interest_types() -> Option<Vec<TypeId>> {
         <Query<Q, Filter> as SystemParam>::interest_types()
+    }
+
+    fn has_pair_bound() -> bool {
+        <Query<Q, Filter> as SystemParam>::has_pair_bound()
     }
 
     fn states(snapshot: &Snapshot) -> Vec<Self::State> {
@@ -793,6 +806,10 @@ macro_rules! impl_system_param_tuple {
                 } else {
                     DeltaShape::Opaque
                 }
+            }
+
+            fn has_pair_bound() -> bool {
+                false $(|| $P::has_pair_bound())*
             }
 
             fn states_hinted(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Self::State> {
@@ -1401,6 +1418,10 @@ pub struct BoxedSystem {
     /// Whether the system can plan from a dirty-entity hint (exactly one
     /// plain tracked query driving rows, bounded interest).
     pub(crate) delta_eligible: bool,
+    /// Pair-bound joins have row identities that cease to exist when a
+    /// provider/member entity is removed. Unlike ordinary filtered rows,
+    /// their owned outputs retire with the vanished pair.
+    pub(crate) pair_bound: bool,
     /// The plan epoch this system's `log_pos` belongs to; `u64::MAX`
     /// forces the next plan to be full (fresh registration, resets).
     pub(crate) plan_epoch: Arc<std::sync::atomic::AtomicU64>,
@@ -1423,6 +1444,7 @@ impl BoxedSystem {
         declared_outputs: Option<Vec<TypeId>>,
         interest: Option<Vec<TypeId>>,
         delta_eligible: bool,
+        pair_bound: bool,
     ) -> Self {
         Self {
             runnable,
@@ -1432,6 +1454,7 @@ impl BoxedSystem {
             view_freshness: Arc::new(view_freshness),
             declared_outputs: declared_outputs.map(Arc::new),
             delta_eligible: delta_eligible && interest.is_some(),
+            pair_bound,
             interest: interest.map(Arc::new),
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
@@ -1964,6 +1987,7 @@ where
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
         let system_delta_eligible = system.delta_eligible;
+        let pair_bound = system.pair_bound;
         BoxedSystem {
             runnable: Arc::new(OnCompleteSystem {
                 _declares: PhantomData,
@@ -1977,6 +2001,7 @@ where
             view_freshness,
             declared_outputs,
             delta_eligible: system_delta_eligible,
+            pair_bound,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
@@ -2005,6 +2030,7 @@ where
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
         let system_delta_eligible = system.delta_eligible;
+        let pair_bound = system.pair_bound;
         BoxedSystem {
             runnable: Arc::new(OnStartSystem {
                 _declares: PhantomData,
@@ -2018,6 +2044,7 @@ where
             view_freshness,
             declared_outputs,
             delta_eligible: system_delta_eligible,
+            pair_bound,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
@@ -2046,6 +2073,7 @@ where
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
         let interest = system.interest.clone();
         let system_delta_eligible = system.delta_eligible;
+        let pair_bound = system.pair_bound;
         BoxedSystem {
             runnable: Arc::new(OnSettledSystem {
                 _declares: PhantomData,
@@ -2059,6 +2087,7 @@ where
             view_freshness,
             declared_outputs,
             delta_eligible: system_delta_eligible,
+            pair_bound,
             interest,
             planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             stats: Arc::new(SystemStats::default()),
@@ -2368,6 +2397,7 @@ where
             F::Param::declared_outputs(),
             F::Param::interest_types(),
             F::Param::delta_shape() == DeltaShape::Driver,
+            F::Param::has_pair_bound(),
         )
     }
 }

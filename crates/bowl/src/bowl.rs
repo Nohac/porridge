@@ -1866,11 +1866,24 @@ impl Bowl {
                 // exactly this way — the reap of the intermediate
                 // version's facts is the last store movement of the
                 // settle).
-                if self.run_settle_phase().await
-                    && self.heal_stale_ambient(&mut heal_attempts).await
-                {
-                    self.enqueue_next_generation().await;
-                    continue;
+                if self.run_settle_phase().await {
+                    if self.heal_stale_ambient(&mut heal_attempts).await {
+                        self.enqueue_next_generation().await;
+                        continue;
+                    }
+                    // A removal can retire downstream invocations keyed by
+                    // the reaped entity. That ownership cascade invalidates
+                    // normal-phase output even without an ambient View; give
+                    // tracked consumers one convergence pass to rebuild any
+                    // still-valid pairs.
+                    let needs_normal_followup = {
+                        let state = lock_state(&self.inner.state).await;
+                        !state.normal_clean
+                    };
+                    if needs_normal_followup {
+                        self.enqueue_next_generation().await;
+                        continue;
+                    }
                 }
                 let mut state = lock_state(&self.inner.state).await;
                 if promote_deferred_inputs(&mut state, epoch.watermark) {
@@ -2656,18 +2669,18 @@ impl Bowl {
         // outputs (its next rerun replaces them; the despawned entity's
         // share is already gone with the entity).
         let removed = state.world.take_removed_entities();
-        if !removed.is_empty() {
-            let mut seen: HashSet<Entity> = removed.iter().copied().collect();
-            let mut frontier: HashSet<Entity> = seen.clone();
-            while !frontier.is_empty() {
-                remove_memo_touched_by(&mut state.memo, &frontier);
-                let next = state.world.remove_derived_touched_by(&frontier);
-                frontier = next
-                    .into_iter()
-                    .filter(|entity| seen.insert(*entity))
-                    .collect();
-            }
-        }
+        // External despawn already performs the broader synchronous ownership
+        // cascade above, so these commit-time bookkeeping owners are spent.
+        let _ = state.world.take_removed_owners();
+        let State { world, memo, .. } = &mut *state;
+        let _ = reconcile_removed_invocations(
+            world,
+            memo,
+            removed,
+            std::iter::empty(),
+            &[],
+            None,
+        );
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
@@ -3351,12 +3364,37 @@ async fn commit_system_run(
         memo.insert(owner, entry);
     }
 
-    // Memo entries keyed by removed entities can never match a planned row
-    // again; drop them so long-running bowls do not accumulate dead entries.
+    // Pair-bound invocation identity includes every provider/member entity.
+    // When one disappears, retire that pair's memo and owned outputs, then
+    // propagate through derived entities used by further bound pairs. Plain
+    // filtered rows retain their established lingering-output semantics.
     let removed = state.world.take_removed_entities();
-    if !removed.is_empty() {
-        let keys = removed.into_iter().collect::<HashSet<_>>();
-        remove_memo_touched_by(memo, &keys);
+    let removed_owners = state.world.take_removed_owners();
+    if !removed.is_empty() || !removed_owners.is_empty() {
+        let pair_bound_systems: HashSet<SystemId> = state
+            .systems
+            .iter()
+            .enumerate()
+            .filter_map(|(index, system)| system.pair_bound.then_some(SystemId(index)))
+            .collect();
+        let State {
+            world,
+            systems: system_defs,
+            ..
+        } = &mut *state;
+        if reconcile_removed_invocations(
+            world,
+            memo,
+            removed,
+            removed_owners,
+            system_defs,
+            Some(&pair_bound_systems),
+        ) {
+            // The normal phases converged before this Settle-phase cascade.
+            // Mark that fixed point dirty so settle() schedules one more normal
+            // generation instead of publishing partially retracted output.
+            state.normal_clean = false;
+        }
     }
 
     let needs_followup = state.world.revision_raw() != before_revision
@@ -3370,6 +3408,55 @@ async fn commit_system_run(
 
 fn remove_memo_touched_by(memo: &mut HashMap<SystemInvocation, MemoEntry>, keys: &HashSet<Entity>) {
     memo.retain(|owner, _| !owner.keys.iter().any(|key| keys.contains(key)));
+}
+
+/// Retires pair-bound invocations whose row identity depended on a removed
+/// entity.
+///
+/// Removing a derived entity can invalidate downstream join rows without
+/// removing any of their other keys. Pair outputs leave with the vanished
+/// partner, and those output entities may key further pairs, so reconcile the
+/// selected systems' ownership graph to a fixed point. `systems == None` is
+/// the broader external-despawn cascade.
+fn reconcile_removed_invocations(
+    world: &mut World,
+    memo: &mut HashMap<SystemInvocation, MemoEntry>,
+    removed: impl IntoIterator<Item = Entity>,
+    removed_owners: impl IntoIterator<Item = SystemInvocation>,
+    system_defs: &[BoxedSystem],
+    systems: Option<&HashSet<SystemId>>,
+) -> bool {
+    let mut seen: HashSet<Entity> = removed.into_iter().collect();
+    let mut frontier = seen.clone();
+    let mut retired_outputs = false;
+
+    for owner in removed_owners {
+        if systems.is_some_and(|systems| !systems.contains(&owner.system)) {
+            continue;
+        }
+        // The removed component was itself one of this invocation's outputs.
+        // Invalidating a present memo makes a still-matching pair re-emit it
+        // on the follow-up pass; explicitly wake planning because removing an
+        // output need not move any of the producer's input watermarks. An
+        // already-absent memo was retired by an earlier frontier/follow-up and
+        // needs neither another wake-up nor another normal pass.
+        if memo.remove(&owner).is_some() {
+            system_defs[owner.system.0].force_replan(&owner.keys);
+            retired_outputs = true;
+        }
+    }
+
+    while !frontier.is_empty() {
+        remove_memo_touched_by(memo, &frontier);
+        let removed_outputs = world.remove_derived_touched_by_systems(&frontier, systems);
+        retired_outputs |= !removed_outputs.is_empty();
+        frontier = removed_outputs
+            .into_iter()
+            .filter(|entity| seen.insert(*entity))
+            .collect();
+    }
+
+    retired_outputs
 }
 
 /// Whether the bowl is fully settled: no pending or running generation and
@@ -5610,6 +5697,76 @@ mod tests {
         });
     }
 
+    /// A member reaped after normal phases have converged removes the output
+    /// owned by its single-key pair; the vanished invocation cannot rerun to
+    /// retract that output itself.
+    #[test]
+    fn settle_reap_retires_single_key_bound_pair_outputs() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(self_keyed_join)
+                .system(remove_doomed.run_during(Phase::Settle))
+                .build();
+
+            bowl.insert((A(1), FingerprintedRank(1))).await;
+            bowl.insert((B(2), FingerprintedRank(1), Doomed)).await;
+
+            assert_eq!(
+                collect_sums(&bowl).await,
+                std::collections::BTreeSet::new(),
+                "the removed pair must not leave its separately spawned output"
+            );
+        });
+    }
+
+    async fn spawn_note_for_rank_pair(
+        providers: Query<(Entity, &A, &FingerprintedRank)>,
+        members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
+        mut commands: Commands<Anything>,
+    ) {
+        let (_provider, _a, _rank) = providers.item();
+        let (_member, _b) = members.item();
+        commands.insert((Note,));
+    }
+
+    async fn reap_note_once(
+        gate: Query<Entity, With<C>>,
+        notes: Query<Entity, With<Note>>,
+        mut commands: Commands<Anything>,
+    ) {
+        commands.remove(notes.item());
+        commands.remove(gate.item());
+    }
+
+    /// Reaping a pair's output entity leaves both partner rows intact. The
+    /// removed-output owner must therefore invalidate its memo so a normal
+    /// follow-up can re-emit the output. Removing the gate makes the reap
+    /// one-shot and prevents a reap/re-emit loop.
+    #[test]
+    fn reaped_pair_output_invalidates_its_memo_and_reemits() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_note_for_rank_pair)
+                .system(reap_note_once.run_during(Phase::Settle))
+                .build();
+
+            bowl.insert((A(1), FingerprintedRank(1))).await;
+            bowl.insert((B(2), FingerprintedRank(1))).await;
+            bowl.insert((C(0),)).await;
+
+            assert_eq!(
+                bowl.scoop::<Query<Entity, With<Note>>>().await.len(),
+                1,
+                "the still-matching pair must recreate its reaped output"
+            );
+            assert_eq!(
+                bowl.scoop::<Query<Entity, With<C>>>().await.len(),
+                0,
+                "the one-shot reap gate must stay removed"
+            );
+        });
+    }
+
     struct KeyB(u32);
     impl Component for KeyB {
         fn fingerprint(&self) -> Option<u64> {
@@ -5649,6 +5806,29 @@ mod tests {
                 collect_sums(&bowl).await,
                 [110, 220].into_iter().collect(),
                 "rows matching only one of two keys must not pair"
+            );
+        });
+    }
+
+    /// Compound bound filters carry the same pair lifetime as their
+    /// single-key counterpart: reaping either partner retires pair-owned
+    /// output even though the invocation row can no longer be planned.
+    #[test]
+    fn settle_reap_retires_compound_bound_pair_outputs() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(compound_key_join)
+                .system(remove_doomed.run_during(Phase::Settle))
+                .build();
+
+            bowl.insert((A(1), FingerprintedRank(1), KeyB(1))).await;
+            bowl.insert((B(10), FingerprintedRank(1), KeyB(1), Doomed))
+                .await;
+
+            assert_eq!(
+                collect_sums(&bowl).await,
+                std::collections::BTreeSet::new(),
+                "the reaped compound pair must not strand its output"
             );
         });
     }
@@ -5845,6 +6025,7 @@ mod tests {
 
     static FREEZE_RUNS: AtomicUsize = AtomicUsize::new(0);
     static FREEZE_HOLD: AtomicBool = AtomicBool::new(true);
+    static FREEZE_TEST_LOCK: StdMutex<()> = StdMutex::new(());
 
     async fn freeze_derive(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (entity, a) = query.item();
@@ -5865,6 +6046,9 @@ mod tests {
         use std::future::IntoFuture;
         use std::task::Context;
 
+        let _test_guard = FREEZE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         FREEZE_RUNS.store(0, Ordering::SeqCst);
         FREEZE_HOLD.store(true, Ordering::SeqCst);
 
@@ -7189,6 +7373,28 @@ mod tests {
         });
     }
 
+    /// Commit-time row removal deliberately has weaker semantics for plain
+    /// queries than for pair-bound joins: a vanished ordinary row keeps its
+    /// previously emitted output until another mechanism retracts it.
+    #[test]
+    fn settle_reap_keeps_non_pair_bound_outputs_lingering() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_note_for_a)
+                .system(remove_doomed.run_during(Phase::Settle))
+                .build();
+
+            bowl.insert((A(7), Doomed)).await;
+
+            assert_eq!(bowl.scoop::<Query<(Entity, &A)>>().await.len(), 0);
+            assert_eq!(
+                bowl.scoop::<Query<Entity, With<Note>>>().await.len(),
+                1,
+                "ordinary removed-row output must preserve its established lifetime"
+            );
+        });
+    }
+
     /// External despawn removes the whole entity — components, derived
     /// facts keyed on it, and its query rows — with the same epoch
     /// semantics as targeted removal.
@@ -7219,6 +7425,9 @@ mod tests {
         use std::future::IntoFuture;
         use std::task::Context;
 
+        let _test_guard = FREEZE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         FREEZE_RUNS.store(0, Ordering::SeqCst);
         FREEZE_HOLD.store(true, Ordering::SeqCst);
 
@@ -7516,6 +7725,31 @@ mod tests {
         });
     }
 
+    /// A matched outer-join partner can disappear in Settle, after the
+    /// matched invocation was memoized. Retiring that pair must reopen normal
+    /// convergence so the surviving provider runs its `None` placeholder.
+    #[test]
+    fn settle_reap_transitions_outer_join_to_none() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(resolve_or_default)
+                .system(remove_doomed.run_during(Phase::Settle))
+                .build();
+
+            let request = bowl.insert((Request, FingerprintedRank(1))).await;
+            bowl.insert((D(42), FingerprintedRank(1), Doomed)).await;
+
+            let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let rows = counts.collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, request.entity());
+            assert_eq!(
+                rows[0].1.0, 999,
+                "the surviving provider must rerun through the outer placeholder"
+            );
+        });
+    }
+
     // --- relationship tests (spec/joins.md, "Authoring shape") ---
     // Hand-written impls of what #[relationship]/#[relationship_target]
     // will derive; the engine maintenance is what is under test.
@@ -7720,6 +7954,42 @@ mod tests {
                 .await;
             let noted = bowl.scoop::<Query<Entity, With<Note>>>().await;
             assert_eq!(noted.collect().len(), 3);
+        });
+    }
+
+    async fn sum_member_pair(
+        parents: Query<(Entity, &A, &Members)>,
+        member: Query<(Entity, &B), Where<In<Members>>>,
+        mut commands: Commands<Anything>,
+    ) {
+        let (parent, a, _members) = parents.item();
+        let (member, b) = member.item();
+        commands.insert((
+            DerivedFrom::many([parent, member]),
+            Sum(a.0 + b.0),
+        ));
+    }
+
+    /// Relationship membership retraction removes the `In` row itself. Its
+    /// separately spawned output must retire with the vanished member instead
+    /// of lingering behind an invocation that can no longer be planned.
+    #[test]
+    fn settle_reap_retires_in_bound_pair_outputs() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(sum_member_pair)
+                .system(remove_doomed.run_during(Phase::Settle))
+                .build();
+
+            let parent = bowl.insert((A(10),)).await;
+            bowl.insert((B(2), MemberOf(parent.entity()), Doomed))
+                .await;
+
+            assert_eq!(
+                collect_sums(&bowl).await,
+                std::collections::BTreeSet::new(),
+                "the removed membership pair must not strand its output"
+            );
         });
     }
 

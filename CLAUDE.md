@@ -6,6 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Porridge is an ECS-inspired **incremental evaluation** prototype for compilers, language tools, and other stateful non-game systems. Facts are components on entities, systems are async functions that derive more facts, and callers query settled results. It is a prototype: the API is still being shaped, and the playground is the main documentation alongside `README.md`, `TODO.md` (roadmap), and `spec/` (design docs — `formal-semantics.md`, `streaming-evaluation.md`, `access-scheduling.md`, etc.).
 
+## Change workflow (mandatory Fable review)
+
+Every change to this repository — code, specs, docs, benchmarks — goes through an external
+Fable review session before implementation and again before commit. Read-only work (answering
+questions, exploring code) is exempt.
+
+1. **Plan first.** Before touching any file, write a concrete plan (files, approach, tests)
+   and send it for review: `fable "<plan>"`. Capture the session id from the response and
+   reuse it with `fable --resume "<session>" "<prompt>"` for all follow-ups on the same task;
+   start a fresh session only for unrelated work.
+2. **Wait for explicit approval.** Ask Fable to answer with exactly `APPROVED PLAN` or
+   `CHANGES REQUESTED`. Implement only after a response containing `APPROVED PLAN`. On
+   `CHANGES REQUESTED` (or any qualified/ambiguous answer), revise the plan and resubmit to
+   the same session — never implement in parallel with an open review.
+3. **Implement, then submit for final review.** Send the full diff (`git diff`) plus
+   verification evidence — the exact commands run (at minimum `cargo build` and the relevant
+   `cargo test`; benches/playground runs when touched) and their pass/fail output — back to
+   the *same* session. Ask for exactly `APPROVED` or `CHANGES REQUESTED`. On
+   `CHANGES REQUESTED`, apply the requested fixes and resubmit the updated diff and evidence.
+4. **Commit gate.** Fable approval is necessary but never sufficient: it does not grant
+   commit authorization. The rule under "Commit convention" still applies — the user must
+   authorize every commit. Do not commit without both Fable's `APPROVED` and the user's go.
+
+Fable sessions are planning/review only: prompts must instruct Fable not to edit files or
+commit, and if a Fable response indicates it modified anything, stop and report it to the
+user instead of proceeding.
+
 ## Commit convention
 
 Short lowercase imperative subject (e.g. `add guarded component cells`), no body, no attribution/Co-Authored-By trailers. Exception: performance commits may carry a body listing old vs new benchmark numbers.

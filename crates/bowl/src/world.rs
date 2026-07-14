@@ -540,6 +540,12 @@ pub struct World {
     /// The commit path uses it to purge memo entries keyed by entities that
     /// no longer exist.
     removed_entities: Vec<Entity>,
+    /// Invocation owners whose derived components were removed as part of a
+    /// commit-time whole-entity removal. Their memos must be invalidated too:
+    /// otherwise a still-matching row considers itself current and never
+    /// recreates the output that cleanup reaped. External despawn performs a
+    /// broader synchronous ownership cascade and discards this bookkeeping.
+    removed_owners: Vec<SystemInvocation>,
     /// `DerivedFrom` inserts deferred until the current command buffer has
     /// fully applied.
     ///
@@ -709,6 +715,7 @@ impl Clone for World {
             derived_spawns: Arc::clone(&self.derived_spawns),
             spawn_cursors: HashMap::new(),
             removed_entities: Vec::new(),
+            removed_owners: Vec::new(),
             pending_derived_from: Vec::new(),
             flushing_anchors: false,
             written_derived: Vec::new(),
@@ -749,6 +756,7 @@ impl World {
             derived_spawns: Arc::new(Mutex::new(HashMap::new())),
             spawn_cursors: HashMap::new(),
             removed_entities: Vec::new(),
+            removed_owners: Vec::new(),
             pending_derived_from: Vec::new(),
             flushing_anchors: false,
             written_derived: Vec::new(),
@@ -897,6 +905,13 @@ impl World {
     /// Drains the entities removed since the last drain.
     pub(crate) fn take_removed_entities(&mut self) -> Vec<Entity> {
         std::mem::take(&mut self.removed_entities)
+    }
+
+    /// Drains invocation owners whose derived output entities were removed.
+    /// Commit-time callers invalidate their memos; external despawn has
+    /// already reconciled the broader ownership cascade and discards them.
+    pub(crate) fn take_removed_owners(&mut self) -> Vec<SystemInvocation> {
+        std::mem::take(&mut self.removed_owners)
     }
 
     /// Applies the `DerivedFrom` inserts deferred from the command buffer
@@ -1370,10 +1385,23 @@ impl World {
     /// The returned entities form the next cleanup frontier: a derived entity
     /// touched by a bound request may itself own more derived outputs.
     pub(crate) fn remove_derived_touched_by(&mut self, keys: &HashSet<Entity>) -> Vec<Entity> {
+        self.remove_derived_touched_by_systems(keys, None)
+    }
+
+    /// Pair-lifetime variant of [`World::remove_derived_touched_by`]: only
+    /// retire invocations belonging to the selected systems.
+    pub(crate) fn remove_derived_touched_by_systems(
+        &mut self,
+        keys: &HashSet<Entity>,
+        systems: Option<&HashSet<SystemId>>,
+    ) -> Vec<Entity> {
         let owners = self
             .derived_owners
             .keys()
-            .filter(|owner| owner.keys.iter().any(|key| keys.contains(key)))
+            .filter(|owner| {
+                systems.is_none_or(|systems| systems.contains(&owner.system))
+                    && owner.keys.iter().any(|key| keys.contains(key))
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -1453,6 +1481,7 @@ impl World {
             (retraction.remove_edge)(self, retraction.source);
         }
 
+        self.removed_owners.extend(owners.iter().cloned());
         owners
     }
 
