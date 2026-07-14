@@ -6830,6 +6830,336 @@ mod tests {
         });
     }
 
+    // --- bound-join revisit tests (dsql: staleness on content revisit,
+    // region half) ---
+
+    /// A document's content: a tree of named nodes, fingerprinted whole.
+    /// No parsing — the shape is data, and depth-first ordinals stand in
+    /// for byte offsets (an insertion early in the tree shifts every
+    /// later node's ordinal, exactly like spans under a text edit).
+    #[derive(Clone, PartialEq, Debug)]
+    struct RtSrc(Vec<RtSpec>);
+    impl Component for RtSrc {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&format!("{:?}", self.0)))
+        }
+    }
+
+    #[derive(Clone, PartialEq, Debug)]
+    struct RtSpec {
+        name: &'static str,
+        children: Vec<RtSpec>,
+    }
+
+    fn rt(name: &'static str, children: Vec<RtSpec>) -> RtSpec {
+        RtSpec { name, children }
+    }
+
+    /// One lowered tree node; the ordinal makes the value
+    /// position-dependent like a span.
+    #[derive(Clone, PartialEq)]
+    struct RtNode {
+        name: &'static str,
+        ordinal: usize,
+    }
+    impl Component for RtNode {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&(self.name, self.ordinal)))
+        }
+    }
+
+    #[derive(Clone, PartialEq)]
+    struct RtChildOf(Entity);
+    impl Component for RtChildOf {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+
+        fn relationship_edge(&self) -> Option<RelationshipEdge> {
+            Some(RelationshipEdge::new::<RtKids>(self.0))
+        }
+    }
+
+    #[derive(Clone, PartialEq)]
+    struct RtKids(Vec<Entity>);
+    impl Component for RtKids {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+
+        fn relationship_retractions(&self) -> Vec<RelationshipRetraction> {
+            relationship_retractions_for(self)
+        }
+
+        fn relationship_members(&self) -> Option<Vec<Entity>> {
+            Some(self.0.clone())
+        }
+    }
+    impl RelationshipTarget for RtKids {
+        type Edge = RtChildOf;
+
+        fn from_members(members: Vec<Entity>) -> Self {
+            RtKids(members)
+        }
+
+        fn members(&self) -> &[Entity] {
+            &self.0
+        }
+    }
+
+    #[derive(Clone, PartialEq)]
+    struct RtResOf(Entity);
+    impl Component for RtResOf {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+
+        fn relationship_edge(&self) -> Option<RelationshipEdge> {
+            Some(RelationshipEdge::new::<RtNodeRes>(self.0))
+        }
+    }
+
+    #[derive(Clone, PartialEq)]
+    struct RtNodeRes(Vec<Entity>);
+    impl Component for RtNodeRes {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+
+        fn relationship_retractions(&self) -> Vec<RelationshipRetraction> {
+            relationship_retractions_for(self)
+        }
+
+        fn relationship_members(&self) -> Option<Vec<Entity>> {
+            Some(self.0.clone())
+        }
+    }
+    impl RelationshipTarget for RtNodeRes {
+        type Edge = RtResOf;
+
+        fn from_members(members: Vec<Entity>) -> Self {
+            RtNodeRes(members)
+        }
+
+        fn members(&self) -> &[Entity] {
+            &self.0
+        }
+    }
+
+    /// A node's resolution: the label threads the parent chain, so a
+    /// stale pairing shows in the value, not just in absence.
+    #[derive(Clone, PartialEq)]
+    struct RtResolved {
+        node: Entity,
+        label: String,
+    }
+    impl Component for RtResolved {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&(self.node, self.label.as_str())))
+        }
+    }
+
+    /// The lower walk: depth-first node spawn per document, so an edit
+    /// early in the tree shifts every later node's slot AND ordinal —
+    /// dsql's lowering shape.
+    async fn rt_lower(docs: Query<(Entity, &RtSrc)>, mut commands: Commands<Anything>) {
+        let (doc, src) = docs.item();
+        fn walk(
+            commands: &mut Commands<Anything>,
+            doc: Entity,
+            parent: Entity,
+            specs: &[RtSpec],
+            ordinal: &mut usize,
+        ) {
+            for spec in specs {
+                *ordinal += 1;
+                let node = commands
+                    .insert((
+                        DerivedFrom::new(doc),
+                        RtNode {
+                            name: spec.name,
+                            ordinal: *ordinal,
+                        },
+                        RtChildOf(parent),
+                    ))
+                    .untyped();
+                walk(commands, doc, node, &spec.children, ordinal);
+            }
+        }
+        let mut ordinal = 0;
+        walk(&mut commands, doc, doc, &src.0, &mut ordinal);
+    }
+
+    /// Root resolutions: one per (document, root node) pair.
+    async fn rt_resolve_roots(
+        docs: Query<(Entity, &RtSrc, &RtKids)>,
+        roots: Query<(Entity, &RtNode), Where<In<RtKids>>>,
+        mut commands: Commands<Anything>,
+    ) {
+        let (_doc, _src, _kids) = docs.item();
+        let (root_entity, node) = roots.item();
+        commands.insert((
+            DerivedFrom::new(root_entity),
+            RtResOf(root_entity),
+            RtResolved {
+                node: root_entity,
+                label: format!("~{}", node.name),
+            },
+        ));
+    }
+
+    /// The nested fixed point: a node row paired with its OWN resolution
+    /// through the maintained inverse, and with each child through
+    /// `RtKids` — dsql's `resolve_nested` shape.
+    async fn rt_resolve_nested(
+        parents: Query<(Entity, &RtNode, &RtKids, &RtNodeRes)>,
+        resolution: Query<(Entity, &RtResolved), Where<In<RtNodeRes>>>,
+        children: Query<(Entity, &RtNode), Where<In<RtKids>>>,
+        mut commands: Commands<Anything>,
+    ) {
+        let (_parent, _node, _kids, _inverse) = parents.item();
+        let (_res_entity, parent_res) = resolution.item();
+        let (child_entity, child) = children.item();
+        commands.insert((
+            DerivedFrom::new(child_entity),
+            RtResOf(child_entity),
+            RtResolved {
+                node: child_entity,
+                label: format!("{}/{}", parent_res.label, child.name),
+            },
+        ));
+    }
+
+    /// Every current node resolved exactly once under its own name, and
+    /// no resolution pointing at a vanished node.
+    async fn rt_assert_resolved(bowl: &Bowl, context: &str) {
+        let nodes = bowl.scoop::<Query<(Entity, &RtNode)>>().await;
+        let nodes: Vec<(Entity, &'static str)> = nodes
+            .collect()
+            .into_iter()
+            .map(|(entity, node)| (entity, node.name))
+            .collect();
+        let resolutions = bowl.scoop::<Query<(Entity, &RtResolved)>>().await;
+        let resolutions: Vec<(Entity, Entity, String)> = resolutions
+            .collect()
+            .into_iter()
+            .map(|(entity, resolved)| (entity, resolved.node, resolved.label.clone()))
+            .collect();
+
+        for (entity, name) in &nodes {
+            let matched: Vec<&String> = resolutions
+                .iter()
+                .filter(|(_, node, _)| node == entity)
+                .map(|(_, _, label)| label)
+                .collect();
+            assert_eq!(
+                matched.len(),
+                1,
+                "{context}: node `{name}` ({entity:?}) must have exactly one \
+                 resolution, got {matched:?}"
+            );
+            assert!(
+                matched[0].ends_with(&format!("/{name}")) || matched[0] == &format!("~{name}"),
+                "{context}: node `{name}` resolved under a stale pairing: {}",
+                matched[0]
+            );
+        }
+        for (res_entity, node, label) in &resolutions {
+            assert!(
+                nodes.iter().any(|(entity, _)| entity == node),
+                "{context}: resolution {res_entity:?} (`{label}`) is a ghost — its \
+                 node {node:?} no longer exists"
+            );
+        }
+    }
+
+    fn rt_bowl() -> Bowl {
+        Bowl::builder()
+            .system(rt_lower)
+            .system(rt_resolve_roots)
+            .system(rt_resolve_nested)
+            .system(cleanup_stale_derived.run_during(Phase::Settle))
+            .build()
+    }
+
+    /// The A→B→A staleness bug, region half (dsql: bound-join replanning
+    /// on content revisit), at its minimum: one chain `t(h(c(n)))`, one
+    /// node inserted early (shifting every later node's slot and
+    /// ordinal), then the original content restored. Every
+    /// (node, resolution, child) pairing must re-derive — currently the
+    /// deepest node ends with TWO resolutions, its own plus a stale
+    /// pairing from the intermediate tree (`~t/h/n`: the slot entity
+    /// paired as `h`'s direct child in the shifted world), which cleanup
+    /// never reaps because the slot entity still exists.
+    #[test]
+    fn bound_join_pairs_rederive_on_content_revisit() {
+        block_on(async {
+            let bowl = rt_bowl();
+            let original = vec![rt("t", vec![rt("h", vec![rt("c", vec![rt("n", vec![])])])])];
+            let doc = bowl.insert((RtSrc(original.clone()),)).await;
+            rt_assert_resolved(&bowl, "initial").await;
+
+            let probed = vec![rt(
+                "t",
+                vec![rt("p", vec![]), rt("h", vec![rt("c", vec![rt("n", vec![])])])],
+            )];
+            bowl.entity(doc.entity()).insert((RtSrc(probed),)).await;
+            rt_assert_resolved(&bowl, "edit").await;
+
+            // Fingerprint-equal to the initial state.
+            bowl.entity(doc.entity())
+                .insert((RtSrc(original),))
+                .await;
+            rt_assert_resolved(&bowl, "restore").await;
+        });
+    }
+
+    /// The same revisit against a wider forest plus an untouched sibling
+    /// document (a host region and the fragment file it spreads from):
+    /// pairings must re-derive without bleeding into the document that
+    /// never changed.
+    #[test]
+    fn bound_join_revisit_leaves_sibling_documents_alone() {
+        block_on(async {
+            let bowl = rt_bowl();
+            let original = vec![rt(
+                "t",
+                vec![
+                    rt("h", vec![rt("c", vec![rt("n", vec![])])]),
+                    rt("k", vec![rt("w", vec![])]),
+                    rt("f", vec![rt("i", vec![]), rt("n", vec![])]),
+                ],
+            )];
+            let doc = bowl.insert((RtSrc(original.clone()),)).await;
+            bowl.insert((RtSrc(vec![rt(
+                "g",
+                vec![
+                    rt("a", vec![rt("x", vec![]), rt("y", vec![])]),
+                    rt("b", vec![rt("z", vec![])]),
+                ],
+            )]),))
+                .await;
+            rt_assert_resolved(&bowl, "initial").await;
+
+            let probed = vec![rt(
+                "t",
+                vec![
+                    rt("p", vec![]),
+                    rt("h", vec![rt("c", vec![rt("n", vec![])])]),
+                    rt("k", vec![rt("w", vec![])]),
+                    rt("f", vec![rt("i", vec![]), rt("n", vec![])]),
+                ],
+            )];
+            bowl.entity(doc.entity()).insert((RtSrc(probed),)).await;
+            rt_assert_resolved(&bowl, "edit").await;
+
+            bowl.entity(doc.entity())
+                .insert((RtSrc(original),))
+                .await;
+            rt_assert_resolved(&bowl, "restore").await;
+        });
+    }
+
     /// Despawning a driver must cascade: derived outputs its invocations
     /// own on *other* entities are reconciled at input apply, even when
     /// no system commit follows to drain `removed_entities` (codex review
