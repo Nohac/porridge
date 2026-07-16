@@ -1,38 +1,62 @@
 # Porridge
 
 Porridge is an ECS-inspired incremental evaluation prototype for compilers,
-language tools, CLIs, daemons, and other stateful systems that are not games.
+language tools, and other stateful systems that are not games.
 
-The core idea is simple:
+Callers insert facts. Async systems derive more facts. Queries ask for settled
+results. The runtime tracks which component revisions each system invocation
+observed, so unchanged rows stay memoized while affected rows run again.
 
 ```text
-put facts in
-register systems that derive more facts
-query the facts you want
+base facts -> snapshots -> memoized systems -> buffered facts -> fixed point
+                                                                  |
+                                                       settled query results
 ```
 
-Facts are components on entities. Systems are async functions that read
-memoized `Query` rows from structural snapshots and write buffered `Commands`.
-Calling `bowl.scoop::<Query<...>>().await` settles the bowl first, so callers ask for
-outputs instead of manually driving pipeline stages.
+The project is deliberately experimental. Its API and execution model are
+still being shaped, but the repository already exercises the model with a toy
+language service, demand-driven diagnostics, hover requests, relationships,
+joins, schemas, plugins, replication seams, and incremental edits.
 
-This is still a prototype. The API is intentionally small and some internals are
-still being shaped, but the current runtime is useful enough to explore real
-compiler and service patterns.
+The best end-to-end tour is [`crates/playground`](crates/playground). The design
+documents in [`spec/`](spec) explain the model in more detail, and
+[`TODO.md`](TODO.md) tracks what is implemented versus still exploratory.
 
-For a more precise model of inputs, derived state, memoization, streaming
-evaluation, and settled reads, see [spec/formal-semantics.md](spec/formal-semantics.md).
+## Why this model?
 
-## Quick Example
+Compiler pipelines tend to accumulate several overlapping mechanisms:
+
+- a source database;
+- caches and invalidation keys;
+- stage orchestration;
+- request-specific work;
+- indexes and reverse indexes;
+- lifecycle rules for diagnostics and other derived state.
+
+Porridge explores whether those mechanisms can share one vocabulary:
+
+- **entities** identify things;
+- **components** are facts about them;
+- **systems** derive facts from tracked query rows;
+- **views** read ambient context from the same snapshot;
+- **commands** publish buffered output;
+- **schemas** describe valid entity shapes;
+- **settling** drives the graph until callers can observe a fixed point.
+
+This is closer to an incremental database than a traditional staged compiler.
+Systems do not call the next stage. They state what facts they need and what
+facts they may produce.
+
+## Quick start
+
+The workspace is not currently presented as a published crate. Clone the
+repository and use the `bowl` workspace crate while exploring the API.
+
+This complete example defines one schema shape, derives an optional fact on
+that shape, and queries the settled result:
 
 ```rust
-use bowl::{
-    Bowl, Commands, Component, DerivedFrom, Entity, Query, Singleton, SystemExt, View,
-};
-
-#[derive(Component, Hash, PartialEq, Eq)]
-#[component(hash)]
-struct SourcePath(String);
+use bowl::{Bowl, Commands, Component, Entity, Query, Schema};
 
 #[derive(Component, Hash)]
 #[component(hash)]
@@ -40,927 +64,451 @@ struct SourceText(String);
 
 #[derive(Component, Hash)]
 #[component(hash)]
-struct ParsedModule {
-    name: String,
+struct LineCount(usize);
+
+#[derive(Schema)]
+struct QuickSchema {
+    source_file: (SourceText, Option<LineCount>),
 }
 
-#[derive(Component, Hash)]
-#[component(hash)]
-struct Diagnostic(String);
-
-#[derive(Component)]
-#[component(untracked)]
-struct Ephemeral;
-
-#[derive(Clone, Copy)]
-struct ModulesParsed;
-
-impl Component for ModulesParsed {
-    fn tracked() -> bool {
-        false
-    }
-}
-
-async fn parse_source(query: Query<(Entity, &SourceText)>, mut commands: Commands) {
-    let (source, text) = query.item();
-
-    if text.0.contains("module") {
-        commands.entity(source).insert(ParsedModule {
-            name: "example".to_string(),
-        });
-    } else {
-        commands.insert((
-            DerivedFrom::new(source),
-            Diagnostic("expected module declaration".to_string()),
-        ));
-    }
-}
-
-async fn validate_modules(
-    _: Query<Entity, bowl::With<ModulesParsed>>,
-    module: Query<(Entity, &ParsedModule)>,
-    all_modules: View<'_, (Entity, &ParsedModule)>,
-    mut commands: Commands,
+async fn count_lines(
+    source: Query<(
+        Entity<quick_schema::SourceFile>,
+        &SourceText,
+    )>,
+    mut commands: Commands<(quick_schema::SourceFile,)>,
 ) {
-    let (entity, module) = module.item();
-
-    if all_modules
-        .iter()
-        .any(|(other, other_module)| other < entity && other_module.name == module.name)
-    {
-        commands.insert((
-            DerivedFrom::new(entity),
-            Diagnostic(format!("duplicate module `{}`", module.name)),
-        ));
-    }
+    let (entity, text) = source.item();
+    commands.entity(entity).insert(LineCount(text.0.lines().count()));
 }
 
-async fn cleanup_ephemeral(query: Query<Entity, bowl::With<Ephemeral>>, mut commands: Commands) {
-    commands.remove(query.item());
-}
-
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() {
-    let bowl = Bowl::new();
+    let bowl = Bowl::builder()
+        .schema::<QuickSchema>()
+        .system(count_lines)
+        .build();
 
-    bowl.add_system(parse_source.on_settled(|mut commands: Commands| {
-        commands.insert((Singleton::<ModulesParsed>::new(), ModulesParsed, Ephemeral));
-    }))
-    .await;
-    bowl.add_system(validate_modules.run_during(bowl::Phase::Complete))
-        .await;
-    bowl.add_system(cleanup_ephemeral.run_during(bowl::Phase::Settle))
+    bowl.insert((SourceText("one\ntwo\nthree".to_string()),))
         .await;
 
-    bowl.insert((
-        SourcePath("src/main.por".to_string()),
-        SourceText("module main".to_string()),
-    ))
-    .await;
-
-    let diagnostics = bowl.scoop::<Query<(Entity, &Diagnostic)>>().await;
-    for (entity, diagnostic) in diagnostics.collect() {
-        println!("{}: {}", entity.raw(), diagnostic.0);
+    let counts = bowl.scoop::<Query<(Entity, &LineCount)>>().await;
+    for (_entity, count) in counts.collect() {
+        println!("{}", count.0);
     }
 }
 ```
 
-## Mental Model
+`scoop` settles pending work before materializing the query. The first read
+therefore prints `3`; a later equal `SourceText` fingerprint causes no rerun,
+while changed text invalidates only the affected row.
 
-Porridge has no separate resources. Everything is a component. If a value should
-exist once, insert it as a singleton component.
+The schema is doing real work here. `source_file` declares that `SourceText` is
+required and `LineCount` is optional. The generated
+`quick_schema::SourceFile` facet is used both to anchor the query and to declare
+which shape the system may update. Through that typed facet, only optional
+parts can be added incrementally.
 
-```rust
-# use bowl::{Bowl, Component, Singleton};
-# use std::collections::HashSet;
-# #[derive(Component, Clone)]
-# struct ImportDatabase(HashSet<String>);
-# async fn example(bowl: Bowl) {
-bowl.insert((Singleton::<ImportDatabase>::new(), ImportDatabase(HashSet::new())))
-    .await;
-# }
+Run the repository itself with:
+
+```sh
+cargo build
+cargo test --workspace
+RUST_LOG=info cargo run -p playground
 ```
 
-Entities are bundles of components:
+## The programming model
 
-```rust
-# use bowl::{Bowl, Component};
-# #[derive(Component, Hash, PartialEq, Eq)]
-# #[component(hash)]
-# struct SourcePath(String);
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct SourceText(String);
-# async fn example(bowl: Bowl) {
-bowl.insert((
-    SourcePath("src/lib.por".to_string()),
-    SourceText("module lib".to_string()),
-))
-.await;
-# }
+### Components and entities
+
+Every stored fact implements `Component`. Components are tracked by default:
+writing one advances the world's revision and invalidates memo entries that
+observed its previous revision.
+
+The derive macro supports three important policies:
+
+- `#[component(hash)]` fingerprints the value. An equal fingerprint preserves
+  the old revision and cuts off downstream work.
+- `#[component(revision)]` uses a `revision: u64` field as the fingerprint.
+- `#[component(untracked)]` makes a coordination fact invisible to revision
+  invalidation.
+
+Entities are stable IDs carrying bundles of components. There are no
+archetypes and no separate resource store. A value that should exist once is a
+component inserted with `Singleton<T>`.
+
+External input is queued through `Bowl::insert`. Existing entities can be
+updated, stripped of a component, or despawned through `bowl.entity(entity)`.
+Inputs arriving during evaluation are assigned to an epoch boundary rather
+than mutating the snapshot currently being evaluated.
+
+### Schemas and facets
+
+`#[derive(Schema)]` turns a named-field struct of component tuples into the
+data model for a bowl. Each field is an entity shape; `Option<T>` marks a part
+that may be added after the required shape exists.
+
+Schemas provide:
+
+- strict compile-time matching for spawned command bundles;
+- generated shape aliases such as `lang_schema::Diagnostic`;
+- typed `Entity<Shape>` facet handles;
+- debug-time conformance checks for incremental writes;
+- a closed component universe for presence bitmaps and registration analysis.
+
+A bowl may be schema-less, but schemas are the intended way to model larger
+applications. Plugins contribute schema fragments, and the builder unions all
+fragments before laying out the world.
+
+### A sealed builder
+
+Construction is builder-only:
+
+```text
+Bowl::builder()
+    .schema::<AppSchema>()
+    .plugin(AppPlugin)
+    .system(derive_something)
+    .build()
 ```
 
-Systems are functions. A system can take `Query`, `View`, `Commands`, and
-`WorldMetaView` parameters in the same style as Bevy system params.
+The system set and schema universe seal at `build`. Porridge intentionally has
+no dynamic system registration. Conditional subsystems are expressed as facts
+that gate planning rather than as systems appearing and disappearing at
+runtime.
 
-```rust
-# use bowl::{Commands, Component, Entity, Query, View};
-# #[derive(Component)]
-# struct ImportDecl { path: String }
-# #[derive(Component, Clone)]
-# struct ImportDatabase(std::collections::HashSet<String>);
-# #[derive(Component)]
-# struct Diagnostic(String);
-async fn check_imports(
-    import: Query<(Entity, &ImportDecl)>,
-    databases: View<'_, (Entity, &ImportDatabase)>,
-    mut commands: Commands,
-) {
-    let (import_entity, import) = import.item();
-    let Some((_db_entity, db)) = databases.iter().next() else {
-        return;
-    };
+A `Plugin` packages schema shapes and system registration together. This keeps
+a reusable subsystem's data model and behavior from drifting apart.
 
-    if !db.0.contains(&import.path) {
-        commands.entity(import_entity).insert(Diagnostic(format!(
-            "unknown import `{}`",
-            import.path
-        )));
-    }
-}
+### Tracked `Query`
+
+`Query<T, F>` is a system's tracked input. Every matching row contributes:
+
+- entity keys, which identify the system invocation;
+- component revisions, which invalidate the invocation;
+- row-level read/write access, which the scheduler uses for conflicts.
+
+One query row normally means one memoized invocation. Multiple query params
+form a product, unless a bound join narrows the combinations. A clean row is
+planned or skipped without running user code again.
+
+Query parts can include borrowed components, typed or untyped entities,
+optional components, and `MutRef<'_, T>` for scheduler-visible in-place system
+mutation. Filters such as `With<T>` and `Without<T>` affect matching without
+appearing in the item.
+
+### Ambient `View`
+
+`View<T, F>` reads other rows from the invocation's snapshot but contributes no
+memo dependency. It is useful when one tracked row drives work that needs broad
+context, such as checking one definition against every visible definition.
+
+That distinction is intentional and important: changing only viewed data does
+not rerun the system. Use tracked joins, a tracked driving fact, or a phase
+boundary when the ambient data must cause or order work. The runtime's settled
+view-healing pass protects specific cross-phase cases, but `View` is not a
+general dependency declaration.
+
+### Typed, buffered `Commands`
+
+`Commands<S>` declares a system's output set. It has no public wildcard and no
+default type parameter.
+
+Commands can:
+
+- add a declared component to an existing entity;
+- spawn a complete declared shape;
+- remove a component;
+- remove an entity.
+
+Writes are buffered while the system reads an immutable structural snapshot.
+At commit, the invocation's old derived output is diffed against the new
+buffer. Equal fingerprints keep their revisions, and stale output that was not
+re-emitted is removed.
+
+`Commands<()>` is a removal-only writer. This is particularly useful for
+cleanup systems in `Phase::Settle`.
+
+### Derived facts and ownership
+
+Every system command is owned by the invocation that emitted it. When that
+invocation reruns, its output is replaced as a unit even when the output lives
+on other entities.
+
+Use `DerivedFrom::new(source)` or `DerivedFrom::many(sources)` for facts whose
+lifetime is also tied to source entity revisions. A standard cleanup system
+reaps stale derived entities:
+
+```text
+cleanup_stale_derived.run_during(Phase::Settle)
 ```
 
-## Core Concepts
+Diagnostics, indexes, summaries, and service candidates are generally clearer
+as their own derived entities rather than components accumulated on the input
+entity.
 
-### Bowl
+### Filters, indexes, and joins
 
-`Bowl` is the async database and evaluator.
+External and system queries share the same filter vocabulary:
 
-```rust
-# use bowl::Bowl;
-let bowl = Bowl::new();
-let other_handle = bowl.clone();
+- `With<T>` and `Without<T>` for presence;
+- `Where<Eq<T>>` and `Where<Gte<T>>` for runtime values;
+- `And`, `Or`, and `Not` for composition;
+- `Named<Tag, Query<...>>` when one external scoop needs separate arguments of
+  the same type.
+
+Fingerprint stores maintain an index used by `Where<Eq<T>>` candidate lookup.
+
+Inside systems, `Where<Eq<K>>` can bind a query to the unique sibling query
+that reads `&K`. `Where<In<R>>` binds member entities through an
+engine-maintained relationship inverse. Single-key joins expand from actual
+pairs instead of constructing the full product; compound keys retain a
+product-and-prune path. See [`spec/joins.md`](spec/joins.md) for the precise
+rules and validation constraints.
+
+### Relationships
+
+Relationship edge components can maintain an ordered inverse component on a
+target entity. The derive attributes are:
+
+```text
+#[relationship(target = TargetComponent)]
+#[relationship_target(relationship = EdgeComponent)]
 ```
 
-`Bowl` is internally shared and cheap to clone. Public operations take `&self`,
-so callers can store it in application state or clone it into async tasks.
+Retargeting or removing an edge updates the inverse. `Where<In<Target>>` uses
+that inverse as an identity join, which gives graph-like language facts the
+same tracked query semantics as ordinary components.
 
-The runtime uses single-flight evaluation: if several callers query while work
-is pending, one caller becomes the runner and the others wait for the same
-generation. Read-only queries do not start duplicate work.
+### Phases and hooks
 
-### Components
+Systems run in `Phase::Evaluate` by default. `SystemExt::run_during` selects a
+coarse phase:
 
-Components implement `bowl::Component`.
+1. `Startup` runs at the start of the first generation and after preemption
+   restarts.
+2. `Evaluate` derives normal facts.
+3. `Complete` runs after Evaluate reaches its phase boundary; checks and
+   request handlers often live here.
+4. `Settle` runs at convergence. Its removals apply before settled reads
+   return, while inserts and spawns defer to the next run.
 
-```rust
-use bowl::Component;
+`on_start`, `on_complete`, and `on_settled` attach callbacks to a system's
+lifecycle. Ephemeral singleton markers can bridge settle boundaries, but they
+represent state, not ordering. Prefer tracked joins and phases for ordering.
 
-#[derive(Component, Hash, PartialEq, Eq)]
-#[component(hash)]
-struct FilePath(String);
+### Generations, snapshots, and scheduling
 
-#[derive(Component)]
-#[component(untracked)]
-struct ScratchMarker;
-```
+Inputs are batched into generations. Each evaluation wave plans from a shared
+structural snapshot and memo table, runs non-conflicting invocations
+concurrently, then commits completed buffers. A commit whose captured
+dependencies went stale is discarded and replanned.
 
-By default, components are tracked. Tracked components participate in revision
-based invalidation. If a component uses `#[component(hash)]`, inserting or
-mutating an equal fingerprint does not bump its revision.
+Snapshots clone maps and shared guarded component cells, not user payloads.
+The scheduler admits concurrent row reads and disjoint writes while
+serializing conflicting access. User systems are locally polled together by
+the active runner; they are not currently dispatched as a general worker-pool
+job graph.
 
-Use `#[component(untracked)]` for coordination markers that should not
-invalidate memoized system rows by themselves.
+`Bowl` itself is cheap to clone. Evaluation is single-flight: one caller drives
+pending work while concurrent callers wait on the same generation rather than
+starting duplicate evaluation.
 
-### Entities And Bundles
+`CommitLimit` is the non-convergence guardrail, not the definition of
+settlement. The default bounds accepted commits; `CommitLimit::None` supports
+experiments that arrange cancellation externally.
 
-`Bowl::insert` creates a new entity unless the bundle contains a `Singleton<T>`
-marker. A bundle is currently a tuple of components.
+## Calling the bowl
 
-```rust
-# use bowl::{Bowl, Component, Singleton};
-# #[derive(Component)]
-# struct Config;
-# #[derive(Component)]
-# struct Enabled;
-# async fn example(bowl: Bowl) {
-let entity = bowl.insert((Enabled,)).await.entity();
+### Settled reads
 
-let singleton = bowl
-    .insert((Singleton::<Config>::new(), Config))
-    .await
-    .entity();
-# }
-```
+External reads use the same `Query` row language:
 
-Commands inside systems can insert components on an existing entity, insert a
-new derived entity, or remove an entity/component.
-
-```rust
-# use bowl::{Commands, Component, Entity};
-# #[derive(Component)]
-# struct Parsed;
-# #[derive(Component)]
-# struct Diagnostic(String);
-# fn example(mut commands: Commands, entity: Entity) {
-commands.entity(entity).insert(Parsed);
-commands.insert((Diagnostic("new derived fact".to_string()),));
-commands.remove(entity);
-# }
-```
-
-Command writes are buffered. Systems read a structural snapshot, then the runner
-applies their command buffers after the snapshot tick.
-
-### Query
-
-`Query<T, F = ()>` is the tracked system input. It decides which rows a system
-runs for, and it records the component revisions used by that row.
-
-```rust
-# use bowl::{Commands, Component, Entity, Query};
-# #[derive(Component)]
-# struct SourceText(String);
-# #[derive(Component)]
-# struct Parsed;
-async fn parse(query: Query<(Entity, &SourceText)>, mut commands: Commands) {
-    let (entity, source) = query.item();
-    let _ = source;
-    commands.entity(entity).insert(Parsed);
-}
-```
-
-If a matching entity has not changed since the last run, that system invocation
-is skipped.
-
-Multiple `Query` params form a cartesian product. This is useful for shader-like
-systems that should run for each combination of matching rows.
-
-```rust
-# use bowl::{Component, Query};
-# #[derive(Component)]
-# struct Rule;
-# #[derive(Component)]
-# struct File;
-async fn apply_rules(rule: Query<&Rule>, file: Query<&File>) {
-    let rule = rule.item();
-    let file = file.item();
-    let _ = (rule, file);
-}
-```
-
-Use `With<T>` and `Without<T>` when a component should filter a row without
-being returned in the item.
-
-```rust
-# use bowl::{Component, Entity, Query, With};
-# #[derive(Component)]
-# struct Ready;
-# #[derive(Component)]
-# struct Request;
-async fn handle_ready_request(_: Query<Entity, With<Ready>>, request: Query<Entity, With<Request>>) {
-    let _request_entity = request.item();
-}
-```
-
-### View
-
-`View<T, F = ()>` is an ambient read of the current snapshot. It does not become
-part of the system invocation key and does not invalidate that system by itself.
-
-Use `View` when one row drives the work, but the system needs surrounding facts
-to make a decision.
-
-```rust
-# use bowl::{Component, Entity, Query, View};
-# #[derive(Component)]
-# struct Definition { name: String }
-async fn find_duplicates(
-    current: Query<(Entity, &Definition)>,
-    definitions: View<'_, (Entity, &Definition)>,
-) {
-    let (entity, definition) = current.item();
-
-    let duplicate = definitions
-        .iter()
-        .find(|(other, other_def)| *other < entity && other_def.name == definition.name);
-
-    let _ = duplicate;
-}
-```
-
-### External Scoops
-
-External scoops settle the bowl before reading.
-
-```rust
-# use bowl::{Bowl, Component, Entity, Query};
-# #[derive(Component)]
-# struct Diagnostic(String);
-# async fn example(bowl: Bowl) {
-let result = bowl.scoop::<Query<(Entity, &Diagnostic)>>().await;
-let rows = result.collect();
-# let _ = rows;
-# }
-```
-
-Tuple scoops return several independent result sets from the same settled
-snapshot. This is not a cartesian product.
-
-```rust
-# use bowl::{Bowl, Component, Entity, Query};
-# #[derive(Component)]
-# struct Diagnostic(String);
-# #[derive(Component)]
-# struct Definition { name: String }
-# async fn example(bowl: Bowl) {
-let (diagnostics, definitions) = bowl
-    .scoop::<(
-        Query<(Entity, &Diagnostic)>,
-        Query<(Entity, &Definition)>,
-    )>()
-    .await;
-
-let _diagnostic_rows = diagnostics.collect();
-let _definition_rows = definitions.collect();
-# }
-```
-
-Use `Where<...>` with typed runtime arguments for filtered reads.
-
-```rust
-# use bowl::{Bowl, Component, Entity, Gte, Query, Where};
-# #[derive(Component)]
-# struct Diagnostic(String);
-# #[derive(Component, PartialEq, PartialOrd)]
-# enum Severity { Warning, Error }
-# async fn example(bowl: Bowl) {
-let warnings = bowl
-    .scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
+```text
+bowl.scoop::<Query<(Entity, &Diagnostic)>>().await
+bowl.scoop::<Query<(Entity, &Diagnostic), Where<Gte<Severity>>>>()
     .args(Severity::Warning)
-    .await;
-# let _ = warnings;
-# }
-```
-
-Filter args are shared by every query in one scoop request. Use
-`Named<Tag, Query<...>>` when two queries need different values of the same arg
-type:
-
-```rust
-# use bowl::{Bowl, Component, Entity, Eq, Named, Query, Where};
-# #[derive(Component, PartialEq, Eq)]
-# struct SourcePath(String);
-# #[derive(Component)]
-# struct Import;
-# #[derive(Component)]
-# struct Diagnostic(String);
-# async fn example(bowl: Bowl) {
-struct Imports;
-struct Diagnostics;
-
-let (imports, diagnostics) = bowl
-    .scoop::<(
-        Named<Imports, Query<(Entity, &Import), Where<Eq<SourcePath>>>>,
-        Named<Diagnostics, Query<(Entity, &Diagnostic), Where<Eq<SourcePath>>>>,
-    )>()
-    .args_for::<Imports>(SourcePath("src/main.por".to_string()))
-    .args_for::<Diagnostics>(SourcePath("src/lib.por".to_string()))
-    .await;
-
-# let _ = (imports, diagnostics);
-# }
-```
-
-Available filter building blocks include:
-
-- `With<T>`
-- `Without<T>`
-- `Where<Eq<T>>`
-- `Where<Gte<T>>`
-- `Where<And<A, B>>`
-- `Where<Or<A, B>>`
-- `Where<Not<F>>`
-
-`Where<Eq<T>>` resolves candidates through a fingerprint index when `T` is a
-`#[component(hash)]` component, falling back to a store scan otherwise (hash
-collisions are re-verified with `PartialEq`). Other predicates scan the
-matching component store.
-
-### Clone-On-Write External Queries
-
-Use `Cow<T>` in an external query when the caller needs to update live input
-state through `&Bowl` and accepts clone-on-write storage semantics.
-
-```rust
-# use bowl::{Bowl, Component, Entity, Eq, Cow, Query, Where};
-# #[derive(Component, Hash, PartialEq, Eq)]
-# #[component(hash)]
-# struct SourcePath(String);
-# #[derive(Component, Clone, Hash)]
-# #[component(hash)]
-# struct SourceText(String);
-# impl SourceText {
-#     fn replace(&mut self, next: impl Into<String>) { self.0 = next.into(); }
-# }
-# async fn example(bowl: Bowl) {
-bowl.scoop::<Query<(Entity, Cow<SourceText>), Where<Eq<SourcePath>>>>()
-    .args(SourcePath("src/main.por".to_string()))
-    .for_each(|(_entity, text)| {
-        text.replace("module main");
-    })
-    .await;
-# }
-```
-
-The closure is synchronous and runs while the live world is locked. Do not call
-back into the same `Bowl` from inside the closure.
-
-`Cow<T>` currently requires `T: Clone`, but live storage now uses guarded
-component cells rather than clone-on-write payload snapshots. Tracked updates
-bump revisions only when the component fingerprint changes, if the component
-has a fingerprint.
-
-### Scoped External Mut Queries
-
-Use `Mut<T>` when the caller wants a live access handle instead of a
-clone-on-write closure. Awaiting the scoop returns inert handles; live mutable
-access only exists while `with_original` or `with_latest` runs its synchronous
-closure.
-
-```rust
-# use bowl::{Bowl, Component, Entity, Eq, Mut, Query, Where};
-# #[derive(Component, Hash, PartialEq, Eq)]
-# #[component(hash)]
-# struct SourcePath(String);
-# #[derive(Component, Clone, Hash)]
-# #[component(hash)]
-# struct SourceText(String);
-# impl SourceText {
-#     fn replace(&mut self, next: impl Into<String>) { self.0 = next.into(); }
-# }
-# async fn example(bowl: Bowl) {
-let rows = bowl
-    .scoop::<Query<(Entity, Mut<SourceText>), Where<Eq<SourcePath>>>>()
-    .args(SourcePath("src/main.por".to_string()))
     .await
-    .collect();
-
-for (_entity, text) in rows {
-    text.with_original(|text| {
-        text.replace("module main");
-    })
-    .await;
-}
-# }
 ```
 
-`Mut<T>` does not require `T: Clone`. It mutates the live guarded component
-cell without cloning the payload. The method names are deliberately explicit:
+A tuple scoop returns independent result sets from one settled snapshot; it is
+not a Cartesian product. `.last_settled()` is available when a caller prefers
+the most recent completed snapshot over waiting for current work.
 
-- `with_original`: mutate only if the component is still at the revision
-  observed by the scoop that produced the handle.
-- `with_latest`: mutate the component currently attached to the entity.
+### External mutation
 
-Both methods are synchronous critical sections: the closure cannot `.await`
-while live mutable access is held.
+There are two scoped mutation paths:
 
-Inside systems, use `MutRef<'_, T>` instead. The scheduler grants the
-invocation exclusive row access, so systems mutate in place through a plain
-mutable borrow — no handles, no closures, no `T: Clone`:
+- `Cow<T>` runs a synchronous clone-on-write closure over matching input rows.
+- `Mut<T>` returns inert handles whose `with_original` or `with_latest`
+  methods acquire live mutable access for a synchronous closure.
 
-```rust
-# use bowl::{Commands, Component, Entity, MutRef, Query, Without};
-# #[derive(Component, Clone, Hash)]
-# #[component(hash)]
-# struct SourceText(String);
-# #[derive(Component)]
-# struct Formatted;
-async fn format_source(
-    query: Query<(Entity, MutRef<'_, SourceText>), Without<Formatted>>,
-    mut commands: Commands,
-) {
-    let (entity, mut text) = query.item();
-    text.0.push('\n');
-    commands.entity(entity).insert(Formatted);
-}
-```
+Inside systems, use `MutRef<'_, T>` instead. Its write is visible to the
+scheduler, and commit bookkeeping absorbs the row's own revision so a system
+does not invalidate itself merely by performing its declared mutation.
 
-Revision bookkeeping happens when the invocation commits, and the commit
-absorbs the row's own write into the system's memo entry — a system's mutation
-never invalidates itself, so non-idempotent mutations run exactly once.
+### Bound request/response
 
-For fingerprinted components, scoped mutation compares the fingerprint before
-and after the closure and bumps the revision only when the fingerprint changes.
-Non-fingerprinted components are conservative and bump after a successful
-mutation.
+Temporary service requests can use a destructive response path:
 
-Read query results hold read guards for the rows they materialize. A `Mut<T>`
-write retries until active read guards or other writers on the same component
-cell release (it never blocks bowl-internal bookkeeping while waiting), so keep
-borrowed query rows short-lived before issuing writes to the same component.
-
-### Bound Requests And Take
-
-For request/response style APIs, insert a request entity, bind it, then take the
-response component from that same entity.
-
-```rust
-# use bowl::{Bowl, Component};
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct HoverRequest;
-# #[derive(Component, Hash, PartialEq, Eq)]
-# #[component(hash)]
-# struct SourcePath(String);
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct Position { offset: usize }
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct HoverInfo(String);
-# async fn example(bowl: Bowl) -> Result<(), bowl::TakeError> {
-let info = bowl
-    .insert((
-        HoverRequest,
-        SourcePath("src/main.por".to_string()),
-        Position { offset: 42 },
-    ))
+```text
+bowl.insert((HoverRequest, FilePath(path), Position { offset }))
     .await
     .bind()
     .take::<HoverInfo>()
-    .await?;
-
-println!("{}", info.0);
-# Ok(())
-# }
-```
-
-`take::<T>()` removes the requested component and closes the bound entity.
-Tuples and `Option<T>` are supported:
-
-```rust
-# use bowl::{Bowl, Component};
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct Info(String);
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct Diagnostic(String);
-# async fn example(bowl: Bowl) -> Result<(), bowl::TakeError> {
-# let request = bowl.insert((Info("ok".to_string()),)).await.bind();
-let (info, diagnostic) = request.take::<(Info, Option<Diagnostic>)>().await?;
-# let _ = (info, diagnostic);
-# Ok(())
-# }
-```
-
-This pattern keeps temporary request outputs from lingering in the bowl.
-
-### System Phases And Hooks
-
-Systems run during `Phase::Evaluate` by default. Use `run_during` for coarse
-ordering:
-
-```rust
-# use bowl::{Bowl, Phase, Query, SystemExt};
-# async fn cleanup(_: Query<bowl::Entity>) {}
-# async fn example(bowl: Bowl) {
-bowl.add_system(cleanup.run_during(Phase::Settle)).await;
-# }
-```
-
-Available phases:
-
-- `Startup`: once before the first evaluate phase (and again after a
-  preemption restart — the retraction slot)
-- `Evaluate`: default fact production
-- `Complete`: checks or request handlers that should run after normal facts;
-  the phase boundary makes ambient (`View`) reads of Evaluate output
-  deterministic
-- `Settle`: once per settle, at convergence. Removals apply within the
-  settle (stale facts are reaped before settled reads return); inserts and
-  spawns are queued as inputs for the *next* run — the settle phase cannot
-  drive its own settle forward
-
-Hooks colocate coordination behavior with a system:
-
-```rust
-# use bowl::{Bowl, Commands, Component, Singleton, SystemExt};
-# #[derive(Component)]
-# #[component(untracked)]
-# struct Ephemeral;
-# #[derive(Clone, Copy)]
-# struct FactsAvailable;
-# impl Component for FactsAvailable { fn tracked() -> bool { false } }
-# async fn produce_facts() {}
-# async fn example(bowl: Bowl) {
-bowl.add_system(produce_facts.on_settled(|mut commands: Commands| {
-    commands.insert((Singleton::<FactsAvailable>::new(), FactsAvailable, Ephemeral));
-}))
-.await;
-# }
-```
-
-`on_start` runs before a system's planned invalid rows. `on_complete` runs after
-that system processed its planned invalid rows. `on_settled` runs after normal
-evaluation stops producing tracked changes, before cleanup and before the caller
-observes query results.
-
-Keep `on_settled` idempotent. A settled hook that writes tracked changes every
-time can keep the bowl alive until the commit limit is reached, unless the
-limit is disabled.
-
-### Commit Limit
-
-A bowl settles when normal phases reach a fixed point. The commit limit is only
-a guardrail for accidental feedback loops; it counts accepted non-cleanup
-commits during one external evaluation attempt.
-
-```rust
-# use bowl::{Bowl, CommitLimit};
-let bowl = Bowl::new();
-bowl.set_commit_limit(CommitLimit::Max(10_000));
-bowl.set_commit_limit(CommitLimit::None);
-```
-
-`CommitLimit::None` is useful for open-ended experiments or daemon-like systems.
-Because bowl operations are async, callers can use executor-specific
-cancellation or timeout wrappers outside the bowl.
-
-### Derived Outputs
-
-Use `DerivedFrom` for outputs that should disappear when their source facts
-change.
-
-```rust
-# use bowl::{Commands, Component, DerivedFrom, Entity};
-# #[derive(Component)]
-# struct Diagnostic(String);
-# fn example(mut commands: Commands, file: Entity) {
-commands.insert((
-    DerivedFrom::new(file),
-    Diagnostic("syntax error".to_string()),
-));
-# }
-```
-
-Use `DerivedFrom::many` when an output depends on several entities:
-
-```rust
-# use bowl::{Commands, Component, DerivedFrom, Entity};
-# #[derive(Component)]
-# struct Diagnostic(String);
-# fn example(mut commands: Commands, import: Entity, import_database: Entity) {
-commands.insert((
-    DerivedFrom::many([import, import_database]),
-    Diagnostic("unknown import".to_string()),
-));
-# }
-```
-
-Register `cleanup_stale_derived` during cleanup to remove stale derived facts:
-
-```rust
-# use bowl::{Bowl, Phase, SystemExt, cleanup_stale_derived};
-# async fn example(bowl: Bowl) {
-bowl.add_system(cleanup_stale_derived.run_during(Phase::Settle))
-    .await;
-# }
-```
-
-The cleanup system compares the current revision of each source entity to the
-revision captured when `DerivedFrom` was inserted.
-
-## Patterns
-
-### Parse, Then Publish A Readiness Gate
-
-Some workflows need a marker that says "all currently visible inputs for this
-system have been processed". Use an ephemeral singleton emitted from
-`on_settled`.
-
-```rust
-# use bowl::{Bowl, Commands, Component, Entity, Query, Singleton, SystemExt};
-# #[derive(Component)]
-# struct SourceText(String);
-# #[derive(Component)]
-# struct Parsed;
-# #[derive(Component)]
-# #[component(untracked)]
-# struct Ephemeral;
-# #[derive(Clone, Copy)]
-# struct ParsedAvailable;
-# impl Component for ParsedAvailable { fn tracked() -> bool { false } }
-# async fn parse_source(query: Query<(Entity, &SourceText)>, mut commands: Commands) {
-#     let (entity, _) = query.item();
-#     commands.entity(entity).insert(Parsed);
-# }
-# async fn example(bowl: Bowl) {
-bowl.add_system(parse_source.on_settled(|mut commands: Commands| {
-    commands.insert((Singleton::<ParsedAvailable>::new(), ParsedAvailable, Ephemeral));
-}))
-.await;
-# }
-```
-
-Downstream systems can gate on that marker:
-
-```rust
-# use bowl::{Component, Entity, Query, With};
-# #[derive(Component)]
-# struct Parsed;
-# #[derive(Clone, Copy)]
-# struct ParsedAvailable;
-# impl Component for ParsedAvailable {}
-async fn check_project(_: Query<Entity, With<ParsedAvailable>>, parsed: Query<(Entity, &Parsed)>) {
-    let _ = parsed.item();
-}
-```
-
-A cleanup-phase system can remove `Ephemeral` entities after the caller-visible
-settled boundary.
-
-### Diagnostics Attached To Current Revisions
-
-Diagnostics should usually be their own entities, derived from the facts that
-caused them.
-
-```rust
-# use bowl::{Commands, Component, DerivedFrom, Entity};
-# #[derive(Component)]
-# struct Diagnostic(String);
-# #[derive(Component)]
-# enum Severity { Warning, Error }
-fn emit_unknown_import(
-    commands: &mut Commands,
-    import: Entity,
-    import_database: Entity,
-    path: &str,
-) {
-    commands.insert((
-        DerivedFrom::many([import, import_database]),
-        Severity::Warning,
-        Diagnostic(format!("unknown import `{path}`")),
-    ));
-}
-```
-
-When either the import entity or the import database singleton changes,
-`cleanup_stale_derived` removes the diagnostic.
-
-### Request/Response Without Persistent Trash
-
-Use a bound entity for short-lived service requests:
-
-```rust
-# use bowl::{Bowl, Commands, Component, Entity, Query, View, With};
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct CompletionRequest;
-# #[derive(Component, Hash, PartialEq, Eq)]
-# #[component(hash)]
-# struct SourcePath(String);
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct Position { offset: usize }
-# #[derive(Component, Hash)]
-# #[component(hash)]
-# struct CompletionItems(Vec<String>);
-# #[derive(Component)]
-# struct Definition { name: String }
-# async fn completions(
-#     request: Query<(Entity, &SourcePath, &Position), With<CompletionRequest>>,
-#     definitions: View<'_, (Entity, &Definition)>,
-#     mut commands: Commands,
-# ) {
-#     let (request, _, _) = request.item();
-#     let items = definitions.iter().map(|(_, def)| def.name.clone()).collect();
-#     commands.entity(request).insert(CompletionItems(items));
-# }
-# async fn example(bowl: Bowl) -> Result<(), bowl::TakeError> {
-let items = bowl
-    .insert((
-        CompletionRequest,
-        SourcePath("src/main.por".to_string()),
-        Position { offset: 128 },
-    ))
     .await
-    .bind()
-    .take::<CompletionItems>()
-    .await?;
-# let _ = items;
-# Ok(())
-# }
 ```
 
-The request entity gives the response a unique target, and `take` removes the
-request plus remaining outputs scoped to it.
+`BoundEntity::take` waits for settlement, extracts the requested response, and
+cleans up the request scope. Tuples and optional response components are
+supported.
 
-### Cow Inputs Through Queries
+### Observability
 
-Long-running clients can update input facts without needing `&mut Bowl`.
+`explain_all` and `profile_all` expose why systems did or did not run and where
+work accumulated. The playground uses these alongside process-global debug
+counters to make incremental behavior inspectable during experiments.
 
-```rust
-# use bowl::{Bowl, Component, Eq, Cow, Query, Where};
-# #[derive(Component, Hash, PartialEq, Eq)]
-# #[component(hash)]
-# struct SourcePath(String);
-# #[derive(Component, Clone, Hash)]
-# #[component(hash)]
-# struct EditableText(String);
-# async fn example(bowl: Bowl) {
-bowl.scoop::<Query<(Cow<EditableText>,), Where<Eq<SourcePath>>>>()
-    .args(SourcePath("src/main.por".to_string()))
-    .for_each(|text| {
-        text.0.push_str("\nmodule extra");
-    })
-    .await;
-# }
+## The playground
+
+[`crates/playground`](crates/playground) is the primary integration example and
+the most useful place to see the pieces composed.
+
+It implements a small language service with:
+
+- parser generation from
+  [`syntax.llw`](crates/playground/src/lang/grammar/syntax.llw);
+- one [`LangSchema`](crates/playground/src/lang/schema.rs) as the data-model
+  source of truth;
+- a [`LangPlugin`](crates/playground/src/lang/mod.rs) that installs shapes and
+  systems together;
+- vertical language entities for documents, imports, definitions, and
+  namespaces;
+- demand-driven diagnostics;
+- request/response hover through candidate facts and tracked arbitration;
+- namespace qualification through bound joins and a derived `SystemParam`
+  bundle;
+- a small replication plugin that captures shape-granular state.
+
+The language entity structure is intentional: grammar code owns syntax,
+vertical entity modules own lowering and analysis behavior, and service modules
+own request/response facts. See
+[`spec/language-entities.md`](spec/language-entities.md).
+
+Run it with tracing:
+
+```sh
+RUST_LOG=info cargo run -p playground
 ```
 
-If `EditableText` has `#[component(hash)]`, this only invalidates downstream
-systems when the final value hashes differently.
+The executable inserts several files, mutates the import database, requests
+diagnostics and hover information, inspects replication records and qualified
+names, performs incremental edits, and prints evaluation profiles.
 
-### Ambient Context With View
+## Current status and limitations
 
-Use `View` for global or cross-row checks without making every visible fact part
-of the driving invocation.
+Porridge is a research prototype, not a production-ready database or compiler
+framework.
 
-```rust
-# use bowl::{Commands, Component, DerivedFrom, Entity, Query, View};
-# #[derive(Component)]
-# struct Symbol { name: String }
-# #[derive(Component)]
-# struct Diagnostic(String);
-async fn check_duplicates(
-    symbol: Query<(Entity, &Symbol)>,
-    symbols: View<'_, (Entity, &Symbol)>,
-    mut commands: Commands,
-) {
-    let (entity, symbol) = symbol.item();
+Implemented today:
 
-    if let Some((previous, _)) = symbols
-        .iter()
-        .find(|(other, other_symbol)| *other < entity && other_symbol.name == symbol.name)
-    {
-        commands.insert((
-            DerivedFrom::many([entity, previous]),
-            Diagnostic(format!("duplicate symbol `{}`", symbol.name)),
-        ));
-    }
-}
+- sealed builder, schemas, plugins, strict spawns, and typed facets;
+- revision tracking with fingerprint cutoffs;
+- row-level memoization and conflict-aware async scheduling;
+- generation and preemption semantics for external input;
+- phases, hooks, singletons, derived ownership, and stale cleanup;
+- indexed equality filters, bound joins, relationships, and optional rows;
+- guarded snapshots plus scoped external and system mutation;
+- bound request/response, settled notifications, explanation, and profiling;
+- criterion coverage for major planning and scanning paths.
+
+Important constraints and open directions:
+
+- The public API is still being polished (TODO: **Public API Polish Before
+  Larger Migration**).
+- `View` remains ambient by design and requires deliberate tracked drivers or
+  phase boundaries (TODO: **Clarify View Dependency Semantics**).
+- Non-convergence and dependency explanations can become much richer (TODO:
+  **Add Better Non-Settling And Cycle Diagnostics** and **Add Dependency Graph
+  Introspection**).
+- Systems are concurrently polled locally, but broader parallel execution is
+  still a design track (TODO: **Add Async Parallel System Execution**).
+- Long-running daemon/client operation, persistence boundaries, tombstones,
+  and replication streams remain exploratory (TODO: **Explore Long-Running
+  Daemon Runtime** and **Explore Replication / Change Streams**).
+- There is no dynamic system registration, resource subsystem, archetype
+  storage, distributed evaluator, or stable compatibility promise.
+
+Read [`TODO.md`](TODO.md) for the detailed status. Completed and proposed work
+currently coexist there, so section titles are a better reference than item
+numbers.
+
+## Workspace layout
+
+| Path | Purpose |
+| --- | --- |
+| [`crates/bowl`](crates/bowl) | Incremental engine: world, storage, queries, systems, scheduling, and public API. |
+| [`crates/macros`](crates/macros) | `Component`, `Schema`, relationship, and `SystemParam` proc macros. |
+| [`crates/playground`](crates/playground) | Toy language and integration playground. |
+| [`crates/benches`](crates/benches) | Criterion fixtures and engine slow-path benchmarks. |
+| [`spec`](spec) | Formal model, architecture notes, and active designs. |
+| [`TODO.md`](TODO.md) | Detailed implementation roadmap and status notes. |
+
+Engine unit tests are inline, mostly in
+[`crates/bowl/src/bowl.rs`](crates/bowl/src/bowl.rs). Playground integration
+tests live in
+[`crates/playground/src/tests.rs`](crates/playground/src/tests.rs).
+
+## Development commands
+
+```sh
+cargo build
+cargo test -p bowl
+cargo test -p bowl <test_name>
+cargo test -p playground
+cargo test --workspace
+cargo run -p playground
+RUST_LOG=info cargo run -p playground
+cargo run -p playground --release
+cargo bench -p benches
+cargo bench -p benches -- --test
 ```
 
-### Singleton Components As Shared State
+Grammar changes go through
+[`crates/playground/src/lang/grammar/syntax.llw`](crates/playground/src/lang/grammar/syntax.llw).
+The playground build script runs `lelwel`; generated parser code is included by
+the grammar module.
 
-Singletons are components on ordinary entities. They are useful for external
-truth such as configuration, package indexes, import databases, caches, or
-client state.
+## Design documents
 
-```rust
-# use bowl::{Bowl, Component, Cow, Query, Singleton};
-# #[derive(Component, Clone)]
-# struct PackageIndex(Vec<String>);
-# async fn example(bowl: Bowl) {
-bowl.insert((Singleton::<PackageIndex>::new(), PackageIndex(Vec::new())))
-    .await;
+The specifications are working design documents. Some describe implemented
+behavior precisely; others preserve rationale or explore the next step. Check
+the code and [`TODO.md`](TODO.md) when implementation status matters.
 
-bowl.scoop::<Query<(Cow<PackageIndex>,)>>()
-    .for_each(|index| {
-        index.0.push("std.io".to_string());
-    })
-    .await;
-# }
-```
+- [`formal-semantics.md`](spec/formal-semantics.md) — facts, invocations,
+  dependency validity, commits, and settled observation.
+- [`streaming-evaluation.md`](spec/streaming-evaluation.md) — planning,
+  concurrent runs, stale commits, and convergence.
+- [`epochs.md`](spec/epochs.md) — input batches, preemption, phase restarts, and
+  settled boundaries.
+- [`access-scheduling.md`](spec/access-scheduling.md) — row-level access and
+  scheduler conflicts.
+- [`joins.md`](spec/joins.md) — equality joins, relationship membership joins,
+  outer joins, and validation.
+- [`language-entities.md`](spec/language-entities.md) — the playground's
+  vertical language architecture.
+- [`lifecycle-and-ephemeral.md`](spec/lifecycle-and-ephemeral.md) — hooks,
+  phases, and coordination markers.
+- [`derived-from.md`](spec/derived-from.md) — revision-scoped derived facts and
+  cleanup.
+- [`bound-entity.md`](spec/bound-entity.md) — destructive request/response
+  scopes.
+- [`daemon-client.md`](spec/daemon-client.md) — out-of-core state and
+  long-running service direction.
+- [`performance-plan.md`](spec/performance-plan.md) and
+  [`bench-reports.md`](spec/bench-reports.md) — measurement strategy and
+  recorded investigations.
 
-## Current Limitations
-
-- This is a prototype runtime, not a stabilized crate API.
-- Runtime filter args are keyed by component type, so using two `Eq<T>` args of
-  the same type in one filter is ambiguous. Use `Named<Tag, Query<...>>` with
-  `.args_for::<Tag>(...)` for per-query args.
-- `Cow<T>` still requires `T: Clone`, although guarded live storage means it no
-  longer needs clone-on-write payload replacement.
-- External `Mut<T>` and system `MutRef<'_, T>` use guarded component cells and
-  do not require `T: Clone`. System `MutRef` writes are live and non-revocable:
-  when a commit is discarded as stale, buffered commands roll back but in-place
-  mutations persist.
-- Systems are async, but the current runner polls local futures rather than
-  spawning work across executor worker threads.
-- Output ownership is replace-by-invocation, implemented as a diff: commands
-  apply over the invocation's previous outputs (unchanged fingerprints keep
-  their revisions and spawned outputs keep their entity ids), and whatever the
-  rerun does not re-emit is removed.
-- Plugin APIs and ergonomic singleton bundle sugar are still future work.
-
-## Repository Layout
-
-```text
-crates/
-  bowl/       async runtime and public API
-  macros/     Component derive macro
-  playground/ experimental prototype crate
-spec/         design notes and open runtime ideas
-TODO.md       current implementation roadmap
-```
+If you are evaluating whether the model fits a real compiler or service, start
+with the quick example, run the playground with tracing, then read the formal
+semantics and streaming evaluation documents alongside the engine source.
