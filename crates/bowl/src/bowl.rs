@@ -20,8 +20,7 @@ use variadics_please::all_tuples;
 use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     commands::{
-        BaseCommandOp, CommandOp, DespawnBaseCommand, InsertBaseCommand,
-        RemoveComponentBaseCommand,
+        BaseCommandOp, CommandOp, DespawnBaseCommand, InsertBaseCommand, RemoveComponentBaseCommand,
     },
     declare::{Schema, ShapeDesc},
     query::{
@@ -310,9 +309,7 @@ impl IntoFuture for DespawnBuilder {
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            self.bowl
-                .despawn_inner(self.entity, self.preempting)
-                .await;
+            self.bowl.despawn_inner(self.entity, self.preempting).await;
         })
     }
 }
@@ -1363,7 +1360,10 @@ impl Bowl {
     /// Snapshots do not carry the ownership index, so settled hooks check the
     /// live bowl instead.
     pub(crate) async fn has_derived_owned(&self, owner: &SystemInvocation) -> bool {
-        lock_state(&self.inner.state).await.world.has_derived_owned(owner)
+        lock_state(&self.inner.state)
+            .await
+            .world
+            .has_derived_owned(owner)
     }
 
     /// Registers a system. Build-time only ([`BowlBuilder::system`] /
@@ -1832,8 +1832,8 @@ impl Bowl {
 
             let clean_and_settled = {
                 let mut state = lock_state(&self.inner.state).await;
-                let clean = state.pending_generation.is_none()
-                    && state.running_generation.is_none();
+                let clean =
+                    state.pending_generation.is_none() && state.running_generation.is_none();
                 if clean && state.world.revision_raw() == state.settled_revision {
                     if promote_deferred_inputs(&mut state, epoch.watermark) {
                         continue;
@@ -1926,10 +1926,7 @@ impl Bowl {
     /// in a *later* settle reruns instead of reviving a memo computed
     /// from another era's views — the same posture as the memo purge on
     /// entity removal.
-    async fn heal_stale_ambient(
-        &self,
-        heal_attempts: &mut HashMap<SystemInvocation, u32>,
-    ) -> bool {
+    async fn heal_stale_ambient(&self, heal_attempts: &mut HashMap<SystemInvocation, u32>) -> bool {
         let mut state = lock_state(&self.inner.state).await;
         let epoch = state.settle_epoch;
         let mut victims: Vec<SystemInvocation> = Vec::new();
@@ -2036,9 +2033,7 @@ impl Bowl {
         let mut runs = systems
             .iter()
             .filter(|system| system.phase == Phase::Settle)
-            .flat_map(|system| {
-                system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo, None)
-            })
+            .flat_map(|system| system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo, None))
             .map(|planned| {
                 let owner = planned.owner;
                 async move {
@@ -2300,13 +2295,7 @@ impl Bowl {
         let mut deferred_conflicts = false;
 
         loop {
-            if allow_preempt
-                && self
-                    .inner
-                    .preempt_waiters
-                    .load(atomic::Ordering::SeqCst)
-                    > 0
-            {
+            if allow_preempt && self.inner.preempt_waiters.load(atomic::Ordering::SeqCst) > 0 {
                 // Tiered preemption (spec/epochs.md): drop read-only
                 // invocations (their buffered commands vanish unapplied),
                 // drain write-holders to completion (a partial `MutRef`
@@ -2374,13 +2363,9 @@ impl Bowl {
                                 running.remove(&owner);
                                 running_access.remove(&owner);
                                 read_owners.remove(&owner);
-                                let progress = commit_system_run(
-                                    memo,
-                                    &self.inner.state,
-                                    run,
-                                    Some(phase),
-                                )
-                                .await;
+                                let progress =
+                                    commit_system_run(memo, &self.inner.state, run, Some(phase))
+                                        .await;
                                 commit_budget.record(progress.commits);
                                 phase_changed |= progress.needs_followup;
                                 if progress.stale {
@@ -2402,13 +2387,11 @@ impl Bowl {
                     // roll, resets) plans fully once and joins the deltas.
                     let forced = system.take_forced_dirty();
                     let hint: Option<Vec<Entity>> = if system.delta_eligible
-                        && system
-                            .plan_epoch
-                            .load(std::sync::atomic::Ordering::Relaxed)
+                        && system.plan_epoch.load(std::sync::atomic::Ordering::Relaxed)
                             == plan_epoch
                     {
-                        let pos = system.log_pos.load(std::sync::atomic::Ordering::Relaxed)
-                            as usize;
+                        let pos =
+                            system.log_pos.load(std::sync::atomic::Ordering::Relaxed) as usize;
                         let interest = system
                             .interest
                             .as_ref()
@@ -2673,14 +2656,7 @@ impl Bowl {
         // cascade above, so these commit-time bookkeeping owners are spent.
         let _ = state.world.take_removed_owners();
         let State { world, memo, .. } = &mut *state;
-        let _ = reconcile_removed_invocations(
-            world,
-            memo,
-            removed,
-            std::iter::empty(),
-            &[],
-            None,
-        );
+        let _ = reconcile_removed_invocations(world, memo, removed, std::iter::empty(), &[], None);
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
@@ -3049,11 +3025,7 @@ fn warn_same_phase_conflicts(state: &State, new: &BoxedSystem) {
     }
 }
 
-fn warn_producer_viewer_pair(
-    schema: &[ShapeDesc],
-    producer: &BoxedSystem,
-    viewer: &BoxedSystem,
-) {
+fn warn_producer_viewer_pair(schema: &[ShapeDesc], producer: &BoxedSystem, viewer: &BoxedSystem) {
     let Some(declared) = producer.declared_outputs.as_ref() else {
         return;
     };
@@ -3610,8 +3582,8 @@ mod tests {
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
         Entity, Eq, Gte, In, Mut, MutRef, Named, Phase, Query, RelationshipEdge,
-        RelationshipRetraction, RelationshipTarget, Singleton, SystemExt, View, Where, With,
-        Without, cleanup_stale_derived, hash_component, relationship_retractions_for,
+        RelationshipRetraction, RelationshipTarget, Singleton, SystemExt, TrackedView, View, Where,
+        With, Without, cleanup_stale_derived, hash_component, relationship_retractions_for,
     };
 
     struct A(u32);
@@ -3769,6 +3741,51 @@ mod tests {
         commands.entity(entity).insert(Count(cs.len()));
     }
 
+    async fn aggregate_as(values: TrackedView<'_, (Entity, &A)>, mut commands: Commands<(Count,)>) {
+        REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
+        let total = values.iter().map(|(_, value)| value.0 as usize).sum();
+        commands.insert((Count(total),));
+    }
+
+    async fn aggregate_fingerprinted_ranks(
+        values: TrackedView<'_, (Entity, &FingerprintedRank)>,
+        mut commands: Commands<(Count,)>,
+    ) {
+        CLEAN_RUNS.fetch_add(1, Ordering::SeqCst);
+        let total = values.iter().map(|(_, value)| value.0 as usize).sum();
+        commands.insert((Count(total),));
+    }
+
+    async fn sum_as_for_b(
+        query: Query<(Entity, &B)>,
+        values: TrackedView<'_, (Entity, &A)>,
+        mut commands: Commands<(Sum,)>,
+    ) {
+        let (entity, value) = query.item();
+        let total = values.iter().map(|(_, value)| value.0).sum::<u32>();
+        commands.entity(entity).insert(Sum(value.0 + total));
+    }
+
+    async fn tracked_view_self_output(
+        _values: TrackedView<'_, (Entity, &A)>,
+        _commands: Commands<(A,)>,
+    ) {
+    }
+
+    async fn tracked_view_self_mut(
+        _values: TrackedView<'_, (Entity, &A)>,
+        _rows: Query<(Entity, MutRef<'_, A>)>,
+    ) {
+    }
+
+    async fn tracked_view_mutable_rows(_values: TrackedView<'_, (Entity, MutRef<'_, A>)>) {}
+
+    async fn tracked_view_wildcard(
+        _values: TrackedView<'_, (Entity, &A)>,
+        _commands: Commands<Anything>,
+    ) {
+    }
+
     async fn spawn_b(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
         let (_entity, a) = query.item();
         commands.insert((B(a.0 + 1),));
@@ -3779,7 +3796,10 @@ mod tests {
         commands.insert((A(0),));
     }
 
-    async fn count_tagged_a(query: Query<(Entity, &A), With<Request>>, mut commands: Commands<Anything>) {
+    async fn count_tagged_a(
+        query: Query<(Entity, &A), With<Request>>,
+        mut commands: Commands<Anything>,
+    ) {
         let (entity, _a) = query.item();
         commands.entity(entity).insert(Count(1));
     }
@@ -3816,7 +3836,10 @@ mod tests {
         commands.entity(entity).insert(Count(rank.0 as usize));
     }
 
-    async fn copy_rank_to_count_counted(query: Query<(Entity, &Rank)>, mut commands: Commands<Anything>) {
+    async fn copy_rank_to_count_counted(
+        query: Query<(Entity, &Rank)>,
+        mut commands: Commands<Anything>,
+    ) {
         let (entity, rank) = query.item();
         REQUEST_RUNS.fetch_add(1, Ordering::SeqCst);
         commands.entity(entity).insert(Count(rank.0 as usize));
@@ -3885,7 +3908,10 @@ mod tests {
         }
     }
 
-    async fn remove_hooked_entity(query: Query<(Entity, &Hooked)>, mut commands: Commands<Anything>) {
+    async fn remove_hooked_entity(
+        query: Query<(Entity, &Hooked)>,
+        mut commands: Commands<Anything>,
+    ) {
         let (entity, _hooked) = query.item();
         commands.remove(entity);
     }
@@ -4003,9 +4029,7 @@ mod tests {
         use std::future::IntoFuture;
         use std::task::Context;
 
-        let bowl = Bowl::builder()
-            .system(make_b_after_yield)
-            .build();
+        let bowl = Bowl::builder().system(make_b_after_yield).build();
         block_on(async {
             bowl.insert((A(1),)).await;
         });
@@ -4058,9 +4082,7 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::builder()
-                .system(increment_once)
-                .build();
+            let bowl = Bowl::builder().system(increment_once).build();
             bowl.insert((MutableA(0),)).await;
 
             let values = bowl.scoop::<Query<(Entity, &MutableA)>>().await;
@@ -4083,9 +4105,7 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::builder()
-                .system(set_rank_unconditionally)
-                .build();
+            let bowl = Bowl::builder().system(set_rank_unconditionally).build();
             bowl.insert((Rank(1),)).await;
 
             // A system that always writes its Mut row must still settle after
@@ -4113,16 +4133,16 @@ mod tests {
 
             let state = super::lock_state(&bowl.inner.state).await;
             assert!(
-                state
-                    .memo
-                    .keys()
-                    .all(|owner| !owner.keys.contains(&entity)),
+                state.memo.keys().all(|owner| !owner.keys.contains(&entity)),
                 "memo still holds entries keyed by the removed entity"
             );
         });
     }
 
-    async fn spawn_b_note_from_a(query: Query<(Entity, &MutableA)>, mut commands: Commands<Anything>) {
+    async fn spawn_b_note_from_a(
+        query: Query<(Entity, &MutableA)>,
+        mut commands: Commands<Anything>,
+    ) {
         let (entity, a) = query.item();
         commands.insert((DerivedFrom::new(entity), B(a.0 % 2)));
     }
@@ -4130,9 +4150,7 @@ mod tests {
     #[test]
     fn rerun_replaces_spawned_outputs_and_reuses_entity_ids() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(spawn_b_note_from_a)
-                .build();
+            let bowl = Bowl::builder().system(spawn_b_note_from_a).build();
             let source = bowl.insert((MutableA(0),)).await.entity();
 
             let first = bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -4162,9 +4180,7 @@ mod tests {
                 .lock()
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
-            let bowl = Bowl::builder()
-                .system(make_b)
-                .build();
+            let bowl = Bowl::builder().system(make_b).build();
 
             let inserted = bowl.insert((A(41),)).await;
             let result = bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -4181,9 +4197,7 @@ mod tests {
     fn clean_query_does_not_rerun_systems() {
         block_on(async {
             CLEAN_RUNS.store(0, Ordering::SeqCst);
-            let bowl = Bowl::builder()
-                .system(make_c)
-                .build();
+            let bowl = Bowl::builder().system(make_c).build();
 
             bowl.insert((A(1),)).await;
             let result = bowl.scoop::<Query<(Entity, &C)>>().await;
@@ -4260,9 +4274,7 @@ mod tests {
     #[test]
     fn async_system_can_read_ambient_view() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(count_bs)
-                .build();
+            let bowl = Bowl::builder().system(count_bs).build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
@@ -4277,11 +4289,133 @@ mod tests {
     }
 
     #[test]
+    fn tracked_view_owns_one_aggregate_across_member_changes() {
+        block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
+            REQUEST_RUNS.store(0, Ordering::SeqCst);
+            let bowl = Bowl::builder().system(aggregate_as).build();
+
+            let initial = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let initial_rows = initial.collect();
+            assert_eq!(initial_rows.len(), 1);
+            assert_eq!(initial_rows[0].1.0, 0);
+            let aggregate = initial_rows[0].0;
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 1);
+
+            let first = bowl.insert((A(1),)).await;
+            bowl.insert((A(2),)).await;
+            let added = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(added.collect()[0].1.0, 3);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 2);
+
+            bowl.entity(first.entity()).insert((A(4),)).await;
+            let changed = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(changed.collect()[0].1.0, 6);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 3);
+
+            bowl.insert((B(9),)).await;
+            let unrelated = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(unrelated.collect()[0].1.0, 6);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 3);
+
+            bowl.entity(first.entity()).despawn().await;
+            let removed = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            let removed_rows = removed.collect();
+            assert_eq!(removed_rows.len(), 1);
+            assert_eq!(removed_rows[0].0, aggregate);
+            assert_eq!(removed_rows[0].1.0, 2);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 4);
+
+            let repeated = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(repeated.collect()[0].1.0, 2);
+            assert_eq!(REQUEST_RUNS.load(Ordering::SeqCst), 4);
+        });
+    }
+
+    #[test]
+    fn tracked_view_respects_fingerprint_cutoffs() {
+        block_on(async {
+            let _guard = REQUEST_TEST_LOCK
+                .lock()
+                .expect("request test lock poisoned");
+            CLEAN_RUNS.store(0, Ordering::SeqCst);
+            let bowl = Bowl::builder()
+                .system(aggregate_fingerprinted_ranks)
+                .build();
+            let member = bowl.insert((FingerprintedRank(3),)).await;
+
+            let initial = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(initial.collect()[0].1.0, 3);
+            assert_eq!(CLEAN_RUNS.load(Ordering::SeqCst), 1);
+
+            bowl.entity(member.entity())
+                .insert((FingerprintedRank(3),))
+                .await;
+            let equal = bowl.scoop::<Query<(Entity, &Count)>>().await;
+            assert_eq!(equal.collect()[0].1.0, 3);
+            assert_eq!(CLEAN_RUNS.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn tracked_view_composes_with_per_row_query_drivers() {
+        block_on(async {
+            let bowl = Bowl::builder().system(sum_as_for_b).build();
+            let first = bowl.insert((B(10),)).await;
+            let second = bowl.insert((B(20),)).await;
+            bowl.insert((A(2),)).await;
+
+            let initial = bowl.scoop::<Query<(Entity, &Sum)>>().await;
+            let mut values = initial
+                .collect()
+                .into_iter()
+                .map(|(entity, sum)| (entity, sum.0))
+                .collect::<Vec<_>>();
+            values.sort_by_key(|(entity, _)| *entity);
+            assert_eq!(values, vec![(first.entity(), 12), (second.entity(), 22)]);
+
+            bowl.insert((A(3),)).await;
+            let changed = bowl.scoop::<Query<(Entity, &Sum)>>().await;
+            let mut values = changed
+                .collect()
+                .into_iter()
+                .map(|(entity, sum)| (entity, sum.0))
+                .collect::<Vec<_>>();
+            values.sort_by_key(|(entity, _)| *entity);
+            assert_eq!(values, vec![(first.entity(), 15), (second.entity(), 25)]);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "writes component store")]
+    fn tracked_view_rejects_commands_writing_its_store() {
+        let _bowl = Bowl::builder().system(tracked_view_self_output).build();
+    }
+
+    #[test]
+    #[should_panic(expected = "writes component store")]
+    fn tracked_view_rejects_mutating_its_store() {
+        let _bowl = Bowl::builder().system(tracked_view_self_mut).build();
+    }
+
+    #[test]
+    #[should_panic(expected = "`TrackedView` is read-only")]
+    fn tracked_view_rejects_mutable_rows() {
+        let _bowl = Bowl::builder().system(tracked_view_mutable_rows).build();
+    }
+
+    #[test]
+    #[should_panic(expected = "wildcard `Commands`")]
+    fn tracked_view_rejects_wildcard_commands() {
+        let _bowl = Bowl::builder().system(tracked_view_wildcard).build();
+    }
+
+    #[test]
     fn commands_can_insert_derived_entities() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(spawn_b)
-                .build();
+            let bowl = Bowl::builder().system(spawn_b).build();
 
             bowl.insert((A(41),)).await;
             let result = bowl.scoop::<Query<(Entity, &B)>>().await;
@@ -4295,9 +4429,7 @@ mod tests {
     #[test]
     fn with_filter_does_not_appear_in_query_item() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(count_tagged_a)
-                .build();
+            let bowl = Bowl::builder().system(count_tagged_a).build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((Request, A(2))).await;
@@ -4313,9 +4445,7 @@ mod tests {
     #[test]
     fn two_query_system_runs_cross_product_rows() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(sum_a_b)
-                .build();
+            let bowl = Bowl::builder().system(sum_a_b).build();
 
             bowl.insert((A(2),)).await;
             bowl.insert((B(3),)).await;
@@ -4331,9 +4461,7 @@ mod tests {
     #[test]
     fn two_query_view_system_can_gate_on_readiness() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(count_a_when_c_exists)
-                .build();
+            let bowl = Bowl::builder().system(count_a_when_c_exists).build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
@@ -4394,9 +4522,7 @@ mod tests {
     #[test]
     fn derived_singleton_insert_reuses_entity() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(write_singleton_count)
-                .build();
+            let bowl = Bowl::builder().system(write_singleton_count).build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((A(2),)).await;
@@ -4514,9 +4640,7 @@ mod tests {
             HOOK_REMOVES.store(0, Ordering::SeqCst);
             HOOK_ENTITY_REMOVES.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::builder()
-                .system(remove_hooked_entity)
-                .build();
+            let bowl = Bowl::builder().system(remove_hooked_entity).build();
             bowl.insert((Hooked,)).await;
 
             assert_eq!(bowl.scoop::<Query<(Entity, &Hooked)>>().await.len(), 0);
@@ -4534,9 +4658,7 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::builder()
-                .system(make_b)
-                .build();
+            let bowl = Bowl::builder().system(make_b).build();
             bowl.insert((A(1),)).await;
 
             assert_eq!(bowl.scoop::<Query<(Entity, &B)>>().await.len(), 1);
@@ -4622,9 +4744,7 @@ mod tests {
     #[test]
     fn external_queries_can_mutate_bound_rows() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(copy_rank_to_count)
-                .build();
+            let bowl = Bowl::builder().system(copy_rank_to_count).build();
             bowl.insert((Label("main"), Rank(1))).await;
             bowl.insert((Label("lib"), Rank(2))).await;
 
@@ -4668,9 +4788,7 @@ mod tests {
     #[test]
     fn external_mut_handles_update_inside_scoped_closure() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(copy_rank_to_count)
-                .build();
+            let bowl = Bowl::builder().system(copy_rank_to_count).build();
             bowl.insert((Label("main"), Rank(1))).await;
             bowl.insert((Label("lib"), Rank(2))).await;
 
@@ -4778,9 +4896,7 @@ mod tests {
                 .expect("request test lock poisoned");
             REQUEST_RUNS.store(0, Ordering::SeqCst);
 
-            let bowl = Bowl::builder()
-                .system(copy_rank_to_count_counted)
-                .build();
+            let bowl = Bowl::builder().system(copy_rank_to_count_counted).build();
             bowl.insert((Rank(1),)).await;
 
             {
@@ -4919,9 +5035,7 @@ mod tests {
             let _guard = ACCESS_TEST_LOCK.lock().expect("access test lock poisoned");
             reset_access_counters();
 
-            let bowl = Bowl::builder()
-                .system(write_rank_for_access_test)
-                .build();
+            let bowl = Bowl::builder().system(write_rank_for_access_test).build();
             bowl.insert((Rank(1),)).await;
             bowl.insert((Rank(2),)).await;
 
@@ -4937,7 +5051,11 @@ mod tests {
     fn cleanup_runs_after_normal_phases_settle() {
         block_on(async {
             let bowl = Bowl::builder()
-                .system(make_b_uncounted.on_complete(|mut commands: Commands<Anything>| { commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker)); }))
+                .system(
+                    make_b_uncounted.on_complete(|mut commands: Commands<Anything>| {
+                        commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
+                    }),
+                )
                 .system(count_after_note.run_during(Phase::Complete))
                 .system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .build();
@@ -4956,7 +5074,11 @@ mod tests {
         block_on(async {
             let bowl = Bowl::builder()
                 .system(make_b_uncounted)
-                .system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker)); }))
+                .system(
+                    mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
+                        commands.insert((Singleton::<Note>::new(), Note, UntrackedMarker));
+                    }),
+                )
                 .system(count_bs_after_note.run_during(Phase::Complete))
                 .system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .build();
@@ -4979,7 +5101,11 @@ mod tests {
         block_on(async {
             let bowl = Bowl::builder()
                 .system(make_b_uncounted)
-                .system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker)); }))
+                .system(
+                    mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
+                        commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
+                    }),
+                )
                 .system(answer_after_untracked_marker.run_during(Phase::Complete))
                 .system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .build();
@@ -4998,7 +5124,11 @@ mod tests {
         block_on(async {
             let bowl = Bowl::builder()
                 .system(make_b_uncounted)
-                .system(mark_b_processed.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker)); }))
+                .system(
+                    mark_b_processed.on_settled(|mut commands: Commands<Anything>| {
+                        commands.insert((Singleton::<UntrackedMarker>::new(), UntrackedMarker));
+                    }),
+                )
                 .system(answer_after_untracked_marker.run_during(Phase::Complete))
                 .system(cleanup_untracked_marker.run_during(Phase::Settle))
                 .build();
@@ -5027,7 +5157,21 @@ mod tests {
                 .clear();
 
             let bowl = Bowl::builder()
-                .system(make_b_with_hook_log .on_start(|_commands: Commands<Anything>| { SYSTEM_HOOK_LOG .lock() .expect("system hook log lock poisoned") .push("start"); }) .on_complete(|_commands: Commands<Anything>| { SYSTEM_HOOK_LOG .lock() .expect("system hook log lock poisoned") .push("complete"); }),)
+                .system(
+                    make_b_with_hook_log
+                        .on_start(|_commands: Commands<Anything>| {
+                            SYSTEM_HOOK_LOG
+                                .lock()
+                                .expect("system hook log lock poisoned")
+                                .push("start");
+                        })
+                        .on_complete(|_commands: Commands<Anything>| {
+                            SYSTEM_HOOK_LOG
+                                .lock()
+                                .expect("system hook log lock poisoned")
+                                .push("complete");
+                        }),
+                )
                 .build();
 
             bowl.insert((A(1),)).await;
@@ -5054,9 +5198,7 @@ mod tests {
     #[test]
     fn system_params_support_arbitrary_mixed_order() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(mixed_param_system)
-                .build();
+            let bowl = Bowl::builder().system(mixed_param_system).build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(10),)).await;
@@ -5072,7 +5214,10 @@ mod tests {
         });
     }
 
-    async fn answer_request_with_note(query: Query<(Entity, &Request)>, mut commands: Commands<Anything>) {
+    async fn answer_request_with_note(
+        query: Query<(Entity, &Request)>,
+        mut commands: Commands<Anything>,
+    ) {
         let (entity, _request) = query.item();
         commands.entity(entity).insert(Answer(42));
         commands.entity(entity).insert(Note);
@@ -5081,9 +5226,7 @@ mod tests {
     #[test]
     fn bound_entity_take_consumes_output_and_cleans_scope() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(answer_request)
-                .build();
+            let bowl = Bowl::builder().system(answer_request).build();
 
             let request = bowl.insert((Request,)).await.bind();
             let answer = request.take::<Answer>().await.unwrap();
@@ -5114,9 +5257,7 @@ mod tests {
     #[test]
     fn bound_entity_take_supports_required_and_optional_outputs() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(answer_request)
-                .build();
+            let bowl = Bowl::builder().system(answer_request).build();
 
             let request = bowl.insert((Request,)).await.bind();
             let (answer, note) = request.take::<(Answer, Option<Note>)>().await.unwrap();
@@ -5130,9 +5271,7 @@ mod tests {
     #[test]
     fn bound_entity_take_removes_leftover_outputs() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(answer_request_with_note)
-                .build();
+            let bowl = Bowl::builder().system(answer_request_with_note).build();
 
             let request = bowl.insert((Request,)).await.bind();
             let answer = request.take::<Answer>().await.unwrap();
@@ -5356,9 +5495,7 @@ mod tests {
         LS_HOLD.store(false, Ordering::SeqCst);
         LS_STARTED.store(0, Ordering::SeqCst);
 
-        let bowl = Bowl::builder()
-            .system(ls_derive)
-            .build();
+        let bowl = Bowl::builder().system(ls_derive).build();
         block_on(async {
             bowl.insert((D(1),)).await;
         });
@@ -5396,7 +5533,9 @@ mod tests {
         block_on(driver);
         assert_eq!(
             block_on(collect_sums(&bowl)),
-            [1, 2].into_iter().collect::<std::collections::BTreeSet<_>>()
+            [1, 2]
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>()
         );
     }
 
@@ -5491,11 +5630,8 @@ mod tests {
     fn next_settle_fires_after_working_settles() {
         use std::task::Context;
 
-        let bowl = Bowl::builder()
-            .system(make_b_after_yield)
-            .build();
-        block_on(async {
-        });
+        let bowl = Bowl::builder().system(make_b_after_yield).build();
+        block_on(async {});
 
         // Register the watcher deterministically (first poll registers),
         // then drive a working settle and await the notification.
@@ -5519,9 +5655,7 @@ mod tests {
     #[test]
     fn take_waits_for_pinning_query_results_to_release() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(answer_request)
-                .build();
+            let bowl = Bowl::builder().system(answer_request).build();
 
             let request = bowl.insert((Request,)).await.bind();
 
@@ -5543,9 +5677,7 @@ mod tests {
     #[test]
     fn dropped_bound_entity_is_cleaned_up_on_next_operation() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(answer_request)
-                .build();
+            let bowl = Bowl::builder().system(answer_request).build();
 
             {
                 let _request = bowl.insert((Request,)).await.bind();
@@ -5566,10 +5698,7 @@ mod tests {
         JOIN_PAIR_RUNS.fetch_add(1, Ordering::SeqCst);
         let (namespace, a, _rank) = namespaces.item();
         let (member, b) = members.item();
-        commands.insert((
-            DerivedFrom::many([namespace, member]),
-            Sum(a.0 * 100 + b.0),
-        ));
+        commands.insert((DerivedFrom::many([namespace, member]), Sum(a.0 * 100 + b.0)));
     }
 
     async fn collect_sums(bowl: &Bowl) -> std::collections::BTreeSet<u32> {
@@ -5584,9 +5713,7 @@ mod tests {
     #[test]
     fn bound_eq_join_runs_only_matching_pairs() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(join_pairs)
-                .build();
+            let bowl = Bowl::builder().system(join_pairs).build();
 
             bowl.insert((A(1), FingerprintedRank(1))).await;
             bowl.insert((A(2), FingerprintedRank(2))).await;
@@ -5634,10 +5761,7 @@ mod tests {
     ) {
         let (namespace, a, _rank) = namespaces.item();
         let (member, b) = members.item();
-        commands.insert((
-            DerivedFrom::many([namespace, member]),
-            Sum(a.0 * 100 + b.0),
-        ));
+        commands.insert((DerivedFrom::many([namespace, member]), Sum(a.0 * 100 + b.0)));
     }
 
     #[test]
@@ -5781,10 +5905,7 @@ mod tests {
     ) {
         let (namespace, a, _, _) = namespaces.item();
         let (member, b) = members.item();
-        commands.insert((
-            DerivedFrom::many([namespace, member]),
-            Sum(a.0 * 100 + b.0),
-        ));
+        commands.insert((DerivedFrom::many([namespace, member]), Sum(a.0 * 100 + b.0)));
     }
 
     /// `Where<And<Eq<A>, Eq<B>>>` is a compound-key join: a pair forms only
@@ -5792,9 +5913,7 @@ mod tests {
     #[test]
     fn compound_bound_join_requires_every_key_to_match() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(compound_key_join)
-                .build();
+            let bowl = Bowl::builder().system(compound_key_join).build();
 
             bowl.insert((A(1), FingerprintedRank(1), KeyB(1))).await;
             bowl.insert((A(2), FingerprintedRank(1), KeyB(2))).await;
@@ -5845,9 +5964,7 @@ mod tests {
     #[test]
     fn and_composes_plain_filters() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(and_filtered_derive)
-                .build();
+            let bowl = Bowl::builder().system(and_filtered_derive).build();
 
             bowl.insert((A(1), Note)).await;
             bowl.insert((A(2), Note, C(0))).await;
@@ -5868,9 +5985,7 @@ mod tests {
     #[should_panic(expected = "needs exactly one sibling query param")]
     fn bound_eq_without_provider_panics_at_registration() {
         block_on(async {
-            let _bowl = Bowl::builder()
-                .system(missing_provider_join)
-                .build();
+            let _bowl = Bowl::builder().system(missing_provider_join).build();
         });
     }
 
@@ -5886,9 +6001,7 @@ mod tests {
     #[should_panic(expected = "needs exactly one sibling query param")]
     fn bound_eq_with_ambiguous_providers_panics_at_registration() {
         block_on(async {
-            let _bowl = Bowl::builder()
-                .system(ambiguous_provider_join)
-                .build();
+            let _bowl = Bowl::builder().system(ambiguous_provider_join).build();
         });
     }
 
@@ -5898,13 +6011,39 @@ mod tests {
     ) {
     }
 
+    async fn tracked_view_bound_join(
+        _namespaces: Query<(Entity, &A, &FingerprintedRank)>,
+        _members: TrackedView<'_, (Entity, &B), Where<Eq<FingerprintedRank>>>,
+    ) {
+    }
+
+    async fn tracked_view_membership_join(
+        _groups: Query<(Entity, &Members)>,
+        _members: TrackedView<'_, (Entity, &B), Where<In<Members>>>,
+    ) {
+    }
+
     #[test]
     #[should_panic(expected = "does not support bound")]
     fn bound_eq_on_view_panics_at_registration() {
         block_on(async {
-            let _bowl = Bowl::builder()
-                .system(view_bound_join)
-                .build();
+            let _bowl = Bowl::builder().system(view_bound_join).build();
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "`TrackedView` does not support bound")]
+    fn bound_eq_on_tracked_view_panics_at_registration() {
+        block_on(async {
+            let _bowl = Bowl::builder().system(tracked_view_bound_join).build();
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "`TrackedView` does not support bound")]
+    fn bound_in_on_tracked_view_panics_at_registration() {
+        block_on(async {
+            let _bowl = Bowl::builder().system(tracked_view_membership_join).build();
         });
     }
 
@@ -5959,9 +6098,7 @@ mod tests {
     #[should_panic(expected = "component(hash)")]
     fn bound_eq_join_requires_hashed_key() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(unhashed_key_join)
-                .build();
+            let bowl = Bowl::builder().system(unhashed_key_join).build();
 
             bowl.insert((Label("namespace"),)).await;
             bowl.insert((B(1), Label("namespace"))).await;
@@ -6052,9 +6189,7 @@ mod tests {
         FREEZE_RUNS.store(0, Ordering::SeqCst);
         FREEZE_HOLD.store(true, Ordering::SeqCst);
 
-        let bowl = Bowl::builder()
-            .system(freeze_derive)
-            .build();
+        let bowl = Bowl::builder().system(freeze_derive).build();
         block_on(async {
             bowl.insert((A(1),)).await;
         });
@@ -6127,12 +6262,13 @@ mod tests {
         LIE_ANSWERS.lock().unwrap().clear();
 
         let bowl = Bowl::builder()
-            .system(epoch_derive.on_settled(|mut commands: Commands<Anything>| { commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral)); }))
+            .system(epoch_derive.on_settled(|mut commands: Commands<Anything>| {
+                commands.insert((Singleton::<EpochReady>::new(), EpochReady, EpochEphemeral));
+            }))
             .system(lie_consume)
             .system(cleanup_epoch_ephemeral.run_during(Phase::Settle))
             .build();
         block_on(async {
-
             bowl.insert((EpochSrc("beta".to_string()),)).await;
             bowl.insert((EpochAsk("beta".to_string()),)).await;
         });
@@ -6353,9 +6489,17 @@ mod tests {
             bowl.entity(inserted.entity()).remove::<B>().await;
 
             let bs = bowl.scoop::<Query<(Entity, &B)>>().await;
-            assert_eq!(bs.collect().len(), 0, "the retracted component must be gone");
+            assert_eq!(
+                bs.collect().len(),
+                0,
+                "the retracted component must be gone"
+            );
             let survivors = bowl.scoop::<Query<(Entity, &A)>>().await;
-            assert_eq!(survivors.collect().len(), 1, "siblings must survive the removal");
+            assert_eq!(
+                survivors.collect().len(),
+                1,
+                "siblings must survive the removal"
+            );
         });
     }
 
@@ -6375,9 +6519,7 @@ mod tests {
     #[test]
     fn spawned_entities_link_by_id_within_one_buffer() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(lower_linked_pair)
-                .build();
+            let bowl = Bowl::builder().system(lower_linked_pair).build();
 
             bowl.insert((A(1),)).await;
 
@@ -6405,16 +6547,17 @@ mod tests {
     #[test]
     fn explain_surfaces_stale_ambient_views() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(count_bs)
-                .build();
+            let bowl = Bowl::builder().system(count_bs).build();
 
             bowl.insert((A(1),)).await;
             bowl.insert((B(1),)).await;
             let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
             assert_eq!(counts.collect()[0].1.0, 1);
             let report = bowl.explain("count_bs").await;
-            assert_eq!(report.stale_views, 0, "the system just ran against current views");
+            assert_eq!(
+                report.stale_views, 0,
+                "the system just ran against current views"
+            );
 
             bowl.insert((B(2),)).await;
             let counts = bowl.scoop::<Query<(Entity, &Count)>>().await;
@@ -6482,9 +6625,7 @@ mod tests {
     #[test]
     fn optional_parts_match_and_track_presence_and_absence() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(count_optional_b)
-                .build();
+            let bowl = Bowl::builder().system(count_optional_b).build();
 
             let with_b = bowl.insert((A(1), B(7))).await;
             let without_b = bowl.insert((A(2),)).await;
@@ -6522,10 +6663,7 @@ mod tests {
 
     type NoteParts = (Note, Count);
 
-    async fn declared_writer(
-        query: Query<(Entity, &A)>,
-        mut commands: Commands<(NoteParts, B)>,
-    ) {
+    async fn declared_writer(query: Query<(Entity, &A)>, mut commands: Commands<(NoteParts, B)>) {
         let (entity, _a) = query.item();
         let note: Entity<NoteParts> = commands.insert((Note, Count(7)));
         // Required parts can't be rewritten through the facet — the
@@ -6545,9 +6683,7 @@ mod tests {
     #[test]
     fn declared_outputs_permit_declared_writes() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(declared_writer)
-                .build();
+            let bowl = Bowl::builder().system(declared_writer).build();
             bowl.insert((A(1),)).await;
 
             let notes = bowl.scoop::<Query<Entity, With<Note>>>().await;
@@ -6623,10 +6759,7 @@ mod tests {
         }
     }
 
-    async fn spawn_narrow(
-        query: Query<(Entity, &A)>,
-        mut commands: Commands<((Note, Count),)>,
-    ) {
+    async fn spawn_narrow(query: Query<(Entity, &A)>, mut commands: Commands<((Note, Count),)>) {
         let (_entity, _a) = query.item();
         commands.insert((Note, Count(1)));
     }
@@ -6657,9 +6790,7 @@ mod tests {
     #[test]
     fn presence_masks_track_insert_and_removal_transitions() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .schema::<OverlappingSchema>()
-                .build();
+            let bowl = Bowl::builder().schema::<OverlappingSchema>().build();
             let inserted = bowl.insert((Note, Count(1))).await;
 
             let rows = bowl.scoop::<Query<(Entity, &Note, &Count)>>().await;
@@ -6851,9 +6982,11 @@ mod tests {
     fn ambient_view_consumers_heal_within_a_settle() {
         block_on(async {
             let bowl = Bowl::builder()
-                .system(revisit_probe.on_settled(|mut commands: Commands<Anything>| {
-                    commands.insert((Singleton::<RReady>::new(), RReady, REphemeral));
-                }))
+                .system(
+                    revisit_probe.on_settled(|mut commands: Commands<Anything>| {
+                        commands.insert((Singleton::<RReady>::new(), RReady, REphemeral));
+                    }),
+                )
                 .system(revisit_resolve)
                 .system(revisit_report.run_during(Phase::Complete))
                 .system(revisit_final)
@@ -6927,9 +7060,11 @@ mod tests {
     fn healing_deletes_unmatched_entries_without_spinning() {
         block_on(async {
             let bowl = Bowl::builder()
-                .system(revisit_probe.on_settled(|mut commands: Commands<Anything>| {
-                    commands.insert((Singleton::<RReady>::new(), RReady, REphemeral));
-                }))
+                .system(
+                    revisit_probe.on_settled(|mut commands: Commands<Anything>| {
+                        commands.insert((Singleton::<RReady>::new(), RReady, REphemeral));
+                    }),
+                )
                 .system(revisit_resolve)
                 .system(revisit_ungate)
                 .system(revisit_gated_report.run_during(Phase::Complete))
@@ -6977,10 +7112,7 @@ mod tests {
         commands.entity(entity).insert(RReport(sum));
     }
 
-    async fn cleanup_victims(
-        query: Query<Entity, With<RVictim>>,
-        mut commands: Commands<()>,
-    ) {
+    async fn cleanup_victims(query: Query<Entity, With<RVictim>>, mut commands: Commands<()>) {
         commands.remove(query.item());
     }
 
@@ -7285,15 +7417,16 @@ mod tests {
 
             let probed = vec![rt(
                 "t",
-                vec![rt("p", vec![]), rt("h", vec![rt("c", vec![rt("n", vec![])])])],
+                vec![
+                    rt("p", vec![]),
+                    rt("h", vec![rt("c", vec![rt("n", vec![])])]),
+                ],
             )];
             bowl.entity(doc.entity()).insert((RtSrc(probed),)).await;
             rt_assert_resolved(&bowl, "edit").await;
 
             // Fingerprint-equal to the initial state.
-            bowl.entity(doc.entity())
-                .insert((RtSrc(original),))
-                .await;
+            bowl.entity(doc.entity()).insert((RtSrc(original),)).await;
             rt_assert_resolved(&bowl, "restore").await;
         });
     }
@@ -7337,9 +7470,7 @@ mod tests {
             bowl.entity(doc.entity()).insert((RtSrc(probed),)).await;
             rt_assert_resolved(&bowl, "edit").await;
 
-            bowl.entity(doc.entity())
-                .insert((RtSrc(original),))
-                .await;
+            bowl.entity(doc.entity()).insert((RtSrc(original),)).await;
             rt_assert_resolved(&bowl, "restore").await;
         });
     }
@@ -7459,8 +7590,14 @@ mod tests {
 
         // The next settle processes the despawn: entity and derived row
         // are gone.
-        assert_eq!(block_on(bowl.scoop::<Query<(Entity, &A)>>().into_future()).len(), 0);
-        assert_eq!(block_on(bowl.scoop::<Query<(Entity, &B)>>().into_future()).len(), 0);
+        assert_eq!(
+            block_on(bowl.scoop::<Query<(Entity, &A)>>().into_future()).len(),
+            0
+        );
+        assert_eq!(
+            block_on(bowl.scoop::<Query<(Entity, &B)>>().into_future()).len(),
+            0
+        );
     }
 
     static GATED_RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -7631,7 +7768,10 @@ mod tests {
         });
     }
 
-    async fn sticker_d(query: Query<(Entity, &Rank), Without<D>>, mut commands: Commands<Anything>) {
+    async fn sticker_d(
+        query: Query<(Entity, &Rank), Without<D>>,
+        mut commands: Commands<Anything>,
+    ) {
         let (entity, _rank) = query.item();
         // The write itself is only {D}, but it *completes* the (D, Rank)
         // row on an entity that already carried Rank.
@@ -7682,9 +7822,7 @@ mod tests {
     #[test]
     fn outer_joins_run_unmatched_rows_with_none() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(resolve_or_default)
-                .build();
+            let bowl = Bowl::builder().system(resolve_or_default).build();
 
             let matched = bowl.insert((Request, FingerprintedRank(1))).await;
             let unmatched = bowl.insert((Request, FingerprintedRank(2))).await;
@@ -7826,8 +7964,14 @@ mod tests {
                 .await;
             let result = bowl.scoop::<Query<(Entity, &Members)>>().await;
             let rows = result.collect();
-            assert_eq!(members_of(&rows, parent.entity()), Some(vec![child_b.entity()]));
-            assert_eq!(members_of(&rows, parent2.entity()), Some(vec![child_c.entity()]));
+            assert_eq!(
+                members_of(&rows, parent.entity()),
+                Some(vec![child_b.entity()])
+            );
+            assert_eq!(
+                members_of(&rows, parent2.entity()),
+                Some(vec![child_c.entity()])
+            );
 
             // Removing the edge retracts membership; empty inverses vanish.
             bowl.entity(child_b.entity()).remove::<MemberOf>().await;
@@ -7838,7 +7982,10 @@ mod tests {
                 None,
                 "an emptied inverse is removed, keeping With<Members> meaningful"
             );
-            assert_eq!(members_of(&rows, parent2.entity()), Some(vec![child_c.entity()]));
+            assert_eq!(
+                members_of(&rows, parent2.entity()),
+                Some(vec![child_c.entity()])
+            );
         });
     }
 
@@ -7856,9 +8003,7 @@ mod tests {
     fn membership_changes_invalidate_tracked_consumers() {
         block_on(async {
             MEMBERS_RUNS.store(0, Ordering::SeqCst);
-            let bowl = Bowl::builder()
-                .system(observe_members)
-                .build();
+            let bowl = Bowl::builder().system(observe_members).build();
 
             let parent = bowl.insert((A(0),)).await;
             let child = bowl.insert((B(1), MemberOf(parent.entity()))).await;
@@ -7893,9 +8038,7 @@ mod tests {
     #[test]
     fn removing_the_target_retracts_source_edges() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(remove_noted)
-                .build();
+            let bowl = Bowl::builder().system(remove_noted).build();
 
             let parent = bowl.insert((A(0),)).await;
             bowl.insert((B(1), MemberOf(parent.entity()))).await;
@@ -7933,9 +8076,7 @@ mod tests {
     #[test]
     fn in_joins_pair_members_with_their_set() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(tag_members)
-                .build();
+            let bowl = Bowl::builder().system(tag_members).build();
 
             let parent = bowl.insert((A(0),)).await;
             bowl.insert((B(1), MemberOf(parent.entity()))).await;
@@ -7964,10 +8105,7 @@ mod tests {
     ) {
         let (parent, a, _members) = parents.item();
         let (member, b) = member.item();
-        commands.insert((
-            DerivedFrom::many([parent, member]),
-            Sum(a.0 + b.0),
-        ));
+        commands.insert((DerivedFrom::many([parent, member]), Sum(a.0 + b.0)));
     }
 
     /// Relationship membership retraction removes the `In` row itself. Its
@@ -7982,8 +8120,7 @@ mod tests {
                 .build();
 
             let parent = bowl.insert((A(10),)).await;
-            bowl.insert((B(2), MemberOf(parent.entity()), Doomed))
-                .await;
+            bowl.insert((B(2), MemberOf(parent.entity()), Doomed)).await;
 
             assert_eq!(
                 collect_sums(&bowl).await,
@@ -8023,8 +8160,7 @@ mod tests {
             bowl.insert((B(20), MemberOf(parent_two.entity()))).await;
 
             let stamps = bowl.scoop::<Query<(Entity, &Stamp)>>().await;
-            let mut values: Vec<u32> =
-                stamps.collect().into_iter().map(|(_, s)| s.0).collect();
+            let mut values: Vec<u32> = stamps.collect().into_iter().map(|(_, s)| s.0).collect();
             values.sort_unstable();
             assert_eq!(values, vec![10, 20]);
 
@@ -8038,8 +8174,7 @@ mod tests {
             }
 
             let stamps = bowl.scoop::<Query<(Entity, &Stamp)>>().await;
-            let mut values: Vec<u32> =
-                stamps.collect().into_iter().map(|(_, s)| s.0).collect();
+            let mut values: Vec<u32> = stamps.collect().into_iter().map(|(_, s)| s.0).collect();
             values.sort_unstable();
             assert_eq!(
                 values,
@@ -8094,8 +8229,10 @@ mod tests {
             let edited = bowl
                 .insert((SourceHash(10), MemberOf(parent.entity())))
                 .await;
-            bowl.insert((SourceHash(20), MemberOf(parent.entity()))).await;
-            bowl.insert((SourceHash(30), MemberOf(parent.entity()))).await;
+            bowl.insert((SourceHash(20), MemberOf(parent.entity())))
+                .await;
+            bowl.insert((SourceHash(30), MemberOf(parent.entity())))
+                .await;
             bowl.insert((SourceHash(40), MemberOf(parent_two.entity())))
                 .await;
             bowl.settle().await;
@@ -8123,8 +8260,7 @@ mod tests {
             );
 
             let stamps = bowl.scoop::<Query<(Entity, &Stamp)>>().await;
-            let mut values: Vec<u32> =
-                stamps.collect().into_iter().map(|(_, s)| s.0).collect();
+            let mut values: Vec<u32> = stamps.collect().into_iter().map(|(_, s)| s.0).collect();
             values.sort_unstable();
             assert_eq!(values, vec![11, 20, 30, 40]);
         });
@@ -8145,9 +8281,7 @@ mod tests {
     #[test]
     fn swept_derived_edges_retract_membership() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(spawn_member_when_ranked)
-                .build();
+            let bowl = Bowl::builder().system(spawn_member_when_ranked).build();
 
             let parent = bowl.insert((A(0),)).await;
             let driver = bowl
@@ -8221,9 +8355,7 @@ mod tests {
     #[test]
     fn explain_reports_why_a_system_did_not_run() {
         block_on(async {
-            let bowl = Bowl::builder()
-                .system(demand_gated_check)
-                .build();
+            let bowl = Bowl::builder().system(demand_gated_check).build();
 
             bowl.insert((A(1),)).await;
             bowl.scoop::<Query<(Entity, &Count)>>().await;

@@ -506,6 +506,48 @@ where
     _marker: PhantomData<(T, F)>,
 }
 
+/// One materialized snapshot view whose component stores are memoized as a
+/// single aggregate dependency.
+///
+/// Unlike [`View`], a `TrackedView` reruns its owning system when any store
+/// used by `T` or `F` changes. It still contributes no entity keys, so one
+/// system invocation observes the whole set. This is intentionally coarse:
+/// use [`Query`] for per-row work and [`View`] for ambient context.
+pub struct TrackedView<'a, T, F = ()>
+where
+    T: QueryParam,
+    F: QueryFilter<T>,
+{
+    view: View<'a, T, F>,
+}
+
+impl<'a, T, F> TrackedView<'a, T, F>
+where
+    T: QueryParam,
+    F: QueryFilter<T>,
+{
+    pub(crate) fn new(bowl: Bowl, snapshot: &'a Snapshot) -> Self {
+        Self {
+            view: View::new(bowl, snapshot),
+        }
+    }
+
+    /// Iterates rows visible in this snapshot.
+    pub fn iter(&'a self) -> impl Iterator<Item = T::Item<'a>> + 'a {
+        self.view.iter()
+    }
+
+    /// Number of rows in the tracked view.
+    pub fn len(&self) -> usize {
+        self.view.len()
+    }
+
+    /// Returns `true` when the tracked view has no rows.
+    pub fn is_empty(&self) -> bool {
+        self.view.is_empty()
+    }
+}
+
 // View values are also invocation-local parameter wrappers. The guard store is
 // only used by the running system that owns the view.
 unsafe impl<T, F> Send for View<'_, T, F>
@@ -1060,7 +1102,11 @@ impl<T: Component> QueryParam for &T {
         (key == TypeId::of::<T>()).then(|| snapshot.fingerprint::<T>(*state))
     }
 
-    fn provided_members(snapshot: &Snapshot, state: &Self::State, key: TypeId) -> Option<Vec<Entity>> {
+    fn provided_members(
+        snapshot: &Snapshot,
+        state: &Self::State,
+        key: TypeId,
+    ) -> Option<Vec<Entity>> {
         if key != TypeId::of::<T>() {
             return None;
         }
@@ -1293,7 +1339,9 @@ impl<T: Component> QueryPart for Option<&T> {
     fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
         // Only reachable when every part is optional: fall back to the
         // dense id scan, like the bare `Entity` param.
-        (0..snapshot.next_entity_raw()).map(Entity::from_raw).collect()
+        (0..snapshot.next_entity_raw())
+            .map(Entity::from_raw)
+            .collect()
     }
 
     fn matches(_snapshot: &Snapshot, _entity: Entity) -> bool {
@@ -1785,7 +1833,9 @@ where
     }
 
     fn candidate_bound(snapshot: &Snapshot) -> usize {
-        snapshot.store_len_dyn(TypeId::of::<T>()).min(usize::MAX - 1)
+        snapshot
+            .store_len_dyn(TypeId::of::<T>())
+            .min(usize::MAX - 1)
     }
 
     fn drives_candidates() -> bool {
@@ -1869,8 +1919,7 @@ where
         let mut providers = Vec::new();
         for member in hint {
             if let Some(fingerprint) = snapshot.fingerprint::<T>(*member) {
-                providers
-                    .extend(snapshot.fingerprint_candidates(TypeId::of::<T>(), fingerprint));
+                providers.extend(snapshot.fingerprint_candidates(TypeId::of::<T>(), fingerprint));
             }
         }
         providers
@@ -1977,7 +2026,10 @@ where
     }
 
     fn entity_candidates(snapshot: &Snapshot) -> Option<Vec<Entity>> {
-        match (L::entity_candidates(snapshot), R::entity_candidates(snapshot)) {
+        match (
+            L::entity_candidates(snapshot),
+            R::entity_candidates(snapshot),
+        ) {
             (Some(left), Some(right)) => {
                 let right: std::collections::HashSet<Entity> = right.into_iter().collect();
                 Some(

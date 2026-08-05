@@ -16,6 +16,10 @@
 //!   ambient snapshot read
 //!   visible when a system runs, but not part of memo dependencies
 //!
+//! TrackedView<T, F = ()>
+//!   one zero-key aggregate invocation
+//!   depends on every component store read by the view
+//!
 //! Commands
 //!   buffered writes
 //!   applied only after the current snapshot tick completes
@@ -98,26 +102,26 @@ mod system;
 mod world;
 
 pub use bowl::{
-    BoundEntity, Bowl, BowlBuilder, BowlEntity, Bundle, CommitLimit, DespawnBuilder,
-    ExplainReport, ExternalScoop, InsertBuilder, InsertedEntity, Plugin, ProfileEntry, Registrar,
-    RemoveBuilder, ScoopBuilder, TakeBundle, TakeError,
+    BoundEntity, Bowl, BowlBuilder, BowlEntity, Bundle, CommitLimit, DespawnBuilder, ExplainReport,
+    ExternalScoop, InsertBuilder, InsertedEntity, Plugin, ProfileEntry, Registrar, RemoveBuilder,
+    ScoopBuilder, TakeBundle, TakeError,
 };
 pub use commands::{Commands, EntityCommands};
-pub use declare::{
-    BundleDeclaredIn, CoveredBy, DeclarationList, DeclaredIn, FacetKind, FacetPart, IncrementOf,
-    MatchesShape, Schema, ShapeDesc, ShapePart, SpawnsAs,
-};
-pub use macros::Schema;
 pub use component::{
     Component, ComponentHookContext, DerivedFrom, RelationshipEdge, RelationshipRetraction,
     RelationshipTarget, Singleton, hash_component, relationship_retractions_for,
 };
+pub use declare::{
+    BundleDeclaredIn, CoveredBy, DeclarationList, DeclaredIn, FacetKind, FacetPart, IncrementOf,
+    MatchesShape, Schema, ShapeDesc, ShapePart, SpawnsAs,
+};
 pub use entity::{Entity, Untyped};
 pub use macros::Component;
+pub use macros::Schema;
 pub use query::{
     And, ArgBundle, Cow, CowQueryParam, EntityMutResult, Eq, ExternalFilter, ExternalQueryFilter,
-    FilterExpr, Gte, In, Mut, MutRef, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam, Tracked,
-    QueryResult, View, Where, With, Without,
+    FilterExpr, Gte, In, Mut, MutRef, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam,
+    QueryResult, Tracked, TrackedView, View, Where, With, Without,
 };
 pub use system::{
     IntoSystem, Phase, SystemCallback, SystemExt, WorldMetaView, cleanup_stale_derived, insert_on,

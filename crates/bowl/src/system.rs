@@ -6,7 +6,7 @@ use async_fn_traits::{
 use futures::future::{BoxFuture, FutureExt, join_all};
 
 use crate::{
-    Bowl, Commands, DerivedFrom, Entity, Query, View,
+    Bowl, Commands, DerivedFrom, Entity, Query, TrackedView, View,
     commands::CommandOp,
     declare::{Anything, DeclarationList},
     query::{
@@ -301,6 +301,11 @@ pub trait SystemParam {
     /// from `view_sets`, which carries required row shapes for race
     /// detection (`Without<T>` belongs here but not there).
     fn view_freshness(_out: &mut Vec<TypeId>) {}
+    /// Component stores observed through [`TrackedView`]. Used to reject
+    /// systems that would invalidate their own aggregate dependency.
+    fn tracked_store_types(_out: &mut Vec<TypeId>) {}
+    /// Component stores mutated in place by this parameter.
+    fn written_types(_out: &mut Vec<TypeId>) {}
     /// Component types this param may emit. `Some(empty)` for non-writers
     /// (the default), `Some(list)` for a typed `Commands<S>`, `None` for
     /// the wildcard (bare `Commands`).
@@ -422,6 +427,15 @@ where
 
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
         filtered_access::<Q, Filter>(snapshot, state)
+    }
+
+    fn written_types(out: &mut Vec<TypeId>) {
+        out.extend(
+            Q::access_all()
+                .into_iter()
+                .filter(|access| access.kind == AccessKind::Write)
+                .map(|access| access.component),
+        );
     }
 
     fn fetch<'a>(
@@ -674,6 +688,95 @@ where
             )),
             None => Ok(()),
         }
+    }
+}
+
+fn tracked_view_types<Q, Filter>() -> Vec<TypeId>
+where
+    Q: QueryParam,
+    Filter: QueryFilter<Q>,
+{
+    let mut types = Q::access_all()
+        .into_iter()
+        .chain(Filter::access_all())
+        .map(|access| access.component)
+        .collect::<Vec<_>>();
+    types.sort_unstable();
+    types.dedup();
+    types
+}
+
+impl<'view, Q, Filter> SystemParam for TrackedView<'view, Q, Filter>
+where
+    Q: QueryParam + Send,
+    Filter: QueryFilter<Q> + Send + Sync,
+{
+    type State = ();
+    type Item<'a> = TrackedView<'a, Q, Filter>;
+
+    fn delta_shape() -> DeltaShape {
+        DeltaShape::Opaque
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(tracked_view_types::<Q, Filter>())
+    }
+
+    fn states(_snapshot: &Snapshot) -> Vec<Self::State> {
+        vec![()]
+    }
+
+    fn keys(_state: &Self::State) -> Vec<Entity> {
+        Vec::new()
+    }
+
+    fn deps(snapshot: &Snapshot, _state: &Self::State) -> Vec<Dep> {
+        tracked_view_types::<Q, Filter>()
+            .into_iter()
+            .map(|component| store_watermark_dep(snapshot, component))
+            .collect()
+    }
+
+    fn access(_snapshot: &Snapshot, _state: &Self::State) -> Vec<Access> {
+        let mut access = Q::access_all();
+        access.extend(Filter::access_all());
+        access
+    }
+
+    fn tracked_store_types(out: &mut Vec<TypeId>) {
+        out.extend(tracked_view_types::<Q, Filter>());
+    }
+
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        _state: &Self::State,
+        _commands: &Commands<Anything>,
+        _guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
+        TrackedView::new(bowl.clone(), snapshot)
+    }
+
+    fn validate_local() -> Result<(), String> {
+        if Q::access_all()
+            .iter()
+            .any(|access| access.kind == AccessKind::Write)
+        {
+            return Err(
+                "`TrackedView` is read-only; use a `Query` for `MutRef` access".to_string(),
+            );
+        }
+        if let Some((_, name)) = Filter::bound_key_types().first() {
+            return Err(format!(
+                "`TrackedView` does not support bound `Where<Eq<{name}>>`; use a `Query`"
+            ));
+        }
+        if let Some((_, name)) = Filter::in_key_types().first() {
+            return Err(format!(
+                "`TrackedView` does not support bound `Where<In<{name}>>`; use a `Query`"
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -1117,6 +1220,14 @@ macro_rules! impl_system_param_tuple {
                 $($P::view_freshness(out);)*
             }
 
+            fn tracked_store_types(out: &mut Vec<TypeId>) {
+                $($P::tracked_store_types(out);)*
+            }
+
+            fn written_types(out: &mut Vec<TypeId>) {
+                $($P::written_types(out);)*
+            }
+
             fn declared_outputs() -> Option<Vec<TypeId>> {
                 let mut out = Vec::new();
                 $(
@@ -1403,6 +1514,10 @@ pub struct BoxedSystem {
     /// the freshness set the settle's ambient healing pass compares
     /// against watermarks. Empty for view-less systems.
     pub(crate) view_freshness: Arc<Vec<TypeId>>,
+    /// Whole-store dependencies contributed by [`TrackedView`] params.
+    pub(crate) tracked_store_types: Arc<Vec<TypeId>>,
+    /// Stores mutated in place through `MutRef` params.
+    pub(crate) written_types: Arc<Vec<TypeId>>,
     /// Component types the system declared it may emit (`Commands<S>`);
     /// `None` is the wildcard (bare `Commands` or hook-driven writers).
     pub(crate) declared_outputs: Option<Arc<Vec<TypeId>>>,
@@ -1441,22 +1556,32 @@ impl BoxedSystem {
         name: &'static str,
         view_sets: Vec<Vec<TypeId>>,
         view_freshness: Vec<TypeId>,
+        tracked_store_types: Vec<TypeId>,
+        written_types: Vec<TypeId>,
         declared_outputs: Option<Vec<TypeId>>,
         interest: Option<Vec<TypeId>>,
         delta_eligible: bool,
         pair_bound: bool,
     ) -> Self {
+        validate_tracked_store_writes(
+            name,
+            &tracked_store_types,
+            &written_types,
+            declared_outputs.as_deref(),
+        );
         Self {
             runnable,
             phase: Phase::Evaluate,
             name,
             view_sets: Arc::new(view_sets),
             view_freshness: Arc::new(view_freshness),
+            tracked_store_types: Arc::new(tracked_store_types),
+            written_types: Arc::new(written_types),
             declared_outputs: declared_outputs.map(Arc::new),
             delta_eligible: delta_eligible && interest.is_some(),
             pair_bound,
             interest: interest.map(Arc::new),
-            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -1481,6 +1606,9 @@ impl BoxedSystem {
         let Some(interest) = &self.interest else {
             return true;
         };
+        if self.planned_mark.load(std::sync::atomic::Ordering::Relaxed) == u64::MAX {
+            return true;
+        }
         let mark = interest
             .iter()
             .map(|type_id| snapshot.store_watermark(*type_id))
@@ -1526,7 +1654,7 @@ impl BoxedSystem {
     /// [`BoxedSystem::force_replan`].
     pub(crate) fn reset_full(&self) {
         self.planned_mark
-            .store(0, std::sync::atomic::Ordering::Relaxed);
+            .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
         self.plan_epoch
             .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
     }
@@ -1548,6 +1676,30 @@ impl BoxedSystem {
 
     fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
         self.runnable.has_work(snapshot, memo)
+    }
+}
+
+fn validate_tracked_store_writes(
+    name: &'static str,
+    tracked: &[TypeId],
+    written: &[TypeId],
+    declared_outputs: Option<&[TypeId]>,
+) {
+    if tracked.is_empty() {
+        return;
+    }
+    let Some(declared_outputs) = declared_outputs else {
+        panic!(
+            "cannot register system `{name}`: wildcard `Commands` cannot be combined with `TrackedView`"
+        );
+    };
+    if let Some(component) = tracked
+        .iter()
+        .find(|component| written.contains(component) || declared_outputs.contains(component))
+    {
+        panic!(
+            "cannot register system `{name}`: it writes component store {component:?} tracked by its `TrackedView`"
+        );
     }
 }
 
@@ -1747,7 +1899,9 @@ where
         // captured snapshot + memo), so the run future carries the planned
         // rows instead of a memo snapshot — this is what lets the runner
         // stop cloning the memo per wave.
-        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo, hint);
+        let inner = self
+            .system
+            .stream_runs(bowl, Arc::clone(&snapshot), memo, hint);
         if inner.is_empty() {
             return Vec::new();
         }
@@ -1846,7 +2000,9 @@ where
     ) -> Vec<PlannedSystemRun> {
         // Pre-planned like `OnStart`; the completion hook appends its
         // output after the batch, only when the batch produced outputs.
-        let inner = self.system.stream_runs(bowl, Arc::clone(&snapshot), memo, hint);
+        let inner = self
+            .system
+            .stream_runs(bowl, Arc::clone(&snapshot), memo, hint);
         if inner.is_empty() {
             return Vec::new();
         }
@@ -1981,10 +2137,18 @@ where
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
         let view_freshness = Arc::clone(&system.view_freshness);
+        let tracked_store_types = Arc::clone(&system.tracked_store_types);
+        let written_types = Arc::clone(&system.written_types);
         // The hook declares its outputs too; merge them into the
         // system's entry.
         let declared_outputs =
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
+        validate_tracked_store_writes(
+            name,
+            &tracked_store_types,
+            &written_types,
+            declared_outputs.as_deref().map(|values| values.as_slice()),
+        );
         let interest = system.interest.clone();
         let system_delta_eligible = system.delta_eligible;
         let pair_bound = system.pair_bound;
@@ -1999,11 +2163,13 @@ where
             name,
             view_sets,
             view_freshness,
+            tracked_store_types,
+            written_types,
             declared_outputs,
             delta_eligible: system_delta_eligible,
             pair_bound,
             interest,
-            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -2024,10 +2190,18 @@ where
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
         let view_freshness = Arc::clone(&system.view_freshness);
+        let tracked_store_types = Arc::clone(&system.tracked_store_types);
+        let written_types = Arc::clone(&system.written_types);
         // The hook declares its outputs too; merge them into the
         // system's entry.
         let declared_outputs =
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
+        validate_tracked_store_writes(
+            name,
+            &tracked_store_types,
+            &written_types,
+            declared_outputs.as_deref().map(|values| values.as_slice()),
+        );
         let interest = system.interest.clone();
         let system_delta_eligible = system.delta_eligible;
         let pair_bound = system.pair_bound;
@@ -2042,11 +2216,13 @@ where
             name,
             view_sets,
             view_freshness,
+            tracked_store_types,
+            written_types,
             declared_outputs,
             delta_eligible: system_delta_eligible,
             pair_bound,
             interest,
-            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -2067,10 +2243,18 @@ where
         let name = system.name;
         let view_sets = Arc::clone(&system.view_sets);
         let view_freshness = Arc::clone(&system.view_freshness);
+        let tracked_store_types = Arc::clone(&system.tracked_store_types);
+        let written_types = Arc::clone(&system.written_types);
         // The hook declares its outputs too; merge them into the
         // system's entry.
         let declared_outputs =
             merge_declarations(system.declared_outputs.clone(), D::declared_types());
+        validate_tracked_store_writes(
+            name,
+            &tracked_store_types,
+            &written_types,
+            declared_outputs.as_deref().map(|values| values.as_slice()),
+        );
         let interest = system.interest.clone();
         let system_delta_eligible = system.delta_eligible;
         let pair_bound = system.pair_bound;
@@ -2085,11 +2269,13 @@ where
             name,
             view_sets,
             view_freshness,
+            tracked_store_types,
+            written_types,
             declared_outputs,
             delta_eligible: system_delta_eligible,
             pair_bound,
             interest,
-            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            planned_mark: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             stats: Arc::new(SystemStats::default()),
             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -2385,6 +2571,14 @@ where
         F::Param::view_freshness(&mut view_freshness);
         view_freshness.sort_unstable();
         view_freshness.dedup();
+        let mut tracked_store_types = Vec::new();
+        F::Param::tracked_store_types(&mut tracked_store_types);
+        tracked_store_types.sort_unstable();
+        tracked_store_types.dedup();
+        let mut written_types = Vec::new();
+        F::Param::written_types(&mut written_types);
+        written_types.sort_unstable();
+        written_types.dedup();
         BoxedSystem::new(
             Arc::new(FunctionSystem {
                 id,
@@ -2394,6 +2588,8 @@ where
             std::any::type_name::<F>(),
             view_sets,
             view_freshness,
+            tracked_store_types,
+            written_types,
             F::Param::declared_outputs(),
             F::Param::interest_types(),
             F::Param::delta_shape() == DeltaShape::Driver,

@@ -38,7 +38,8 @@ Porridge explores whether those mechanisms can share one vocabulary:
 - **entities** identify things;
 - **components** are facts about them;
 - **systems** derive facts from tracked query rows;
-- **views** read ambient context from the same snapshot;
+- **views** read ambient context from the same snapshot; tracked views are the
+  narrow zero-key aggregate form whose store dependencies invalidate it;
 - **commands** publish buffered output;
 - **schemas** describe valid entity shapes;
 - **settling** drives the graph until callers can observe a fixed point.
@@ -208,6 +209,14 @@ not rerun the system. Use tracked joins, a tracked driving fact, or a phase
 boundary when the ambient data must cause or order work. The runtime's settled
 view-healing pass protects specific cross-phase cases, but `View` is not a
 general dependency declaration.
+
+### Aggregate `TrackedView`
+
+`TrackedView<T, F>` also materializes the snapshot rows, but contributes one
+store-watermark dependency for every component read by the row and filter. It
+therefore drives one zero-key invocation that reruns when any member appears,
+changes, or disappears. Use it only for whole-set aggregates whose ownership
+cannot be expressed as one `Query` invocation per row.
 
 ### Typed, buffered `Commands`
 

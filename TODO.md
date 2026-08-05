@@ -713,12 +713,21 @@ Current shortcut:
   that moved past an invocation's planned revision — the footgun signature
   is everything-memoized with nonzero stale views (dsql port, friction 4).
   The fingerprinted-index-as-tracked-input pattern (`DefIndex`) remains
-  the standard remedy. A separate `TrackedView` read type was considered
-  and rejected — an invalidating view contradicts `View`'s deliberate
-  ambient semantics and is just a worse query.
+  the standard remedy.
+- Resolved: `TrackedView` remains rejected as a per-row replacement for
+  `Query` — that would contradict `View`'s deliberate ambient semantics and
+  be a worse query. It is accepted narrowly as the zero-key aggregate
+  primitive: `Query` cannot express one invocation over a changing owner set
+  because every query row contributes an invocation key. `TrackedView`
+  records coarse store-watermark dependencies for that whole-set case.
 
 Current shortcut:
 - `View` never contributes dependencies.
+- `TrackedView` contributes one zero-key invocation with store-scoped
+  dependencies and is reserved for whole-set aggregates.
+- `View` still permits `MutRef` query parts without row-level revision
+  bookkeeping. `TrackedView` rejects them at registration, but the ambient
+  form remains a separate hole to close.
 - This is useful for shader-like per-row systems, but ambient changes do not
   rerun a system unless the driving `Query` row changes.
 - The duplicate-definition checker relies on this behavior today.
