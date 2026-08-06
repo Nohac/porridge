@@ -546,6 +546,10 @@ pub struct World {
     /// recreates the output that cleanup reaped. External despawn performs a
     /// broader synchronous ownership cascade and discards this bookkeeping.
     removed_owners: Vec<SystemInvocation>,
+    /// Invocation owners whose individual derived component was removed by
+    /// another invocation or by an external command while its entity stayed
+    /// allocated. Their memos no longer describe live output.
+    removed_component_owners: Vec<SystemInvocation>,
     /// `DerivedFrom` inserts deferred until the current command buffer has
     /// fully applied.
     ///
@@ -716,6 +720,7 @@ impl Clone for World {
             spawn_cursors: HashMap::new(),
             removed_entities: Vec::new(),
             removed_owners: Vec::new(),
+            removed_component_owners: Vec::new(),
             pending_derived_from: Vec::new(),
             flushing_anchors: false,
             written_derived: Vec::new(),
@@ -757,6 +762,7 @@ impl World {
             spawn_cursors: HashMap::new(),
             removed_entities: Vec::new(),
             removed_owners: Vec::new(),
+            removed_component_owners: Vec::new(),
             pending_derived_from: Vec::new(),
             flushing_anchors: false,
             written_derived: Vec::new(),
@@ -896,7 +902,7 @@ impl World {
         members.remove(index);
 
         if members.is_empty() {
-            self.remove_component::<T>(target);
+            self.remove_component::<T>(target, None);
         } else {
             self.insert_base(target, T::from_members(members));
         }
@@ -912,6 +918,13 @@ impl World {
     /// already reconciled the broader ownership cascade and discards them.
     pub(crate) fn take_removed_owners(&mut self) -> Vec<SystemInvocation> {
         std::mem::take(&mut self.removed_owners)
+    }
+
+    /// Drains owners whose derived component was removed without removing its
+    /// entity. Unlike [`World::take_removed_owners`], these always require
+    /// memo invalidation because no entity frontier can reveal the retraction.
+    pub(crate) fn take_removed_component_owners(&mut self) -> Vec<SystemInvocation> {
+        std::mem::take(&mut self.removed_component_owners)
     }
 
     /// Applies the `DerivedFrom` inserts deferred from the command buffer
@@ -1011,7 +1024,11 @@ impl World {
     /// Used by spawn commands whose id was reserved at buffer time: the
     /// reservation stands when this spawn *creates* the singleton, and is
     /// superseded by the existing entity otherwise.
-    pub(crate) fn singleton_entity_or_register(&mut self, key: TypeId, candidate: Entity) -> Entity {
+    pub(crate) fn singleton_entity_or_register(
+        &mut self,
+        key: TypeId,
+        candidate: Entity,
+    ) -> Entity {
         if let Some(entity) = self.singleton_entities.get(&key) {
             return *entity;
         }
@@ -1510,7 +1527,11 @@ impl World {
     /// snapshot keeps the removed component cell alive; check
     /// [`World::component_pinned`] first, because a pinned removal loses the
     /// value.
-    pub(crate) fn remove_component<T>(&mut self, entity: Entity) -> Option<Arc<T>>
+    pub(crate) fn remove_component<T>(
+        &mut self,
+        entity: Entity,
+        remover: Option<&SystemInvocation>,
+    ) -> Option<Arc<T>>
     where
         T: Component,
     {
@@ -1536,6 +1557,9 @@ impl World {
         if let Some(owner) = &removed.owner {
             let owner = owner.clone();
             self.unindex_derived(&owner, TypeId::of::<T>(), entity);
+            if remover != Some(&owner) {
+                self.removed_component_owners.push(owner);
+            }
         }
 
         if let Some(key) = T::singleton_key() {

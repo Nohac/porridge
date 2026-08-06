@@ -855,7 +855,7 @@ where
     type Output = Arc<T>;
 
     fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
-        world.remove_component::<T>(entity).ok_or(TakeError {
+        world.remove_component::<T>(entity, None).ok_or(TakeError {
             entity,
             component: type_name::<T>(),
         })
@@ -873,7 +873,7 @@ where
     type Output = Option<Arc<T>>;
 
     fn take(world: &mut World, entity: Entity) -> Result<Self::Output, TakeError> {
-        Ok(world.remove_component::<T>(entity))
+        Ok(world.remove_component::<T>(entity, None))
     }
 
     fn blocked(world: &World, entity: Entity) -> bool {
@@ -2652,11 +2652,19 @@ impl Bowl {
         // outputs (its next rerun replaces them; the despawned entity's
         // share is already gone with the entity).
         let removed = state.world.take_removed_entities();
+        let removed_component_owners = state.world.take_removed_component_owners();
         // External despawn already performs the broader synchronous ownership
         // cascade above, so these commit-time bookkeeping owners are spent.
         let _ = state.world.take_removed_owners();
-        let State { world, memo, .. } = &mut *state;
-        let _ = reconcile_removed_invocations(world, memo, removed, std::iter::empty(), &[], None);
+        let State {
+            world,
+            memo,
+            systems,
+            ..
+        } = &mut *state;
+        let _ = reconcile_removed_output_owners(memo, removed_component_owners, systems, None);
+        let _ =
+            reconcile_removed_invocations(world, memo, removed, std::iter::empty(), systems, None);
 
         state.running_generation = Some(generation);
         state.next_generation = generation + 1;
@@ -3342,7 +3350,8 @@ async fn commit_system_run(
     // filtered rows retain their established lingering-output semantics.
     let removed = state.world.take_removed_entities();
     let removed_owners = state.world.take_removed_owners();
-    if !removed.is_empty() || !removed_owners.is_empty() {
+    let removed_component_owners = state.world.take_removed_component_owners();
+    if !removed.is_empty() || !removed_owners.is_empty() || !removed_component_owners.is_empty() {
         let pair_bound_systems: HashSet<SystemId> = state
             .systems
             .iter()
@@ -3354,14 +3363,18 @@ async fn commit_system_run(
             systems: system_defs,
             ..
         } = &mut *state;
-        if reconcile_removed_invocations(
-            world,
-            memo,
-            removed,
-            removed_owners,
-            system_defs,
-            Some(&pair_bound_systems),
-        ) {
+        let component_outputs_retired =
+            reconcile_removed_output_owners(memo, removed_component_owners, system_defs, None);
+        if component_outputs_retired
+            || reconcile_removed_invocations(
+                world,
+                memo,
+                removed,
+                removed_owners,
+                system_defs,
+                Some(&pair_bound_systems),
+            )
+        {
             // The normal phases converged before this Settle-phase cascade.
             // Mark that fixed point dirty so settle() schedules one more normal
             // generation instead of publishing partially retracted output.
@@ -3380,6 +3393,28 @@ async fn commit_system_run(
 
 fn remove_memo_touched_by(memo: &mut HashMap<SystemInvocation, MemoEntry>, keys: &HashSet<Entity>) {
     memo.retain(|owner, _| !owner.keys.iter().any(|key| keys.contains(key)));
+}
+
+/// Invalidates invocations whose live derived output was removed without
+/// removing its entity. No entity frontier can reveal this row retraction, so
+/// the owner itself is the precise invalidation key.
+fn reconcile_removed_output_owners(
+    memo: &mut HashMap<SystemInvocation, MemoEntry>,
+    owners: impl IntoIterator<Item = SystemInvocation>,
+    system_defs: &[BoxedSystem],
+    systems: Option<&HashSet<SystemId>>,
+) -> bool {
+    let mut retired_outputs = false;
+    for owner in owners {
+        if systems.is_some_and(|systems| !systems.contains(&owner.system)) {
+            continue;
+        }
+        if memo.remove(&owner).is_some() {
+            system_defs[owner.system.0].force_replan(&owner.keys);
+            retired_outputs = true;
+        }
+    }
+    retired_outputs
 }
 
 /// Retires pair-bound invocations whose row identity depended on a removed
@@ -3402,21 +3437,7 @@ fn reconcile_removed_invocations(
     let mut frontier = seen.clone();
     let mut retired_outputs = false;
 
-    for owner in removed_owners {
-        if systems.is_some_and(|systems| !systems.contains(&owner.system)) {
-            continue;
-        }
-        // The removed component was itself one of this invocation's outputs.
-        // Invalidating a present memo makes a still-matching pair re-emit it
-        // on the follow-up pass; explicitly wake planning because removing an
-        // output need not move any of the producer's input watermarks. An
-        // already-absent memo was retired by an earlier frontier/follow-up and
-        // needs neither another wake-up nor another normal pass.
-        if memo.remove(&owner).is_some() {
-            system_defs[owner.system.0].force_replan(&owner.keys);
-            retired_outputs = true;
-        }
-    }
+    retired_outputs |= reconcile_removed_output_owners(memo, removed_owners, system_defs, systems);
 
     while !frontier.is_empty() {
         remove_memo_touched_by(memo, &frontier);
@@ -3596,6 +3617,8 @@ mod tests {
     struct Answer(u32);
     struct NonCloneAnswer(u32);
     struct Note;
+    struct OutputShell;
+    struct StableNote;
     #[derive(Clone, PartialEq)]
     struct MutableA(u32);
     struct Hooked;
@@ -3616,6 +3639,12 @@ mod tests {
     impl Component for Answer {}
     impl Component for NonCloneAnswer {}
     impl Component for Note {}
+    impl Component for OutputShell {}
+    impl Component for StableNote {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(0)
+        }
+    }
     impl Component for MutableA {}
     impl Component for Label {}
     impl Component for Rank {}
@@ -5887,6 +5916,197 @@ mod tests {
                 bowl.scoop::<Query<Entity, With<C>>>().await.len(),
                 0,
                 "the one-shot reap gate must stay removed"
+            );
+        });
+    }
+
+    async fn spawn_marked_note_for_rank_pair(
+        providers: Query<(Entity, &A, &FingerprintedRank)>,
+        members: Query<(Entity, &B), Where<Eq<FingerprintedRank>>>,
+        mut commands: Commands<Anything>,
+    ) {
+        let (_provider, value, _rank) = providers.item();
+        let (_member, _member_value) = members.item();
+        if value.0 == 1 {
+            commands.insert((Note, OutputShell, Doomed));
+        } else {
+            commands.insert((Note, OutputShell));
+        }
+    }
+
+    async fn reap_marked_note_component_once(
+        gate: Query<Entity, With<C>>,
+        notes: Query<(Entity, &Note, &Doomed)>,
+        mut commands: Commands<Anything>,
+    ) {
+        commands.entity(notes.item().0).remove::<Note>();
+        commands.remove(gate.item());
+    }
+
+    /// Removing one derived component leaves its entity allocated, but the
+    /// invocation that owned it must still rerun. The unrelated bound pair
+    /// remains memoized.
+    #[test]
+    fn reaped_pair_component_invalidates_only_its_owner() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_marked_note_for_rank_pair)
+                .system(reap_marked_note_component_once.run_during(Phase::Settle))
+                .build();
+
+            bowl.insert((A(1), FingerprintedRank(1))).await;
+            bowl.insert((A(2), FingerprintedRank(2))).await;
+            bowl.insert((B(10), FingerprintedRank(1))).await;
+            bowl.insert((B(20), FingerprintedRank(2))).await;
+            bowl.insert((C(0),)).await;
+
+            assert_eq!(
+                bowl.scoop::<Query<Entity, With<Note>>>().await.len(),
+                2,
+                "the removed component is recreated while its sibling pair stays live"
+            );
+            assert_eq!(
+                bowl.scoop::<Query<Entity, With<OutputShell>>>().await.len(),
+                2,
+                "component reaping never removes the output entity"
+            );
+            let runs = bowl
+                .profile_all()
+                .await
+                .into_iter()
+                .find(|entry| entry.name.ends_with("spawn_marked_note_for_rank_pair"))
+                .map(|entry| entry.runs)
+                .unwrap_or_default();
+            assert_eq!(runs, 3, "two initial pairs plus one precise recovery run");
+        });
+    }
+
+    async fn reap_only_note_component_once(
+        gate: Query<Entity, With<C>>,
+        notes: Query<Entity, With<Note>>,
+        mut commands: Commands<Anything>,
+    ) {
+        commands.entity(notes.item()).remove::<Note>();
+        commands.remove(gate.item());
+    }
+
+    /// An entity whose only component was reaped is still allocated; that
+    /// must not hide the missing output from owner reconciliation.
+    #[test]
+    fn reaped_only_component_recreates_the_output() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_note_for_rank_pair)
+                .system(reap_only_note_component_once.run_during(Phase::Settle))
+                .build();
+
+            bowl.insert((A(1), FingerprintedRank(1))).await;
+            bowl.insert((B(2), FingerprintedRank(1))).await;
+            bowl.insert((C(0),)).await;
+
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 1);
+            let runs = bowl
+                .profile_all()
+                .await
+                .into_iter()
+                .find(|entry| entry.name.ends_with("spawn_note_for_rank_pair"))
+                .map(|entry| entry.runs)
+                .unwrap_or_default();
+            assert_eq!(runs, 2, "initial emission plus one recovery run");
+        });
+    }
+
+    async fn conditionally_spawn_note(inputs: Query<&A>, mut commands: Commands<Anything>) {
+        if inputs.item().0 == 1 {
+            commands.insert((Note,));
+        }
+    }
+
+    /// Normal output replacement is owned by the invocation currently
+    /// committing. Intentionally omitting an old output must not invalidate
+    /// the fresh memo and schedule a redundant run.
+    #[test]
+    fn same_owner_output_omission_stays_memo_current() {
+        block_on(async {
+            let bowl = Bowl::builder().system(conditionally_spawn_note).build();
+            let source = bowl.insert((A(1),)).await.entity();
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 1);
+            let before = bowl
+                .profile_all()
+                .await
+                .into_iter()
+                .find(|entry| entry.name.ends_with("conditionally_spawn_note"))
+                .map(|entry| entry.runs)
+                .unwrap_or_default();
+
+            let source = bowl
+                .scoop::<Query<(Entity, Mut<A>)>>()
+                .await
+                .collect()
+                .into_iter()
+                .find(|(entity, _)| *entity == source)
+                .expect("source remains mutable");
+            source.1.with_latest(|value| value.0 = 2).await;
+
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 0);
+            let after = bowl
+                .profile_all()
+                .await
+                .into_iter()
+                .find(|entry| entry.name.ends_with("conditionally_spawn_note"))
+                .map(|entry| entry.runs)
+                .unwrap_or_default();
+            assert_eq!(after - before, 1, "the changed input schedules one rerun");
+        });
+    }
+
+    async fn reemit_stable_note(_inputs: Query<&A>, mut commands: Commands<Anything>) {
+        commands.insert((StableNote,));
+    }
+
+    async fn consume_stable_note(_notes: Query<&StableNote>, mut commands: Commands<Anything>) {
+        commands.insert((Note,));
+    }
+
+    /// Re-emitting an equal-fingerprint component keeps its revision and does
+    /// not enter component-removal reconciliation.
+    #[test]
+    fn equal_fingerprint_reemission_keeps_consumers_memoized() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(reemit_stable_note)
+                .system(consume_stable_note)
+                .build();
+            let source = bowl.insert((A(1),)).await.entity();
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 1);
+            let before = bowl
+                .profile_all()
+                .await
+                .into_iter()
+                .find(|entry| entry.name.ends_with("consume_stable_note"))
+                .map(|entry| entry.runs)
+                .unwrap_or_default();
+
+            let source = bowl
+                .scoop::<Query<(Entity, Mut<A>)>>()
+                .await
+                .collect()
+                .into_iter()
+                .find(|(entity, _)| *entity == source)
+                .expect("source remains mutable");
+            source.1.with_latest(|value| value.0 = 2).await;
+
+            assert_eq!(bowl.scoop::<Query<Entity, With<Note>>>().await.len(), 1);
+            let after = bowl
+                .profile_all()
+                .await
+                .into_iter()
+                .find(|entry| entry.name.ends_with("consume_stable_note"))
+                .map(|entry| entry.runs)
+                .unwrap_or_default();
+            assert_eq!(
+                after, before,
+                "the unchanged derived row stays memo-current"
             );
         });
     }

@@ -131,7 +131,7 @@ impl RelationshipRetraction {
         Self {
             source,
             remove_edge: |world, source| {
-                world.remove_component::<E>(source);
+                world.remove_component::<E>(source, None);
             },
         }
     }

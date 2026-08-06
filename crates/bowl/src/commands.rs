@@ -142,13 +142,7 @@ impl<S> Commands<S> {
 
     /// Drains buffered command operations after the system invocation returns.
     pub(crate) fn take(self) -> Vec<Box<dyn CommandOp>> {
-        std::mem::take(
-            &mut self
-                .inner
-                .lock()
-                .expect("command buffer lock poisoned")
-                .ops,
-        )
+        std::mem::take(&mut self.inner.lock().expect("command buffer lock poisoned").ops)
     }
 }
 
@@ -264,8 +258,8 @@ struct RemoveComponentCommand<T> {
 }
 
 impl<T: Component> CommandOp for RemoveComponentCommand<T> {
-    fn apply(self: Box<Self>, world: &mut World, _owner: &SystemInvocation) {
-        world.remove_component::<T>(self.entity);
+    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
+        world.remove_component::<T>(self.entity, Some(owner));
     }
 }
 
@@ -295,7 +289,7 @@ pub(crate) struct RemoveComponentBaseCommand<T> {
 
 impl<T: Component> BaseCommandOp for RemoveComponentBaseCommand<T> {
     fn apply(self: Box<Self>, world: &mut World) {
-        world.remove_component::<T>(self.entity);
+        world.remove_component::<T>(self.entity, None);
     }
 }
 
