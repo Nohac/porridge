@@ -184,6 +184,46 @@ pub struct Eq<T>(PhantomData<T>);
 /// covers membership changes by construction.
 pub struct In<T>(PhantomData<T>);
 
+/// Relationship-scoped tracked rows projected for one owner query row.
+///
+/// `Related<R, P>` is used as a part of an entity query. `R` is the
+/// engine-maintained inverse on that query's entity, and `P` is a tuple of
+/// read-only member projections. The enclosing query keeps one invocation per
+/// owner while this part contributes exact inverse and member dependencies.
+/// `Related` is supported by tracked [`Query`] rows, not [`View`] or
+/// [`TrackedView`], whose whole-store models cannot describe member stores.
+pub struct Related<R, P> {
+    rows: Vec<(Entity, P)>,
+    _relationship: PhantomData<fn() -> R>,
+}
+
+impl<R, P> Related<R, P> {
+    /// Iterates related members in the inverse's stable entity-id order.
+    /// Consumers that expose semantic ordering must sort by semantic keys.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (Entity, &P)> {
+        self.rows.iter().map(|(entity, item)| (*entity, item))
+    }
+
+    /// Number of matching related members.
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Whether no related member matches the projection.
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+}
+
+impl<R, P> IntoIterator for Related<R, P> {
+    type Item = (Entity, P);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.rows.into_iter()
+    }
+}
+
 /// Requires component `T` on the row entity to be greater than or equal to the
 /// bound query argument.
 #[derive(Debug, Clone, Copy)]
@@ -849,6 +889,16 @@ pub trait QueryParam {
     fn interest_types() -> Option<Vec<TypeId>> {
         None
     }
+    /// Owners whose rows must be reconsidered when hints name related
+    /// members read by this query.
+    fn hint_providers(_snapshot: &Snapshot, _hint: &[Entity]) -> Vec<Entity> {
+        Vec::new()
+    }
+    /// Whether [`View`] and [`TrackedView`] can cover every store read by
+    /// this param through [`QueryParam::access_all`].
+    fn supports_whole_store_view() -> bool {
+        true
+    }
     /// Cheap upper bound on this param's row count (O(1) store sizes).
     fn row_bound(_snapshot: &Snapshot) -> usize {
         usize::MAX
@@ -1220,7 +1270,24 @@ pub trait QueryPart {
     fn interest_types() -> Option<Vec<TypeId>> {
         None
     }
+    /// Owners whose rows must be reconsidered when `hint` names related
+    /// member entities. Ordinary parts do not translate hints.
+    fn hint_providers(_snapshot: &Snapshot, _hint: &[Entity]) -> Vec<Entity> {
+        Vec::new()
+    }
+    /// Whether this part's complete store access is represented by
+    /// [`QueryPart::access_all`].
+    fn supports_whole_store_view() -> bool {
+        true
+    }
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
+    /// Dependencies observed for this part on one related member.
+    ///
+    /// Related projections override required reads to observe absence as
+    /// well as presence; ordinary query rows only call [`QueryPart::deps`].
+    fn observed_member_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+        Self::deps(snapshot, entity)
+    }
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
     fn access_all() -> Access;
     /// Whether this part reads component `key` (bound join provider).
@@ -1281,6 +1348,12 @@ impl<T: Component> QueryPart for &T {
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
         component_dep_if_tracked::<T>(snapshot, entity)
+            .into_iter()
+            .collect()
+    }
+
+    fn observed_member_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+        optional_component_dep::<T>(snapshot, entity)
             .into_iter()
             .collect()
     }
@@ -1357,6 +1430,12 @@ impl<T: Component> QueryPart for Option<&T> {
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+        optional_component_dep::<T>(snapshot, entity)
+            .into_iter()
+            .collect()
+    }
+
+    fn observed_member_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
         optional_component_dep::<T>(snapshot, entity)
             .into_iter()
             .collect()
@@ -1638,6 +1717,16 @@ macro_rules! impl_entity_query_param {
                 Some(interest)
             }
 
+            fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
+                let mut providers = Vec::new();
+                $(providers.extend($P::hint_providers(snapshot, hint));)*
+                providers
+            }
+
+            fn supports_whole_store_view() -> bool {
+                true $(&& $P::supports_whole_store_view())*
+            }
+
             fn row_bound(snapshot: &Snapshot) -> usize {
                 // The row set is at most the smallest driving store —
                 // parts or the facet's required stores; optional and
@@ -1724,6 +1813,164 @@ macro_rules! impl_entity_query_param {
 }
 
 all_tuples!(impl_entity_query_param, 1, 8, P);
+
+/// Read-only member projection supported by [`Related`].
+///
+/// Implementations are generated only for tuples of
+/// [`ExternalReadQueryPart`] values, excluding mutable and nested aggregate
+/// projections by construction.
+#[doc(hidden)]
+pub trait RelatedQueryPart {
+    type Item<'a>: Send;
+
+    fn interest_types() -> Option<Vec<TypeId>>;
+    fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
+    fn observed_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
+    fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        entity: Entity,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a>;
+}
+
+macro_rules! impl_related_query_part {
+    ($($P:ident),*) => {
+        impl<$($P: ExternalReadQueryPart),*> RelatedQueryPart for ($($P,)*) {
+            type Item<'a> = ($(<$P as QueryPart>::Item<'a>,)*);
+
+            fn interest_types() -> Option<Vec<TypeId>> {
+                let mut interest = Vec::new();
+                $(interest.extend($P::interest_types()?);)*
+                Some(interest)
+            }
+
+            fn matches(snapshot: &Snapshot, entity: Entity) -> bool {
+                true $(&& $P::matches(snapshot, entity))*
+            }
+
+            fn observed_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
+                let mut deps = Vec::new();
+                $(deps.extend($P::observed_member_deps(snapshot, entity));)*
+                deps
+            }
+
+            fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
+                let mut access = Vec::new();
+                $(access.extend($P::access(snapshot, entity));)*
+                access
+            }
+
+            fn fetch<'a>(
+                bowl: &Bowl,
+                snapshot: &'a Snapshot,
+                entity: Entity,
+                guards: &mut GuardStore,
+            ) -> Self::Item<'a> {
+                ($($P::fetch(bowl, snapshot, entity, guards),)*)
+            }
+        }
+    };
+}
+
+all_tuples!(impl_related_query_part, 1, 8, P);
+
+impl<R, P> QueryPart for Related<R, P>
+where
+    R: RelationshipTarget,
+    P: RelatedQueryPart + Send + Sync + 'static,
+{
+    type Item<'a> = Related<R, P::Item<'a>>;
+
+    fn store_len(_snapshot: &Snapshot) -> usize {
+        usize::MAX
+    }
+
+    fn candidates(snapshot: &Snapshot) -> Vec<Entity> {
+        (0..snapshot.next_entity_raw())
+            .map(Entity::from_raw)
+            .collect()
+    }
+
+    fn matches(_snapshot: &Snapshot, _entity: Entity) -> bool {
+        true
+    }
+
+    fn presence_requirement() -> PresenceReq {
+        PresenceReq::Free
+    }
+
+    fn interest_types() -> Option<Vec<TypeId>> {
+        let mut interest = vec![TypeId::of::<R>()];
+        interest.extend(P::interest_types()?);
+        Some(interest)
+    }
+
+    fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
+        hint.iter()
+            .filter_map(|member| {
+                snapshot
+                    .get::<R::Edge>(*member)
+                    .and_then(|edge| edge.relationship_edge())
+                    .map(|edge| edge.target)
+            })
+            .collect()
+    }
+
+    fn supports_whole_store_view() -> bool {
+        false
+    }
+
+    fn deps(snapshot: &Snapshot, owner: Entity) -> Vec<Dep> {
+        let mut deps = optional_component_dep::<R>(snapshot, owner)
+            .into_iter()
+            .collect::<Vec<_>>();
+        if let Some(inverse) = snapshot.get::<R>(owner) {
+            for member in inverse.members() {
+                deps.extend(P::observed_deps(snapshot, *member));
+            }
+        }
+        deps
+    }
+
+    fn access(snapshot: &Snapshot, owner: Entity) -> Vec<Access> {
+        let mut access = vec![Access::read::<R>(owner)];
+        if let Some(inverse) = snapshot.get::<R>(owner) {
+            for member in inverse.members() {
+                access.extend(P::access(snapshot, *member));
+            }
+        }
+        access
+    }
+
+    fn access_all() -> Access {
+        Access::read_all::<R>()
+    }
+
+    fn fetch<'a>(
+        bowl: &Bowl,
+        snapshot: &'a Snapshot,
+        owner: Entity,
+        guards: &mut GuardStore,
+    ) -> Self::Item<'a> {
+        let members = snapshot.get::<R>(owner).map_or_else(Vec::new, |inverse| {
+            store_read_guard(inverse, guards).members().to_vec()
+        });
+        let rows = members
+            .into_iter()
+            .filter(|member| P::matches(snapshot, *member))
+            .map(|member| {
+                let item = P::fetch(bowl, snapshot, member, guards);
+                (member, item)
+            })
+            .collect();
+        Related {
+            rows,
+            _relationship: PhantomData,
+        }
+    }
+}
 
 #[doc(hidden)]
 pub trait EntityQueryState {

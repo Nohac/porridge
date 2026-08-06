@@ -318,6 +318,47 @@ Resolved decisions:
 - A retargeted edge (`MemberOf(a)` → `MemberOf(b)`) touches two inverses;
   an unchanged re-emission (equal fingerprint) must touch neither.
 
+### Relationship-scoped aggregates
+
+`Where<In<T>>` gives one invocation per owner/member pair. [`Related<R, P>`]
+is the complementary set form: one invocation per owner that reads exactly
+the members in inverse `R`, projected through read-only tuple `P`.
+
+```rust
+async fn summarize(
+    owners: Query<(Entity, &Namespace, Related<Members, (&AstDef,)>)>,
+) {
+    let (_owner, _namespace, members) = owners.item();
+    for (member, (definition,)) in members {
+        // one owner invocation, exact member dependencies
+    }
+}
+```
+
+`Related` is a free query part: it never constrains or drives owner row
+enumeration. An owner with no inverse still runs with an empty collection.
+Its memo dependencies are deterministic and row-granular:
+
+1. presence or absence of `R` on the owner;
+2. for each inverse member in entity-id order, presence or absence of every
+   tracked component in `P`, in tuple declaration order.
+
+Fetch includes only members satisfying every required part. Observing absent
+required parts separately is essential: adding the missing component must wake
+the owner and make that member visible. No store watermark participates.
+
+Delta planning translates a dirty member through `R::Edge` to its owner.
+Membership changes already write `R` on the old/new owners, so retargeting and
+removing the final member directly dirty the right owner rows. Member order is
+stable engine order, not semantic order; consumers must sort by semantic keys
+before exposing ordered output.
+
+v1 deliberately accepts only tuples of read-only query parts inside a tracked
+`Query`. Mutable parts, nested aggregates, filters, `View`, and `TrackedView`
+are outside the contract. The view forms cannot represent the projected
+member stores in their whole-store access and watermark models, so system
+registration rejects that combination instead of under-tracking it.
+
 ### Boundary
 
 Relationships are *domain structure*; `DerivedFrom` is *provenance*. They
@@ -338,18 +379,14 @@ edge-traversal joins are the follow-up query surface.
 ## What this replaces
 
 An earlier sketch introduced a dedicated `Joined<K, P>` param keyed per
-driving row, materializing the member set inside one invocation. It required
-a new param concept and a new set-hash `Dep` variant so membership changes
-could invalidate. The bound-filter design supersedes it:
+driving row and a new set-hash `Dep` variant. Relationships supersede that
+design:
 
 - per-pair identity makes membership changes ordinary row appearance and
-  disappearance — no new dep machinery
-- `Query`/`View` with a bound filter covers both the tracked and the ambient
-  half of what `Joined` bundled
-- the external API keeps its shape; nothing new to learn
-
-If a real need emerges for "the whole joined set as one tracked invocation"
-that the set-fingerprint pattern cannot serve, revisit `Joined` then.
+  disappearance for `Where<In<T>>`
+- `Related<R, P>` uses the maintained inverse's ordinary row revisions for
+  the whole-set form, including empty membership
+- neither form needs a new dependency variant or hand-built set fingerprint
 
 ## Implementation order
 

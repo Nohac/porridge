@@ -414,7 +414,9 @@ where
     }
 
     fn hint_providers(snapshot: &Snapshot, hint: &[Entity]) -> Vec<Entity> {
-        <Filter as QueryFilter<Q>>::hint_providers(snapshot, hint)
+        let mut providers = Q::hint_providers(snapshot, hint);
+        providers.extend(<Filter as QueryFilter<Q>>::hint_providers(snapshot, hint));
+        providers
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
@@ -680,6 +682,12 @@ where
     }
 
     fn validate_local() -> Result<(), String> {
+        if !Q::supports_whole_store_view() {
+            return Err(
+                "`View` does not support `Related`; use a tracked `Query` for relationship-scoped projections"
+                    .to_string(),
+            );
+        }
         // A view has no row state to bind a join key from; accepting the
         // filter would silently degrade `Eq` to `With` semantics.
         match Filter::bound_key_types().first() {
@@ -758,6 +766,12 @@ where
     }
 
     fn validate_local() -> Result<(), String> {
+        if !Q::supports_whole_store_view() {
+            return Err(
+                "`TrackedView` does not support `Related`; use a tracked `Query` for relationship-scoped projections"
+                    .to_string(),
+            );
+        }
         if Q::access_all()
             .iter()
             .any(|access| access.kind == AccessKind::Write)

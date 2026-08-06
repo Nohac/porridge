@@ -20,6 +20,10 @@
 //!   one zero-key aggregate invocation
 //!   depends on every component store read by the view
 //!
+//! Related<R, P>
+//!   one owner-row invocation
+//!   depends on one relationship inverse and its projected members
+//!
 //! Commands
 //!   buffered writes
 //!   applied only after the current snapshot tick completes
@@ -121,7 +125,7 @@ pub use macros::Schema;
 pub use query::{
     And, ArgBundle, Cow, CowQueryParam, EntityMutResult, Eq, ExternalFilter, ExternalQueryFilter,
     FilterExpr, Gte, In, Mut, MutRef, MutResult, Named, Not, Or, Query, QueryFilter, QueryParam,
-    QueryResult, Tracked, TrackedView, View, Where, With, Without,
+    QueryResult, Related, Tracked, TrackedView, View, Where, With, Without,
 };
 pub use system::{
     IntoSystem, Phase, SystemCallback, SystemExt, WorldMetaView, cleanup_stale_derived, insert_on,

@@ -3581,7 +3581,7 @@ mod tests {
 
     use crate::{
         And, Bowl, Commands, CommitLimit, Component, ComponentHookContext, Cow, DerivedFrom,
-        Entity, Eq, Gte, In, Mut, MutRef, Named, Phase, Query, RelationshipEdge,
+        Entity, Eq, Gte, In, Mut, MutRef, Named, Phase, Query, Related, RelationshipEdge,
         RelationshipRetraction, RelationshipTarget, Singleton, SystemExt, TrackedView, View, Where,
         With, Without, cleanup_stale_derived, hash_component, relationship_retractions_for,
     };
@@ -6023,6 +6023,16 @@ mod tests {
     ) {
     }
 
+    async fn related_in_view(
+        _owners: View<'_, (Entity, &A, Related<Members, (&'static RelatedValue,)>)>,
+    ) {
+    }
+
+    async fn related_in_tracked_view(
+        _owners: TrackedView<'_, (Entity, &A, Related<Members, (&'static RelatedValue,)>)>,
+    ) {
+    }
+
     #[test]
     #[should_panic(expected = "does not support bound")]
     fn bound_eq_on_view_panics_at_registration() {
@@ -6045,6 +6055,18 @@ mod tests {
         block_on(async {
             let _bowl = Bowl::builder().system(tracked_view_membership_join).build();
         });
+    }
+
+    #[test]
+    #[should_panic(expected = "`View` does not support `Related`")]
+    fn related_on_view_panics_at_registration() {
+        let _bowl = Bowl::builder().system(related_in_view).build();
+    }
+
+    #[test]
+    #[should_panic(expected = "`TrackedView` does not support `Related`")]
+    fn related_on_tracked_view_panics_at_registration() {
+        let _bowl = Bowl::builder().system(related_in_tracked_view).build();
     }
 
     async fn derive_ranked_from_a(query: Query<(Entity, &A)>, mut commands: Commands<Anything>) {
@@ -7931,6 +7953,45 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct RelatedValue(u32);
+    impl Component for RelatedValue {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(self.0 as u64)
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct RelatedSummary(Vec<(Entity, u32)>);
+    impl Component for RelatedSummary {
+        fn fingerprint(&self) -> Option<u64> {
+            Some(hash_component(&self.0))
+        }
+    }
+
+    static RELATED_SUMMARY_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    type RelatedValues<'a> = Related<Members, (&'a RelatedValue,)>;
+
+    async fn summarize_related(
+        query: Query<(Entity, &A, RelatedValues<'_>)>,
+        mut commands: Commands<(RelatedSummary,)>,
+    ) {
+        let (owner, _, related) = query.item();
+        RELATED_SUMMARY_RUNS.fetch_add(1, Ordering::SeqCst);
+        let summary = related
+            .iter()
+            .map(|(member, value)| (member, value.0.0))
+            .collect();
+        commands.entity(owner).insert(RelatedSummary(summary));
+    }
+
+    fn related_summary(rows: &[(Entity, &RelatedSummary)], owner: Entity) -> Vec<(Entity, u32)> {
+        rows.iter()
+            .find_map(|(entity, summary)| (*entity == owner).then(|| summary.0.clone()))
+            .expect("owner summary exists")
+    }
+
     /// Inserting an edge maintains the ordered inverse on the target;
     /// retargeting moves membership between inverses; removing the edge
     /// retracts it, and an emptied inverse is removed outright.
@@ -8026,6 +8087,111 @@ mod tests {
             bowl.insert((C(1), MemberOf(parent.entity()))).await;
             bowl.scoop::<Query<(Entity, &Members)>>().await;
             assert_eq!(MEMBERS_RUNS.load(Ordering::SeqCst), 2);
+        });
+    }
+
+    /// A relationship-scoped aggregate observes the empty set, missing
+    /// projected components, member values, content revisits, and retargeting
+    /// without rerunning unrelated owners.
+    #[test]
+    fn related_rows_track_exact_owner_members() {
+        block_on(async {
+            RELATED_SUMMARY_RUNS.store(0, Ordering::SeqCst);
+            let bowl = Bowl::builder().system(summarize_related).build();
+            let first = bowl.insert((A(1),)).await;
+            let second = bowl.insert((A(2),)).await;
+
+            let summaries = bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            let rows = summaries.collect();
+            assert_eq!(related_summary(&rows, first.entity()), Vec::new());
+            assert_eq!(related_summary(&rows, second.entity()), Vec::new());
+            assert_eq!(RELATED_SUMMARY_RUNS.load(Ordering::SeqCst), 2);
+
+            // Membership alone reruns the owner, but the required projection
+            // remains absent and therefore contributes no fetched row.
+            let member = bowl.insert((B(1), MemberOf(first.entity()))).await;
+            let summaries = bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            let rows = summaries.collect();
+            assert_eq!(related_summary(&rows, first.entity()), Vec::new());
+            assert_eq!(RELATED_SUMMARY_RUNS.load(Ordering::SeqCst), 3);
+
+            // Inserting a previously absent required part translates the
+            // member hint back to exactly its owner.
+            bowl.entity(member.entity())
+                .insert((RelatedValue(10),))
+                .await;
+            let summaries = bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            let rows = summaries.collect();
+            assert_eq!(
+                related_summary(&rows, first.entity()),
+                vec![(member.entity(), 10)]
+            );
+            assert_eq!(RELATED_SUMMARY_RUNS.load(Ordering::SeqCst), 4);
+
+            let other_member = bowl
+                .insert((C(1), MemberOf(second.entity()), RelatedValue(20)))
+                .await;
+            bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            assert_eq!(RELATED_SUMMARY_RUNS.load(Ordering::SeqCst), 5);
+
+            // A -> B -> A revisits are real member-value transitions, each
+            // rerunning only the member's current owner.
+            bowl.entity(member.entity())
+                .insert((RelatedValue(11),))
+                .await;
+            bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            bowl.entity(member.entity())
+                .insert((RelatedValue(10),))
+                .await;
+            let summaries = bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            let rows = summaries.collect();
+            assert_eq!(
+                related_summary(&rows, first.entity()),
+                vec![(member.entity(), 10)]
+            );
+            assert_eq!(RELATED_SUMMARY_RUNS.load(Ordering::SeqCst), 7);
+
+            // Retargeting changes both inverse owners. The maintained member
+            // order is stable by entity id, not a semantic ordering promise.
+            bowl.entity(member.entity())
+                .insert((MemberOf(second.entity()),))
+                .await;
+            let summaries = bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            let rows = summaries.collect();
+            assert_eq!(related_summary(&rows, first.entity()), Vec::new());
+            assert_eq!(
+                related_summary(&rows, second.entity()),
+                vec![(member.entity(), 10), (other_member.entity(), 20)]
+            );
+            assert_eq!(RELATED_SUMMARY_RUNS.load(Ordering::SeqCst), 9);
+
+            // Removing the required projection records and publishes its
+            // absence while leaving membership intact.
+            bowl.entity(member.entity()).remove::<RelatedValue>().await;
+            let summaries = bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            let rows = summaries.collect();
+            assert_eq!(
+                related_summary(&rows, second.entity()),
+                vec![(other_member.entity(), 20)]
+            );
+            assert_eq!(RELATED_SUMMARY_RUNS.load(Ordering::SeqCst), 10);
+
+            bowl.entity(member.entity()).remove::<MemberOf>().await;
+            bowl.entity(other_member.entity())
+                .remove::<MemberOf>()
+                .await;
+            let summaries = bowl.scoop::<Query<(Entity, &RelatedSummary)>>().await;
+            let rows = summaries.collect();
+            assert_eq!(
+                related_summary(&rows, second.entity()),
+                Vec::new(),
+                "removing the final member deletes the inverse but not the owner row"
+            );
+            assert_eq!(
+                RELATED_SUMMARY_RUNS.load(Ordering::SeqCst),
+                11,
+                "batched removals rederive the owner once from their final state"
+            );
         });
     }
 
