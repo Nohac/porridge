@@ -526,9 +526,7 @@ where
             .iter()
             .map(|row| crate::query::EntityQueryState::entity(row))
             .collect();
-        for entity in entities {
-            cleanup_bound_entity(&mut state, entity);
-        }
+        cleanup_bound_entities(&mut state, entities);
         if was_settled {
             publish_settled_revision(&mut state);
         }
@@ -1761,9 +1759,7 @@ impl Bowl {
 
         let mut state = lock_state(&self.inner.state).await;
         let was_settled = bowl_is_settled(&state);
-        for entity in cleanup {
-            cleanup_bound_entity(&mut state, entity);
-        }
+        cleanup_bound_entities(&mut state, cleanup);
         // Removing bound entities does not unsettle a settled bowl, but it
         // must not *declare* an unsettled bowl settled: another caller's
         // pending work may still need a settle (including the settled-hook
@@ -3451,28 +3447,35 @@ fn bowl_is_settled(state: &State) -> bool {
 }
 
 fn cleanup_bound_entity(state: &mut State, entity: Entity) {
-    let mut frontier = HashSet::from([entity]);
+    cleanup_bound_entities(state, [entity]);
+}
+
+/// Retire a result batch together: sweep memo dependencies once per transitive
+/// frontier, rather than repeating the same whole-map scan for each root.
+fn cleanup_bound_entities(state: &mut State, entities: impl IntoIterator<Item = Entity>) {
+    let roots: HashSet<Entity> = entities.into_iter().collect();
+    if roots.is_empty() {
+        return;
+    }
+
+    let mut frontier = roots.clone();
     let mut removed_entities = HashSet::new();
 
     while !frontier.is_empty() {
         remove_memo_touched_by(&mut state.memo, &frontier);
-
         let removed = state.world.remove_derived_touched_by(&frontier);
-        let mut next_frontier = HashSet::new();
-
-        for entity in removed {
-            if removed_entities.insert(entity) {
-                next_frontier.insert(entity);
-            }
-        }
-
-        frontier = next_frontier;
+        frontier = removed
+            .into_iter()
+            .filter(|entity| removed_entities.insert(*entity))
+            .collect();
     }
 
-    let keys = HashSet::from([entity]);
-    let removed_owners = state.world.remove_entity(entity);
-    remove_memo_touched_by(&mut state.memo, &keys);
-
+    // The first frontier already removed memos keyed by the roots. Cleanup
+    // never inserts memo entries, so no second root sweep is necessary.
+    let mut removed_owners = HashSet::new();
+    for entity in roots {
+        removed_owners.extend(state.world.remove_entity(entity));
+    }
     for owner in removed_owners {
         state.world.remove_derived_owned(&owner);
         state.memo.remove(&owner);
@@ -5618,6 +5621,135 @@ mod tests {
 
     /// spec/daemon-client.md, drain reads: deliver-then-delete stream
     /// semantics — the result stays readable, the daemon keeps no backlog.
+    #[test]
+    fn batched_drain_retires_transitive_outputs_without_touching_other_roots() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_b)
+                .system(make_c_from_b)
+                .build();
+            bowl.insert((A(10), Note)).await;
+            bowl.insert((A(20), Note)).await;
+            bowl.insert((A(30),)).await;
+            assert_eq!(bowl.scoop::<Query<&C>>().await.len(), 3);
+
+            let drained = bowl
+                .scoop::<Query<(Entity, &A), With<Note>>>()
+                .drain()
+                .await;
+            let mut values: Vec<_> = drained.collect().iter().map(|(_, a)| a.0).collect();
+            values.sort_unstable();
+            assert_eq!(values, [10, 20]);
+            let remaining = bowl.scoop::<Query<&C>>().await;
+            assert_eq!(
+                remaining.collect().iter().map(|c| c.0).collect::<Vec<_>>(),
+                [32]
+            );
+            drop(remaining);
+
+            bowl.insert((A(40), Note)).await;
+            let values = bowl.scoop::<Query<&C>>().await;
+            let mut values: Vec<_> = values.collect().iter().map(|c| c.0).collect();
+            values.sort_unstable();
+            assert_eq!(values, [32, 42]);
+            assert_eq!(
+                drained.collect().len(),
+                2,
+                "retired responses stay readable"
+            );
+            assert_eq!(
+                bowl.scoop::<Query<(Entity, &A), With<Note>>>()
+                    .drain()
+                    .await
+                    .len(),
+                1
+            );
+            assert!(
+                bowl.scoop::<Query<(Entity, &A), With<Note>>>()
+                    .drain()
+                    .await
+                    .is_empty()
+            );
+        });
+    }
+
+    #[test]
+    fn batched_deferred_cleanup_preserves_pending_evaluation() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_b)
+                .system(make_c_from_b)
+                .build();
+            let first = bowl.insert((A(10),)).await.bind();
+            let second = bowl.insert((A(20),)).await.bind();
+            bowl.insert((A(30),)).await;
+            assert_eq!(bowl.scoop::<Query<&C>>().await.len(), 3);
+
+            drop(first);
+            drop(second);
+            bowl.insert((A(40),)).await;
+            bowl.drain_deferred_bound_cleanup().await;
+            {
+                let state = super::lock_state(&bowl.inner.state).await;
+                assert!(
+                    !super::bowl_is_settled(&state),
+                    "cleanup must not publish pending input as settled"
+                );
+            }
+
+            let result = bowl.scoop::<Query<&C>>().await;
+            let mut values: Vec<_> = result.collect().iter().map(|value| value.0).collect();
+            values.sort_unstable();
+            assert_eq!(values, [32, 42]);
+            assert_eq!(bowl.scoop::<Query<&A>>().await.len(), 2);
+        });
+    }
+
+    #[test]
+    fn batched_cleanup_handles_empty_duplicate_and_overlapping_roots() {
+        block_on(async {
+            let bowl = Bowl::builder()
+                .system(spawn_b)
+                .system(make_c_from_b)
+                .build();
+            let parent = bowl.insert((A(10),)).await.entity();
+            bowl.insert((A(30),)).await;
+            let rows = bowl.scoop::<Query<(Entity, &B)>>().await;
+            let child = rows
+                .collect()
+                .into_iter()
+                .find(|(_, value)| value.0 == 11)
+                .unwrap()
+                .0;
+            drop(rows);
+
+            {
+                let mut state = super::lock_state(&bowl.inner.state).await;
+                let revision = state.world.revision_raw();
+                super::cleanup_bound_entities(&mut state, []);
+                assert_eq!(state.world.revision_raw(), revision);
+                super::cleanup_bound_entities(&mut state, [parent, child, parent]);
+                assert!(
+                    state
+                        .memo
+                        .keys()
+                        .all(|owner| !owner.keys.contains(&parent) && !owner.keys.contains(&child))
+                );
+            }
+
+            let result = bowl.scoop::<Query<&C>>().await;
+            assert_eq!(
+                result
+                    .collect()
+                    .iter()
+                    .map(|value| value.0)
+                    .collect::<Vec<_>>(),
+                [32]
+            );
+            assert_eq!(bowl.scoop::<Query<&A>>().await.len(), 1);
+        });
+    }
+
     #[test]
     fn drain_consumes_matched_rows() {
         block_on(async {

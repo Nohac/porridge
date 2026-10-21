@@ -6,9 +6,9 @@ important.
 
 ## 0. Major Direction Notes
 
-- Indexed access reservations are implemented and correctness-tested; precise
-  performance/small-case acceptance remains open. Batched retirement follows as
-  a separate change. See `spec/stateful-performance-plan.md` for the baseline,
+- Indexed access reservations and concrete kernel futures are committed.
+  Batched retirement is implemented and validated; precise performance
+  acceptance remains open. See `spec/stateful-performance-plan.md` for the baseline,
   workstation-versus-controlled measurement policy and acceptance checks.
 - Explore schema-prepared execution, affinity and eventual partition clustering
   in `spec/ideas/schema-execution-and-partitions.md`. These are future directions,

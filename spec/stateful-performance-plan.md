@@ -1,7 +1,7 @@
 # Stateful workload performance plan
 
-Status: benchmark foundation committed; indexed access reservations implemented
-and correctness-tested. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
+Status: benchmark foundation, indexed access reservations and the concrete kernel
+future adapter are committed. Batched retirement is implemented and validated. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
 access reservations, async systems, publication and retirement paths.
 
 ## Goals and boundaries
@@ -16,32 +16,61 @@ requirements belong in these fixtures. The results measure engine operations,
 not end-to-end application capacity. Keep fixture changes separate from engine
 changes when comparing candidates.
 
-## Next implementation slice
+## Current implementation slice
 
-The current slice is **indexed access reservations** (batch B, step 1).
-The previous `bowl.rs::conflicts_with_running` compared each candidate access
-against accesses of running invocations. The new private index preserves the
-conflict rule without changing schemas, request ordering or storage ownership.
-See [access scheduling](access-scheduling.md#indexed-phase-reservations).
+**Batched entity retirement** (batch B, step 2), based on commit `6154292`.
+Access indexing and the concrete function future stay identical in both measured
+variants; the request fixtures and their timing boundaries are unchanged.
 
-- [x] Add private `crates/bowl/src/access.rs` for component/entity reservation
-  counts, including whole-store access and duplicate declarations.
-- [x] Integrate admission/release in `bowl.rs`; keep reservations through the
-  appropriate publication boundary, including stale, cancelled and preempted work.
-- [x] Compare the index against the existing pairwise conflict predicate in tests;
-  cover overlapping readers/writers, disjoint entities and removal of reservations.
-- [x] Run workspace tests and both benchmark smoke targets. Measure independent
-  and contended purchase batches at 1/10/100/1,000 requests and 1/4/8 workers with
-  unchanged features. Include small cases and existing compiler workloads.
-- [x] Record exploratory before/after ranges with identical fixtures and fresh
-  processes. The workstation run alternated variants and included compiler cases.
-- [ ] Establish repeatable small-case costs and precise speedups on a quiet host.
-  Keep access indexing separate from batched retirement in comparisons.
+- [x] Retire query-drain roots together and reuse the helper for dropped bound
+  handles and single-entity takes.
+- [x] Sweep memo and derived ownership per transitive frontier, deduplicate roots
+  and removed owners, and skip empty cleanup batches.
+- [x] Verify transitive cleanup, retained response snapshots, unrelated survivors,
+  pending evaluation, duplicate/overlapping roots and repeated drains.
+- [x] Complete build, workspace tests, optimized smoke tests and playground checks.
+- [x] Compare independent/contended purchases and existing compiler workloads.
+  Reuse the previous concrete-future measurements as baseline where available;
+  only new cases need fresh baseline runs. Label the between-session comparison
+  and preserve raw variation.
 
+Retirement validation: normal workspace build, 145 unit tests plus the doctest,
+both benchmark smoke targets and playground pass. Clippy completes with existing
+warnings and none in the new cleanup/test code. An initial test compile failure
+from unqualified private helper names was corrected before these successful runs.
+
+Short comparison, median milliseconds per 1,000-request batch:
+
+| Case | Before | Batched | Baseline source |
+| --- | ---: | ---: | --- |
+| Independent, 1 worker | 135.6 | 106.7 | Reused concrete-future runs |
+| Independent, 8 workers | 163.6 | 129.1 | Reused concrete-future runs |
+| Four per owner, 1 worker | 387.2 | 311.1 | Fresh alternating runs |
+| Four per owner, 8 workers | 428.7 | 270.7 | Fresh alternating runs |
+
+The clearest fresh case was contended/eight-worker: before 411–446 ms, after
+265–276 ms. Other cases varied more, so these are coarse signals rather than
+precise speedups. Cold/incremental compiler cases stayed close. Single-request
+results looked worse against old baselines; a fresh check still varied sharply
+(one-worker before 63–95 us, after 63–95 us; eight-worker before 47–114 us, after
+116–121 us). Small-case performance remains unresolved, not dismissed as noise
+and not used to select a special-case threshold.
+
+[Raw estimates and baseline provenance](benchmarks/2026-10-21-batched-retirement.json)
+are retained alongside local logs in `target/batched-retirement/`.
+
+The isolated [purchase comparison](../experiments/purchase-comparison/README.md)
+adds a Bevy ECS reference using the same observable request/state contract and
+explicit engine differences. It does not change main-workspace dependencies.
+Initial 1,000-request/one-worker results are roughly 12k requests/s for Porridge
+versus 2.1M for the Bevy adapter. Treat this as a workload-specific reference:
+Bevy batches ordinary systems, while Porridge maintains per-invocation incremental
+bookkeeping. The large gap supports investigating execution granularity and
+locality, not attributing it all to one dispatch layer. Exact ratios need a quiet
+host; see the scratchpad's per-run results and feature differences.
+After that, batch C starts with live-candidate typed facet enumeration.
 The broader [schema/partition direction](ideas/schema-execution-and-partitions.md)
-is exploratory. Dense schema metadata and dirty routing build on batches C–E;
-local ownership partitions and network clustering follow only after local costs
-and their coordination contracts have been measured.
+remains exploratory; worker ownership and clustering need separate contracts.
 
 ## Evidence worth carrying forward
 

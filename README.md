@@ -530,3 +530,7 @@ The [stateful performance plan](spec/stateful-performance-plan.md) describes the
 request, contention, entity-churn and sparse-change benchmarks, runtime controls,
 and staged engine optimization work. Run `cargo bench -p benches --bench stateful`
 or use `-- --test` to smoke-test that target.
+
+An isolated [purchase comparison](experiments/purchase-comparison/README.md)
+provides a Bevy ECS reference for the same purchase contract, with separate
+dependencies and documented differences in execution and bookkeeping.

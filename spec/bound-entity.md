@@ -128,6 +128,31 @@ db.scoop::<Query<(Entity, &Diagnostic)>>().await; // drains deferred cleanup fir
 This gives deterministic cleanup for `take`, and best-effort deferred cleanup
 for abandoned request handles.
 
+## Batched retirement
+
+Query drains and a drained queue of dropped bound handles retire all their roots
+in one cleanup pass. `take` uses the same helper with a single root.
+
+```text
+matched response entities / dropped handles
+  -> deduplicate root IDs
+  -> remove memos keyed by the current frontier
+  -> remove outputs whose invocation keys intersect that frontier
+  -> repeat for affected output entities until no new entities remain
+  -> remove roots and any remaining outputs owned by their removed components
+```
+
+The memo and derived-owner scans run per transitive frontier rather than once
+per root. They are still scans, not new dependency indexes. Empty batches return
+immediately; no duplicate final root memo sweep is needed. Entity removal still
+performs the existing component, singleton and relationship maintenance.
+
+The state lock covers the cleanup, as before. Returned drain snapshots remain
+readable after retirement. Unrelated roots survive and later requests can derive
+new outputs normally. Cleanup advances the published settled revision only if
+the Bowl was already settled; pending evaluation cannot be declared complete by
+removing abandoned requests.
+
 ## Entity vs BoundEntity
 
 ```text

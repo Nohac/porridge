@@ -1,0 +1,25 @@
+[package]
+name = "purchase-comparison"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Keep reference-engine dependencies out of the main workspace and lockfile.
+[workspace]
+
+[dependencies]
+bowl = { path = "../../crates/bowl" }
+fixtures = { package = "benches", path = "../../crates/benches" }
+bevy_ecs = { version = "=0.20.0", default-features = false, features = ["std", "multi_threaded"] }
+bevy_tasks = { version = "=0.20.0", default-features = false, features = ["multi_threaded"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "purchases"
+harness = false
+
+[profile.bench]
+codegen-units = 1
