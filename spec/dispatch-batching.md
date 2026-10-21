@@ -62,11 +62,69 @@ failed to wake its consumer. Scalar `&T` now declares interest in its own compon
 store. This is a correctness fix discovered during the batching work, not a
 batch-size tuning change.
 
-The implementation retains boxed planned invocations and per-row bookkeeping.
-Homogeneous typed batches, fewer allocations and planner/publication profiling are
-follow-ups. This is task amortization, not distributed planning or a new scheduling
+Ordinary kernels now use typed plans and concrete worker row futures (see below).
+Per-row bookkeeping remains; prepared fetching and planner/publication profiling
+are follow-ups. This is task amortization, not distributed planning or a new scheduling
 contract. The maximum of 16 is provisional; quiet-host tuning remains open.
 
 See [the performance plan](stateful-performance-plan.md) for measurements and
 remaining work. In the isolated purchase reference, `PURCHASE_DISPATCH_BATCH`
 selects the maximum at runtime, and is included in the Porridge benchmark ID.
+
+## Typed execution plans
+
+```text
+heterogeneous system registry
+  plan_runs(...) -> Box<dyn RunPlan>          once per system planning pass
+    concrete iterator of planned rows
+      shared admission: identity, access, reader/writer classification
+      concrete row futures -> typed worker batch
+        specialized Tokio task
+          FuturesUnordered<ConcreteRowFuture>
+            kernel future + guards + per-row timing
+        erased completion stream -> driver publication
+```
+
+`FunctionSystem::plan_rows` owns the callee and snapshot and keeps the row future
+concrete. `dispatch::prepare` erases the iterator once at the plan boundary;
+`RunPlan::dispatch` returns to generic code that constructs and dispatches row
+futures. The dispatcher therefore retains each ordinary kernel's concrete future
+type through worker polling. There is no public API or user-system change.
+
+`dispatch/plan.rs` owns shared admission for both typed and erased plans. It uses
+the existing reservations and forced-replanning rules; the evaluator still owns
+publication and releases reservations only after a row's commit. Reader and writer
+batches, adaptive size, pending-sibling completion, cancellation and panic behavior
+are unchanged. Poll timing uses safe stack pinning of potentially `!Unpin` futures.
+
+The normal rows of `on_settled` forward to typed plans. `on_start` and `on_complete`
+retain their existing grouped, boxed execution paths: their callback boundary is
+not silently split into independently publishing rows. Their fallback feeds the
+same admission code. The separate settle-hook execution path remains unchanged.
+
+Without Tokio, heterogeneous row futures still need one box each to inhabit the
+flat cooperative queue. Previously ordinary rows had both a boxed invocation and
+a boxed dispatch wrapper; now that path boxes the combined future once. Worker
+batches avoid those two explicit per-row future boxes. Tokio tasks, completion streams,
+`FuturesUnordered` nodes, commands, guards and dependency metadata can still
+allocate. This is neither allocation-free execution nor elimination of all dynamic
+dispatch, and does not imply SIMD execution.
+
+The planner now materializes invocation metadata and returns a lazy iterator of
+future construction. Consequently `plan_nanos` excludes that construction, which
+runs during admission; old and new planning-counter percentages are not directly
+comparable. End-to-end benchmark timing includes both, unchanged. Prepared store
+fetching and storage layout changes are deliberately outside this slice.
+
+The retained typed implementation also specializes Tokio task management for every
+kernel. That grew the engine benchmark's `.text` from 5,446,824 to 7,030,808 bytes
+(29%; GNU `size`'s broader text total grew 33%). A second candidate erases only the
+batch future before spawning, sharing Tokio machinery while retaining typed row
+polling. Both candidates are measured in alternating fresh processes. Selection
+prioritizes speed; code growth is an acceptable tradeoff when it improves runtime.
+The fully specialized version is retained. The workload-dependent results do not
+establish an execution-speed advantage for either boundary, and smaller code is
+not the objective. Keep the alternative as benchmark evidence, not a runtime
+policy knob. Isolated dispatch measurement and profiling the complete workload
+are needed to distinguish kernel-path improvements from planner/publication
+bottlenecks before prepared-fetch work.

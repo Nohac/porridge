@@ -1,8 +1,8 @@
 # Stateful workload performance plan
 
-Status: benchmark foundation, indexed access reservations and the concrete kernel
-future adapter are committed. Batched retirement is committed; worker dispatch batching is implemented and
-validated. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
+Status: benchmark foundation, indexed reservations, retirement batching, the
+concrete kernel adapter and worker dispatch batching are committed. Typed execution
+plans are implemented; isolated execution-speed attribution remains open. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
 access reservations, async systems, publication and retirement paths.
 
 ## Goals and boundaries
@@ -19,10 +19,75 @@ changes when comparing candidates.
 
 ## Current implementation slice
 
-**Worker dispatch batching** (batch D) is brought forward after the purchase
-reference. Its contract and the additional scalar-query correctness fix are in
-[dispatch-batching.md](dispatch-batching.md). Typed per-system batches and profiling
-remaining serial work follow this slice; live-candidate enumeration remains open.
+**Typed execution plans** (batch D1), based on commit `c864956`. Ordinary kernels
+retain concrete row futures through worker polling. Shared admission lives in
+`dispatch/plan.rs`; cooperative execution boxes each row once, and grouped hook
+semantics remain on their existing fallback. The contract and boundaries are in
+[dispatch-batching.md](dispatch-batching.md#typed-execution-plans).
+
+### Typed execution measurements (2026-10-21)
+
+Two candidates were built: fully specialized Tokio tasks, and a shared-task
+candidate that boxes once at the task boundary while keeping rows typed inside.
+The retained candidate is **fully specialized**. Code size alone is not a reason
+to reject specialization; these end-to-end measurements do not establish a stable
+speed advantage for either task boundary.
+
+The initial ten-case matrix reused matching maximum-16 measurements from the
+preceding slice. Both new candidates ran freshly in alternating order. Four
+contrasting large cases then received fresh alternating runs of all three
+executables. Two processes per variant, 0.1-second warmup, requested 0.4-second
+measurement and ten Criterion samples; default features and fixtures unchanged.
+
+Fresh recheck, median milliseconds per 1,000-request batch:
+
+| Case | Committed baseline | Specialized (retained) | Shared task |
+| --- | ---: | ---: | ---: |
+| Independent light, 8 workers | 56.9 | 51.1 | 47.4 |
+| Four per owner, 8 workers | 138.4 | 147.7 | 135.6 |
+| Heavier arithmetic, 1 worker | 78.6 | 49.8 | 47.8 |
+| Heavier arithmetic, 8 workers | 43.0 | 36.7 | 36.8 |
+
+These must not be presented as a universal speedup: the contended case regressed
+in the fresh recheck, and candidate ordering reversed between passes in some
+cases. For example, the first independent/eight-worker comparison favored
+specialized over shared (36.7 vs 55.5 ms), but the fresh check favored shared
+(51.1 vs 47.4 ms). The workload includes planning, storage access, guards,
+publication and retirement; it cannot attribute the execution portion's speed.
+A significantly faster row executor can be masked by those other costs.
+
+The specialized engine benchmark `.text` grows from 5,446,824 to 7,030,808 bytes
+(+29%). The shared-task candidate is 6,167,880 bytes (+13%). For the smaller
+purchase executable the corresponding sizes are 3,133,656, 3,189,384 and
+3,165,496 bytes. These are tradeoff measurements, not acceptance thresholds.
+
+Compiler regression checks: cold settling initially measured 635 → 731 us against
+the reused baseline, incremental settling 74 → 78 us. Fresh alternating cold runs
+were baseline 698/619 us versus specialized 693/703 us. These overlap but leave a
+possible regression unresolved; performance acceptance is not complete. Both
+rebuilt optimized executables match the measured specialized binaries byte-for-byte.
+
+The implementation removes two explicit per-row future boxes on the ordinary
+worker path. It still allocates future-set nodes and per-invocation metadata and
+does not batch memo identities or commits. `plan_nanos` now excludes lazily
+constructed futures during admission; compare total latency, not old/new planning
+counter percentages.
+
+- [x] Build, 150 workspace unit tests, doctest, playground and optimized smoke.
+- [x] Isolated purchase build, three contract tests and optimized smoke.
+- [x] Preserve cancellation, pending-sibling publication, conflict/retry and hook
+  behavior; exercise a concrete suspended `!Unpin` row future in the dispatch test.
+- [ ] Isolate dispatch execution with representative immediate and suspended
+  kernels, comparing typed and boxed rows independently of planning/publication.
+- [ ] Profile complete workloads to quantify how much time the isolated path
+  represents; do not infer an executor speedup from code size or total throughput.
+- [ ] Then implement prepared typed-store fetching as a separately measured slice.
+
+[Raw comparisons, variation and provenance](benchmarks/2026-10-21-typed-batches.json)
+are retained. Local binaries and scripts live under `target/typed-batches/`.
+The shared-task source is retained there for experiments, not exposed as a new
+runtime policy knob. Precise acceptance and the contended-case regression remain
+open for controlled-host measurements. No new Bevy timing run was needed.
 
 ### Dispatch batching measurements (2026-10-21)
 
@@ -80,10 +145,9 @@ are archived. Local logs, preserved baseline executables and scripts are under
 subdirectory. Bevy's earlier reference is reused rather than rerun; this slice does
 not establish a new precise Porridge/Bevy ratio.
 
-Next: profile remaining per-row planning/publication costs and prototype homogeneous
-typed system batches. The current implementation still boxes planned rows and
-retains all per-invocation bookkeeping. Live-candidate enumeration and direct dirty
-routing remain on the plan.
+At the end of this earlier slice, typed system batches and profiling were next.
+Typed plans are now implemented above; prepared fetching, live-candidate enumeration
+and direct dirty routing remain on the plan. Per-invocation bookkeeping remains.
 
 ### Previous slice: batched retirement
 
@@ -367,8 +431,9 @@ the callee type. Its `SystemParamFunction::run` need not erase that future too.
   preemption and both cooperative/worker dispatch through existing contracts.
 - [ ] Evaluate a concrete enum or equivalent for the dispatch wrapper rather than
   boxing solely to unify spawned and cooperative execution.
-- [ ] Consider homogeneous per-system batches so type erasure happens once per
-  batch where possible. Keep per-invocation access, memo and publication semantics.
+- [x] Retain concrete ordinary row futures in per-system plans and worker batches;
+  keep per-invocation access, memo and publication semantics. Hook fallbacks and
+  the cooperative queue retain the erasure needed at their boundaries.
 - [ ] Measure allocations and small-kernel cost on a quiet host before claiming
   a precise speedup. Watch code size and build time from more monomorphization.
 

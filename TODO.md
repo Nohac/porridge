@@ -838,7 +838,9 @@ Current shortcut:
   Cooperative execution remains available without changing features.
 
 Remaining work:
-- Typed per-system execution batches to reduce per-invocation type erasure.
+- Done: typed per-system execution plans remove explicit ordinary worker-row
+  future boxing. Isolated executor measurements and whole-workload profiling
+  remain necessary before attributing an execution speedup.
 - Planning and publication still run on one evaluator.
 - Per-system admission and commit policies remain proposals. The implemented
   `set_dispatch_batch_size` is a maximum rows-per-task setting only.

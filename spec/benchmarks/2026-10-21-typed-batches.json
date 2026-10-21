@@ -1,0 +1,3959 @@
+{
+  "date": "2026-10-21",
+  "manifest": {
+    "baseline_commit": "c864956b6c193ccd07486bbff7938f2798e2910a",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "binaries": {
+      "before-reference": "edf583fb7ca4cd766dd72d1b21ea3788d0a2f81ca796f0b2be3a5d3ae9c06dfa",
+      "before-engine": "3306f01b7b7d9f608efbf1d330fefbb2ef943dead1fac1bdd191d0708ef8c6b5",
+      "after-reference": "1a0e6d45381dfd50b7fbd8145f4aaaad90b5f28439b081a9e218d176de28015f",
+      "after-engine": "52d1759304827af70e274e93672461a8ba18650ee532948a0cc93a83daf6ebce",
+      "specialized-reference": "05472e3076ac005a53894544508c296daf9224d6d102e233d994d4ade3583926"
+    },
+    "source_sha256": {
+      "crates/bowl/src/bowl.rs": "70e98c472ca894103ae9677e5f0f13baa163cbbbe417e59c3211d55d2bfb3001",
+      "crates/bowl/src/system.rs": "16eee69b0c6f35e391eafef017c42f272a051c0f81d0bd26edcd3f5ac90e3efa",
+      "crates/bowl/src/dispatch.rs": "84ff39e42adbd83ec3ba4e9f7297221e5f0cc802651bf3799b3cc5abcc8271db",
+      "crates/bowl/src/dispatch/plan.rs": "3090ad24b993d15ad7a3b95996d99bf6b9eed49b41b83c395b85767c4cb0fcf8"
+    },
+    "lockfile_sha256": "00c263327b44e3529bc3dd494281684b069076ed1b2a1faf32b5a63814e1e50f",
+    "notes": [
+      "Reuse the preceding committed dispatch baseline's maximum-16 measurements.",
+      "No feature, dependency, fixture, profile or runtime-setting changes between variants.",
+      "One candidate process per case/repetition; fresh accounts per timed observation.",
+      "Uncontrolled workstation; this is a coarse comparison between sessions.",
+      "Both typed task-boundary candidates run freshly in alternating order; specialization versus erasure is selected for speed, not code size."
+    ],
+    "selected_variant": "specialized",
+    "selection_reason": "End-to-end results are inconclusive; retain concrete task execution and removal of row future boxes, not the smaller variant solely for size. Isolated execution measurements and full profiles remain open.",
+    "selected_source_sha256": {
+      "crates/bowl/src/bowl.rs": "70e98c472ca894103ae9677e5f0f13baa163cbbbe417e59c3211d55d2bfb3001",
+      "crates/bowl/src/system.rs": "16eee69b0c6f35e391eafef017c42f272a051c0f81d0bd26edcd3f5ac90e3efa",
+      "crates/bowl/src/dispatch.rs": "b1f0f33ae104e69da67424f31f79897b08ba785330908988f95dc11490a43c46",
+      "crates/bowl/src/dispatch/plan.rs": "3090ad24b993d15ad7a3b95996d99bf6b9eed49b41b83c395b85767c4cb0fcf8"
+    },
+    "shared_sections": {
+      "shared-engine": "target/typed-batches/shared-engine  :\nsection                size      addr\n.interp                  83       736\n.note.ABI-tag            32       820\n.dynsym                3408       856\n.gnu.version            284      4264\n.gnu.version_r          464      4548\n.gnu.hash                28      5016\n.hash                  1144      5044\n.dynstr                2226      6188\n.rela.dyn            181488      8416\n.rela.plt                48    189904\n.gcc_except_table    380980    189952\n.rodata              175556    570944\n.eh_frame_hdr         71484    746500\n.eh_frame            573412    817984\n.text               6167880   1395504\n.init                    27   7563384\n.fini                    13   7563412\n.plt                     48   7563440\n.tdata                  144   7567584\n.tbss                   216   7567728\n.fini_array               8   7567728\n.init_array              16   7567736\n.data.rel.ro          97104   7567752\n.dynamic                512   7664856\n.got                  14864   7665368\n.got.plt                 40   7680232\n.relro_padding         3824   7680272\n.tm_clone_table           0   7684368\n.data                  2976   7684368\n.bss                    344   7687344\n.comment                157         0\nTotal               7678810\n\n\n",
+      "shared-reference": "target/typed-batches/shared-reference  :\nsection                size      addr\n.interp                  83       736\n.note.ABI-tag            32       820\n.dynsym                3408       856\n.gnu.version            284      4264\n.gnu.version_r          464      4548\n.gnu.hash                28      5016\n.hash                  1144      5044\n.dynstr                2226      6188\n.rela.dyn            130296      8416\n.rela.plt                48    138712\n.gcc_except_table    162408    138760\n.rodata              184116    301184\n.eh_frame_hdr         44188    485300\n.eh_frame            304012    529488\n.text               3165496    837600\n.init                    27   4003096\n.fini                    13   4003124\n.plt                     48   4003152\n.tdata                  160   4007296\n.tbss                   272   4007456\n.fini_array               8   4007456\n.init_array              16   4007464\n.data.rel.ro          75424   4007480\n.dynamic                512   4082904\n.got                  12720   4083416\n.got.plt                 40   4096136\n.relro_padding         3920   4096176\n.tm_clone_table           0   4100272\n.data                  3152   4100272\n.bss                    368   4103424\n.comment                157         0\nTotal               4095070\n\n\n"
+    },
+    "selected_rebuilt_reference_sha256": "05472e3076ac005a53894544508c296daf9224d6d102e233d994d4ade3583926",
+    "selected_rebuilt_engine_sha256": "6d17e18e29d1e7022167c37a3d82da239125708b9d1b4a84f3a2f5a45518818b"
+  },
+  "matrix": [
+    {
+      "requests": 1,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 103998.50751155624,
+          "upper_bound": 128894.94188340152
+        },
+        "point_estimate": 120340.05960818843,
+        "standard_error": 5849.728407168791
+      },
+      "requests_per_second": 8309.784815263261,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 70216.92294338513,
+          "upper_bound": 95630.84878422043
+        },
+        "point_estimate": 77602.66081504703,
+        "standard_error": 6563.910683852588
+      },
+      "requests_per_second": 12886.156086623536,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 106383.4424423267,
+          "upper_bound": 112305.02667846829
+        },
+        "point_estimate": 108323.07241910632,
+        "standard_error": 1540.7155422994795
+      },
+      "requests_per_second": 9231.643616338353
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 105984.5712389819,
+          "upper_bound": 106829.42331066121
+        },
+        "point_estimate": 106276.23864205969,
+        "standard_error": 220.55374301456771
+      },
+      "requests_per_second": 9409.441026305214
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 77744.0485615659,
+          "upper_bound": 83641.32288486429
+        },
+        "point_estimate": 79397.3935064935,
+        "standard_error": 1526.818145781001
+      },
+      "requests_per_second": 12594.871894859056
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 75673.65261016322,
+          "upper_bound": 76757.51071048973
+        },
+        "point_estimate": 76170.40157126824,
+        "standard_error": 274.14574673514903
+      },
+      "requests_per_second": 13128.459078220269
+    },
+    {
+      "requests": 1,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 103711.45875556483,
+          "upper_bound": 122810.32469394169
+        },
+        "point_estimate": 110725.05229770229,
+        "standard_error": 4863.335654247444
+      },
+      "requests_per_second": 9031.379793900098,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 51807.332347537755,
+          "upper_bound": 57107.03771615981
+        },
+        "point_estimate": 53226.91984294775,
+        "standard_error": 1394.358443764248
+      },
+      "requests_per_second": 18787.48578633926,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 111316.07049904075,
+          "upper_bound": 114555.31698869471
+        },
+        "point_estimate": 112577.30781499202,
+        "standard_error": 823.6757782611397
+      },
+      "requests_per_second": 8882.784811690346
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 74525.00707312857,
+          "upper_bound": 75449.56823097776
+        },
+        "point_estimate": 74974.34386147186,
+        "standard_error": 237.03750813735167
+      },
+      "requests_per_second": 13337.89598542768
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 97725.91671444954,
+          "upper_bound": 100906.23226088646
+        },
+        "point_estimate": 99825.12288961039,
+        "standard_error": 821.314391103332
+      },
+      "requests_per_second": 10017.518346617313
+    },
+    {
+      "requests": 1,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 74630.68173710442,
+          "upper_bound": 75292.37372013651
+        },
+        "point_estimate": 74988.109629395,
+        "standard_error": 174.30744715055542
+      },
+      "requests_per_second": 13335.447512174711
+    },
+    {
+      "requests": 100,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3872792.7159020333,
+          "upper_bound": 4960281.708374471
+        },
+        "point_estimate": 4425413.71038961,
+        "standard_error": 287181.73697279
+      },
+      "requests_per_second": 22596.75739812269,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 100,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 2648888.1333333333,
+          "upper_bound": 2683609.6675591683
+        },
+        "point_estimate": 2664966.3913419913,
+        "standard_error": 8890.90490704651
+      },
+      "requests_per_second": 37523.92537665108,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3817269.6002101772,
+          "upper_bound": 4376023.1835087575
+        },
+        "point_estimate": 3980545.1454545455,
+        "standard_error": 148015.7294043873
+      },
+      "requests_per_second": 25122.18712409072
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 4475866.901969622,
+          "upper_bound": 5208408.302577659
+        },
+        "point_estimate": 4882921.419480519,
+        "standard_error": 196567.2467274026
+      },
+      "requests_per_second": 20479.54316877758
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3689815.8978254343,
+          "upper_bound": 3784394.0077557033
+        },
+        "point_estimate": 3748824.9571428574,
+        "standard_error": 24141.158847156126
+      },
+      "requests_per_second": 26675.025146069864
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3707928.024856506,
+          "upper_bound": 3758374.719273743
+        },
+        "point_estimate": 3729323.557142857,
+        "standard_error": 12658.988696790848
+      },
+      "requests_per_second": 26814.51433959592
+    },
+    {
+      "requests": 100,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 4167208.8416009615,
+          "upper_bound": 4847200.972972973
+        },
+        "point_estimate": 4398060.933766234,
+        "standard_error": 176702.96634569005
+      },
+      "requests_per_second": 22737.29298115159,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 100,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3882455.905128205,
+          "upper_bound": 3913233.379844961
+        },
+        "point_estimate": 3893691.116883117,
+        "standard_error": 7977.414816239616
+      },
+      "requests_per_second": 25682.57136946435,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 2876972.7871425953,
+          "upper_bound": 3704986.252167972
+        },
+        "point_estimate": 3211339.327272727,
+        "standard_error": 215131.30242653107
+      },
+      "requests_per_second": 31139.655392607277
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3887042.5681818184,
+          "upper_bound": 4268043.094322344
+        },
+        "point_estimate": 4128947.9831168833,
+        "standard_error": 93218.4021352142
+      },
+      "requests_per_second": 24219.244322984046
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3926657.198947534,
+          "upper_bound": 4500779.79113924
+        },
+        "point_estimate": 4113449.8584415587,
+        "standard_error": 143795.2263461111
+      },
+      "requests_per_second": 24310.494461183607
+    },
+    {
+      "requests": 100,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "100",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 4330977.880521248,
+          "upper_bound": 4430292.017119468
+        },
+        "point_estimate": 4391798.097402598,
+        "standard_error": 24811.037466294674
+      },
+      "requests_per_second": 22769.717045768135
+    },
+    {
+      "requests": 1000,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 29846998.85,
+          "upper_bound": 31388719.9
+        },
+        "point_estimate": 30507749.5,
+        "standard_error": 384764.4483450204
+      },
+      "requests_per_second": 32778.55680570604,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 48559148.5075,
+          "upper_bound": 65287236.2
+        },
+        "point_estimate": 57805686.8,
+        "standard_error": 4267540.399673865
+      },
+      "requests_per_second": 17299.336023112523,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 25679242.3,
+          "upper_bound": 26611279.7
+        },
+        "point_estimate": 26133185.3,
+        "standard_error": 237919.4263216753
+      },
+      "requests_per_second": 38265.52287906518
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 26883266.35,
+          "upper_bound": 27944985.25
+        },
+        "point_estimate": 27392154.55,
+        "standard_error": 275776.7560948045
+      },
+      "requests_per_second": 36506.803368630965
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 54963230.26500001,
+          "upper_bound": 60370029.8
+        },
+        "point_estimate": 57859465.8,
+        "standard_error": 1404359.4480925633
+      },
+      "requests_per_second": 17283.256700928614
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 58124791.9,
+          "upper_bound": 60285155.7
+        },
+        "point_estimate": 59244088.6,
+        "standard_error": 558324.3343725213
+      },
+      "requests_per_second": 16879.32118851095
+    },
+    {
+      "requests": 1000,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46691200.2425,
+          "upper_bound": 49864065.4
+        },
+        "point_estimate": 47932395.1,
+        "standard_error": 860549.0329785417
+      },
+      "requests_per_second": 20862.71712301729,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 49474039.9,
+          "upper_bound": 50349501.5
+        },
+        "point_estimate": 49945200.0,
+        "standard_error": 218326.54715671838
+      },
+      "requests_per_second": 20021.944050679544,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 26434161.15,
+          "upper_bound": 26709650.8
+        },
+        "point_estimate": 26569407.55,
+        "standard_error": 69461.53094238057
+      },
+      "requests_per_second": 37637.27129098142
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 59402700.3025,
+          "upper_bound": 61545027.0
+        },
+        "point_estimate": 60468105.9,
+        "standard_error": 551036.9513446995
+      },
+      "requests_per_second": 16537.643855651182
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 47811537.715,
+          "upper_bound": 53524274.0175
+        },
+        "point_estimate": 50576484.9,
+        "standard_error": 1436696.666742642
+      },
+      "requests_per_second": 19772.034414356858
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 43478700.4,
+          "upper_bound": 51630252.1
+        },
+        "point_estimate": 46800551.2,
+        "standard_error": 2180215.81964546
+      },
+      "requests_per_second": 21367.269708567022
+    },
+    {
+      "requests": 1000,
+      "workers": 1,
+      "per_owner": 4,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 136644809.12750003,
+          "upper_bound": 170868470.74999997
+        },
+        "point_estimate": 152397498.7,
+        "standard_error": 8707419.127410933
+      },
+      "requests_per_second": 6561.7874868703475,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "workers": 1,
+      "per_owner": 4,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 80557425.88749999,
+          "upper_bound": 91309243.3125
+        },
+        "point_estimate": 85121890.2,
+        "standard_error": 2819662.560686886
+      },
+      "requests_per_second": 11747.859424296477,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 100295498.75500001,
+          "upper_bound": 134894710.7
+        },
+        "point_estimate": 117348539.9,
+        "standard_error": 8680109.039730424
+      },
+      "requests_per_second": 8521.62285830026
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 151794106.9,
+          "upper_bound": 223584106.8
+        },
+        "point_estimate": 184917854.6,
+        "standard_error": 18305651.014313858
+      },
+      "requests_per_second": 5407.806629398349
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 137109842.8,
+          "upper_bound": 178232286.205
+        },
+        "point_estimate": 155042690.4,
+        "standard_error": 11221381.702248994
+      },
+      "requests_per_second": 6449.836476779817
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 126844011.4,
+          "upper_bound": 150445770.255
+        },
+        "point_estimate": 138709656.8,
+        "standard_error": 6146729.20035289
+      },
+      "requests_per_second": 7209.303397252727
+    },
+    {
+      "requests": 1000,
+      "workers": 8,
+      "per_owner": 4,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 135204514.7,
+          "upper_bound": 154024652.6
+        },
+        "point_estimate": 142714257.7,
+        "standard_error": 5055778.778287648
+      },
+      "requests_per_second": 7007.008382456801,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "workers": 8,
+      "per_owner": 4,
+      "work": 0,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 127486660.0,
+          "upper_bound": 142570933.3
+        },
+        "point_estimate": 134991297.2,
+        "standard_error": 3847914.188070416
+      },
+      "requests_per_second": 7407.884958083061,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 123676528.8,
+          "upper_bound": 154717156.92
+        },
+        "point_estimate": 138665353.9,
+        "standard_error": 7923983.822497422
+      },
+      "requests_per_second": 7211.606734304812
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 136180587.4,
+          "upper_bound": 169760120.9
+        },
+        "point_estimate": 152102206.3,
+        "standard_error": 8567083.377278246
+      },
+      "requests_per_second": 6574.526591860488
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 125782418.6,
+          "upper_bound": 148443932.7
+        },
+        "point_estimate": 137072996.9,
+        "standard_error": 5746846.123448566
+      },
+      "requests_per_second": 7295.38291724619
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 117605697.3,
+          "upper_bound": 139733561.7
+        },
+        "point_estimate": 127561473.1,
+        "standard_error": 5693829.483960591
+      },
+      "requests_per_second": 7839.357571671067
+    },
+    {
+      "requests": 1000,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 10000,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 72939176.5,
+          "upper_bound": 94272143.0675
+        },
+        "point_estimate": 84300816.5,
+        "standard_error": 5527279.450179862
+      },
+      "requests_per_second": 11862.281310169754,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "workers": 1,
+      "per_owner": 1,
+      "work": 10000,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 77766188.275,
+          "upper_bound": 86208646.3575
+        },
+        "point_estimate": 81844715.1,
+        "standard_error": 2176233.670179833
+      },
+      "requests_per_second": 12218.25989348456,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 75089343.2275,
+          "upper_bound": 90868385.8
+        },
+        "point_estimate": 83018338.3,
+        "standard_error": 3932123.558562198
+      },
+      "requests_per_second": 12045.53139074334
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 45277833.587500006,
+          "upper_bound": 49726298.70249999
+        },
+        "point_estimate": 47522621.4,
+        "standard_error": 1159887.6130073094
+      },
+      "requests_per_second": 21042.610246243697
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46062727.3,
+          "upper_bound": 49142220.2
+        },
+        "point_estimate": 47586381.0,
+        "standard_error": 798176.9906061856
+      },
+      "requests_per_second": 21014.41586827122
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46309406.2,
+          "upper_bound": 68467518.3775
+        },
+        "point_estimate": 54118935.7,
+        "standard_error": 6546680.753149476
+      },
+      "requests_per_second": 18477.8208785063
+    },
+    {
+      "requests": 1000,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 10000,
+      "maximum": 16,
+      "repeat": 0,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 39647669.1,
+          "upper_bound": 53827968.7
+        },
+        "point_estimate": 46005215.8,
+        "standard_error": 3624780.040901057
+      },
+      "requests_per_second": 21736.66578040484,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "workers": 8,
+      "per_owner": 1,
+      "work": 10000,
+      "maximum": 16,
+      "repeat": 1,
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 36430306.0,
+          "upper_bound": 40687863.8
+        },
+        "point_estimate": 38540623.7,
+        "standard_error": 1110107.8913968166
+      },
+      "requests_per_second": 25946.648081878342,
+      "variant": "before",
+      "reused_from": "dispatch-batching/final-maximum16"
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 37388220.3,
+          "upper_bound": 54388504.0
+        },
+        "point_estimate": 45225190.4,
+        "standard_error": 4443652.388048928
+      },
+      "requests_per_second": 22111.57081165102
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 35007017.5,
+          "upper_bound": 48028728.92749996
+        },
+        "point_estimate": 40407937.1,
+        "standard_error": 3333510.201607042
+      },
+      "requests_per_second": 24747.613260366117
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 34590689.885,
+          "upper_bound": 38129770.75875
+        },
+        "point_estimate": 36301494.75,
+        "standard_error": 901718.3643990586
+      },
+      "requests_per_second": 27547.07504158627
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 29188859.94875,
+          "upper_bound": 33803591.25
+        },
+        "point_estimate": 31313282.1,
+        "standard_error": 1208786.65450205
+      },
+      "requests_per_second": 31935.33008793096
+    }
+  ],
+  "fresh_rechecks": [
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 64246735.0925,
+          "upper_bound": 66419495.0
+        },
+        "point_estimate": 65355854.8,
+        "standard_error": 568565.5328910614
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 51265068.0,
+          "upper_bound": 56087086.6
+        },
+        "point_estimate": 53681875.2,
+        "standard_error": 1259717.8129183867
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46600778.4,
+          "upper_bound": 52216459.8
+        },
+        "point_estimate": 49418834.8,
+        "standard_error": 1454390.2044572458
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 44411152.3,
+          "upper_bound": 46345813.8
+        },
+        "point_estimate": 45343737.9,
+        "standard_error": 509641.22568923066
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 45508384.9,
+          "upper_bound": 51750028.2
+        },
+        "point_estimate": 48561166.9,
+        "standard_error": 1569447.586934112
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46326811.2,
+          "upper_bound": 50743807.5
+        },
+        "point_estimate": 48472416.2,
+        "standard_error": 1158121.4759335336
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 121094628.5,
+          "upper_bound": 156020946.74249998
+        },
+        "point_estimate": 138355151.1,
+        "standard_error": 8994711.804778455
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 129077241.995,
+          "upper_bound": 178221402.07749996
+        },
+        "point_estimate": 153408338.8,
+        "standard_error": 13114930.007662037
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 129697991.25500003,
+          "upper_bound": 150440610.8
+        },
+        "point_estimate": 139443875.2,
+        "standard_error": 5276659.67216303
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 119126017.5,
+          "upper_bound": 144754288.9
+        },
+        "point_estimate": 131694476.0,
+        "standard_error": 6528719.789048049
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 125766294.7,
+          "upper_bound": 158093353.3175
+        },
+        "point_estimate": 142069160.1,
+        "standard_error": 8335704.52030254
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 4,
+      "work": 0,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "4",
+        "PURCHASE_WORK": "0",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 127731163.33749999,
+          "upper_bound": 150792297.4
+        },
+        "point_estimate": 138410463.1,
+        "standard_error": 6006646.315572086
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 55047708.2875,
+          "upper_bound": 74810258.96249999
+        },
+        "point_estimate": 64482923.7,
+        "standard_error": 5036742.526533242
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46071270.3,
+          "upper_bound": 48594292.835
+        },
+        "point_estimate": 47317817.1,
+        "standard_error": 645719.3025444293
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46310415.2,
+          "upper_bound": 50025558.1
+        },
+        "point_estimate": 48019745.4,
+        "standard_error": 949841.5990959906
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 45785703.0,
+          "upper_bound": 49261207.485
+        },
+        "point_estimate": 47503416.1,
+        "standard_error": 906531.0921471136
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 47599048.885,
+          "upper_bound": 59925345.379999995
+        },
+        "point_estimate": 52331069.0,
+        "standard_error": 3501062.377948276
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 1,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "1",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 73751499.1175,
+          "upper_bound": 110775041.2
+        },
+        "point_estimate": 92748269.3,
+        "standard_error": 9522672.517638251
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 40876731.6,
+          "upper_bound": 48919996.4
+        },
+        "point_estimate": 44702205.9,
+        "standard_error": 2045387.230043409
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 37499577.1,
+          "upper_bound": 41255809.7
+        },
+        "point_estimate": 39322409.8,
+        "standard_error": 963598.744246305
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 0,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 34626315.2,
+          "upper_bound": 47576668.22999999
+        },
+        "point_estimate": 39964604.2,
+        "standard_error": 3313786.0660764123
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "shared",
+      "repeat": 1,
+      "command": [
+        "purchases-4668980a3dd3926f",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 32285993.2,
+          "upper_bound": 34924957.8
+        },
+        "point_estimate": 33576833.2,
+        "standard_error": 681396.1032185031
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "specialized-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 31966131.1,
+          "upper_bound": 36132047.7
+        },
+        "point_estimate": 34067675.8,
+        "standard_error": 1068800.9313625267
+      }
+    },
+    {
+      "requests": 1000,
+      "per_owner": 1,
+      "work": 10000,
+      "workers": 8,
+      "maximum": 16,
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-reference",
+        "--bench",
+        "purchase_reference",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PURCHASE_BACKEND": "porridge",
+        "PURCHASE_REQUESTS": "1000",
+        "PURCHASE_PER_OWNER": "1",
+        "PURCHASE_WORK": "10000",
+        "PURCHASE_WORKERS": "8",
+        "PURCHASE_DISPATCH_BATCH": "16"
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 35692541.5,
+          "upper_bound": 48455069.72499999
+        },
+        "point_estimate": 41295030.6,
+        "standard_error": 3343494.952233694
+      }
+    }
+  ],
+  "specialized_sections": {
+    "engine": {
+      "sha256": "6d17e18e29d1e7022167c37a3d82da239125708b9d1b4a84f3a2f5a45518818b",
+      "sections": "target/release/deps/engine-f51e7765c33c8746  :\nsection                size      addr\n.interp                  83       736\n.note.ABI-tag            32       820\n.dynsym                3408       856\n.gnu.version            284      4264\n.gnu.version_r          464      4548\n.gnu.hash                28      5016\n.hash                  1144      5044\n.dynstr                2226      6188\n.rela.dyn            225744      8416\n.rela.plt                48    234160\n.gcc_except_table    512496    234208\n.rodata              184644    746752\n.eh_frame_hdr         90764    931396\n.eh_frame            725556   1022160\n.text               7030808   1751824\n.init                    27   8782632\n.fini                    13   8782660\n.plt                     48   8782688\n.tdata                  144   8786832\n.tbss                   216   8786976\n.fini_array               8   8786976\n.init_array              16   8786984\n.data.rel.ro         117520   8787000\n.dynamic                512   8904520\n.got                  14864   8905032\n.got.plt                 40   8919896\n.relro_padding         1152   8919936\n.tm_clone_table           0   8924032\n.data                  2976   8924032\n.bss                    344   8927008\n.comment                157         0\nTotal               8915766\n\n\n"
+    },
+    "reference": {
+      "sha256": "05472e3076ac005a53894544508c296daf9224d6d102e233d994d4ade3583926",
+      "sections": "experiments/purchase-comparison/target/release/deps/purchases-4668980a3dd3926f  :\nsection                size      addr\n.interp                  83       736\n.note.ABI-tag            32       820\n.dynsym                3408       856\n.gnu.version            284      4264\n.gnu.version_r          464      4548\n.gnu.hash                28      5016\n.hash                  1144      5044\n.dynstr                2226      6188\n.rela.dyn            131496      8416\n.rela.plt                48    139912\n.gcc_except_table    165860    139960\n.rodata              184372    305856\n.eh_frame_hdr         44700    490228\n.eh_frame            307948    534928\n.text               3189384    846976\n.init                    27   4036360\n.fini                    13   4036388\n.plt                     48   4036416\n.tdata                  160   4040560\n.tbss                   272   4040720\n.fini_array               8   4040720\n.init_array              16   4040728\n.data.rel.ro          75968   4040744\n.dynamic                512   4116712\n.got                  12720   4117224\n.got.plt                 40   4129944\n.relro_padding         2880   4129984\n.tm_clone_table           0   4134080\n.data                  3152   4134080\n.bss                    368   4137232\n.comment                157         0\nTotal               4127818\n\n\n"
+    }
+  },
+  "validation": [
+    "PASS cargo build --workspace -j 20",
+    "PASS cargo test --workspace -j 20 (150 unit tests plus doctest)",
+    "PASS cargo run -p playground -j 20",
+    "PASS cargo bench -p benches -j 20 -- --test",
+    "PASS cargo clippy --workspace --all-targets -j 20 (existing warnings)",
+    "PASS cargo build --manifest-path experiments/purchase-comparison/Cargo.toml --workspace --all-targets --locked --offline -j 20",
+    "PASS cargo test --manifest-path experiments/purchase-comparison/Cargo.toml --workspace --all-targets --locked --offline -j 20 (3 contracts plus benchmark smoke)",
+    "PASS cargo bench --manifest-path experiments/purchase-comparison/Cargo.toml --workspace --all-targets --locked --offline -j 20 -- --test"
+  ],
+  "limitations": [
+    "The purchase workload includes planning, fetching, locking, execution, publication and cleanup; it does not isolate executor speed.",
+    "Candidate ordering reverses between some measurement passes; neither task boundary has an established universal speed advantage.",
+    "The retained specialized variant regresses the contended eight-worker case in the fresh recheck. Controlled-host acceptance remains open.",
+    "The first matrix reused matching baseline measurements; fresh rechecks reran all three binaries in alternating order.",
+    "Code size is recorded, not used as a speed proxy or veto. Retain the specialized path pending isolated execution benchmarks and full-workload profiles.",
+    "No fixture, dependency, feature, runtime batch size or timing-boundary changes. The active workstation remains uncontrolled.",
+    "Cold compiler settling initially measured 635 -> 731 us against the reused baseline; fresh baseline 619\u2013698 us and specialized 693\u2013703 us overlap. This remains unresolved, not a proven regression-free improvement."
+  ],
+  "compiler_with_reused_baseline": [
+    {
+      "case": "cold_settle-128",
+      "variant": "before",
+      "repeat": 0,
+      "environment": {},
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 640148.629459523,
+          "upper_bound": 645017.6283636363
+        },
+        "point_estimate": 642379.4878394332,
+        "standard_error": 1311.4433601829185
+      },
+      "reused_from": "dispatch-batching/final-recheck-after"
+    },
+    {
+      "case": "cold_settle-128",
+      "variant": "before",
+      "repeat": 1,
+      "environment": {},
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 623369.775384484,
+          "upper_bound": 631889.8282020689
+        },
+        "point_estimate": 626813.2238488784,
+        "standard_error": 2150.585944022712
+      },
+      "reused_from": "dispatch-batching/final-recheck-after"
+    },
+    {
+      "case": "cold_settle-128",
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 666458.7093807266,
+          "upper_bound": 810174.6695702671
+        },
+        "point_estimate": 711444.8760667903,
+        "standard_error": 37770.00423690597
+      }
+    },
+    {
+      "case": "cold_settle-128",
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 673857.5451072607,
+          "upper_bound": 825202.0043004833
+        },
+        "point_estimate": 750617.4425974026,
+        "standard_error": 41770.60241855804
+      }
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "before",
+      "repeat": 0,
+      "environment": {},
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 71855.56796085057,
+          "upper_bound": 74231.44489981786
+        },
+        "point_estimate": 72988.96594516594,
+        "standard_error": 621.9292573551427
+      },
+      "reused_from": "dispatch-batching/final-recheck-after"
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "before",
+      "repeat": 1,
+      "environment": {},
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 72837.16903598158,
+          "upper_bound": 78807.73865869532
+        },
+        "point_estimate": 75372.54451003543,
+        "standard_error": 1671.6921896236797
+      },
+      "reused_from": "dispatch-batching/final-recheck-after"
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 74150.38297213623,
+          "upper_bound": 75131.36487914281
+        },
+        "point_estimate": 74679.39194805195,
+        "standard_error": 244.70771601962798
+      }
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 79552.70220109541,
+          "upper_bound": 84035.9391718969
+        },
+        "point_estimate": 81511.12337662338,
+        "standard_error": 1121.492661889807
+      }
+    }
+  ],
+  "compiler_fresh_recheck": [
+    {
+      "case": "cold_settle/128",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-engine",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 648536.4015151515,
+          "upper_bound": 779420.9236878452
+        },
+        "point_estimate": 697776.9438311688,
+        "standard_error": 33517.678088388995
+      }
+    },
+    {
+      "case": "cold_settle/128",
+      "variant": "specialized",
+      "repeat": 0,
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 685993.7279569892,
+          "upper_bound": 706667.4278065789
+        },
+        "point_estimate": 692680.2802597403,
+        "standard_error": 5543.600529963157
+      }
+    },
+    {
+      "case": "cold_settle/128",
+      "variant": "specialized",
+      "repeat": 1,
+      "command": [
+        "engine-f51e7765c33c8746",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 692920.663729503,
+          "upper_bound": 721987.6931262471
+        },
+        "point_estimate": 702608.198961039,
+        "standard_error": 7332.3195982631305
+      }
+    },
+    {
+      "case": "cold_settle/128",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-engine",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 615412.5009924574,
+          "upper_bound": 623938.7986116479
+        },
+        "point_estimate": 619152.7447461629,
+        "standard_error": 2223.7592568176
+      }
+    }
+  ]
+}

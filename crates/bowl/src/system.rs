@@ -133,13 +133,13 @@ fn written_rows(access: &[Access]) -> Vec<(TypeId, Entity)> {
         .collect()
 }
 
-pub(crate) struct PlannedSystemRun {
+pub(crate) struct PlannedSystemRun<F = BoxFuture<'static, SystemRun>> {
     pub(crate) owner: SystemInvocation,
     pub(crate) access: Vec<Access>,
     /// Owned and `Send`: the future captures `Arc`s (system function,
     /// snapshot, callbacks), never borrows the registry — so the runner
     /// may spawn it onto worker threads.
-    pub(crate) run: BoxFuture<'static, SystemRun>,
+    pub(crate) run: F,
 }
 
 struct PlannedRun<State> {
@@ -1494,6 +1494,16 @@ pub(crate) trait Runnable: Send + Sync {
         hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun>;
 
+    fn plan_runs(
+        &self,
+        bowl: Bowl,
+        snapshot: Arc<Snapshot>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
+    ) -> Box<dyn crate::dispatch::RunPlan> {
+        crate::dispatch::prepare(self.stream_runs(bowl, snapshot, memo, hint).into_iter())
+    }
+
     fn run_settled<'a>(
         &'a self,
         _bowl: Bowl,
@@ -2098,6 +2108,16 @@ where
         self.system.stream_runs(bowl, snapshot, memo, hint)
     }
 
+    fn plan_runs(
+        &self,
+        bowl: Bowl,
+        snapshot: Arc<Snapshot>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
+    ) -> Box<dyn crate::dispatch::RunPlan> {
+        self.system.plan_runs(bowl, snapshot, memo, hint)
+    }
+
     fn run_settled<'a>(
         &'a self,
         bowl: Bowl,
@@ -2341,6 +2361,16 @@ impl BoxedSystem {
         self.runnable.stream_runs(bowl, snapshot, memo, hint)
     }
 
+    pub(crate) fn plan_runs(
+        &self,
+        bowl: Bowl,
+        snapshot: Arc<Snapshot>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
+    ) -> Box<dyn crate::dispatch::RunPlan> {
+        self.runnable.plan_runs(bowl, snapshot, memo, hint)
+    }
+
     pub(crate) fn run_settled<'a>(
         &'a self,
         bowl: Bowl,
@@ -2395,6 +2425,72 @@ struct FunctionSystem<F, Marker> {
     /// `'static` (spawnable).
     function: Arc<F>,
     _marker: PhantomData<Marker>,
+}
+
+impl<F, Marker> FunctionSystem<F, Marker>
+where
+    Marker: Send + Sync + 'static,
+    F: SystemParamFunction<Marker>,
+    F::Param: Send + Sync + 'static,
+{
+    fn plan_rows(
+        &self,
+        bowl: Bowl,
+        snapshot: Arc<Snapshot>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
+    ) -> impl ExactSizeIterator<
+        Item = PlannedSystemRun<impl Future<Output = SystemRun> + Send + 'static>,
+    > + Send
+    + 'static {
+        let function = Arc::clone(&self.function);
+        plan_invocations_hinted::<F::Param>(self.id, &snapshot, memo, hint)
+            .invocations
+            .into_iter()
+            .map(move |invocation| {
+                let owner = invocation.owner.clone();
+                let access = invocation.access.clone();
+                let bowl = bowl.clone();
+                let snapshot = Arc::clone(&snapshot);
+                let function = Arc::clone(&function);
+                let run = async move {
+                    let writes = written_rows(&invocation.access);
+                    let commands = Commands::new(
+                        snapshot.spawn_slots(&invocation.owner),
+                        snapshot.entity_allocator(),
+                    );
+                    // Read guards live here, in the invocation frame, so
+                    // borrows handed to the system stay locked until the
+                    // system function returns.
+                    let mut guards = GuardStore::new();
+                    let params = F::Param::fetch(
+                        &bowl,
+                        &snapshot,
+                        &invocation.state,
+                        &commands,
+                        &mut guards,
+                    );
+                    function.run(params).await;
+                    drop(guards);
+
+                    let (output, memo_update) = finish_invocation(
+                        invocation.owner,
+                        invocation.deps,
+                        snapshot.revision_raw(),
+                        commands,
+                    );
+
+                    SystemRun {
+                        completed: true,
+                        outputs: vec![output],
+                        memo_updates: vec![memo_update],
+                        writes,
+                    }
+                };
+
+                PlannedSystemRun { owner, access, run }
+            })
+    }
 }
 
 impl<F, Marker> Runnable for FunctionSystem<F, Marker>
@@ -2475,55 +2571,25 @@ where
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun> {
-        plan_invocations_hinted::<F::Param>(self.id, &snapshot, memo, hint)
-            .invocations
-            .into_iter()
-            .map(|invocation| {
-                let owner = invocation.owner.clone();
-                let access = invocation.access.clone();
-                let bowl = bowl.clone();
-                let snapshot = Arc::clone(&snapshot);
-                let function = Arc::clone(&self.function);
-                let run = async move {
-                    let writes = written_rows(&invocation.access);
-                    let commands = Commands::new(
-                        snapshot.spawn_slots(&invocation.owner),
-                        snapshot.entity_allocator(),
-                    );
-                    // Read guards live here, in the invocation frame, so
-                    // borrows handed to the system stay locked until the
-                    // system function returns.
-                    let mut guards = GuardStore::new();
-                    let params = F::Param::fetch(
-                        &bowl,
-                        &snapshot,
-                        &invocation.state,
-                        &commands,
-                        &mut guards,
-                    );
-                    function.run(params).await;
-                    drop(guards);
-
-                    let (output, memo_update) = finish_invocation(
-                        invocation.owner,
-                        invocation.deps,
-                        snapshot.revision_raw(),
-                        commands,
-                    );
-
-                    SystemRun {
-                        completed: true,
-                        outputs: vec![output],
-                        memo_updates: vec![memo_update],
-                        writes,
-                    }
-                }
-                .boxed();
-
-                PlannedSystemRun { owner, access, run }
+        self.plan_rows(bowl, snapshot, memo, hint)
+            .map(|planned| PlannedSystemRun {
+                owner: planned.owner,
+                access: planned.access,
+                run: planned.run.boxed(),
             })
             .collect()
     }
+
+    fn plan_runs(
+        &self,
+        bowl: Bowl,
+        snapshot: Arc<Snapshot>,
+        memo: &HashMap<SystemInvocation, MemoEntry>,
+        hint: Option<&[Entity]>,
+    ) -> Box<dyn crate::dispatch::RunPlan> {
+        crate::dispatch::prepare(self.plan_rows(bowl, snapshot, memo, hint))
+    }
+
 }
 
 pub(crate) trait SystemParamFunction<Marker>: Send + Sync + 'static {

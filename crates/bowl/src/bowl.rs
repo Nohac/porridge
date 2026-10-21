@@ -25,7 +25,7 @@ use crate::{
     },
     declare::{Schema, ShapeDesc},
     query::{
-        AccessKind, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
+        ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
         ExternalQueryFilter, ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
     },
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
@@ -1098,36 +1098,6 @@ impl Drop for ScopeTimer<'_> {
             self.1.elapsed().as_nanos() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
-    }
-}
-
-/// Poll-time measuring wrapper: charges only the time spent inside the
-/// inner future's `poll` to the owning system, so awaiting siblings in the
-/// same wave is not misattributed.
-struct TimedRun<F> {
-    inner: F,
-    stats: Arc<crate::system::SystemStats>,
-}
-
-impl<F: std::future::Future + Unpin> std::future::Future for TimedRun<F> {
-    type Output = F::Output;
-
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let start = std::time::Instant::now();
-        let result = std::pin::Pin::new(&mut self.inner).poll(cx);
-        self.stats.run_nanos.fetch_add(
-            start.elapsed().as_nanos() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        if result.is_ready() {
-            self.stats
-                .runs
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        result
     }
 }
 
@@ -2378,7 +2348,7 @@ impl Bowl {
                         // Full plan covers any forced rows implicitly.
                         None
                     };
-                    let planned_runs = system.stream_runs(
+                    let planned_runs = system.plan_runs(
                         self.clone(),
                         Arc::clone(&snapshot),
                         memo,
@@ -2396,60 +2366,16 @@ impl Bowl {
                         plan_start.elapsed().as_nanos() as u64,
                         std::sync::atomic::Ordering::Relaxed,
                     );
-                    let grain = crate::dispatch::grain(planned_runs.len(), dispatch_maximum);
-                    let mut read_batch: Vec<crate::dispatch::Run> = Vec::new();
-                    let mut write_batch: Vec<crate::dispatch::Run> = Vec::new();
-                    for planned in planned_runs {
-                        if !running.insert(planned.owner.clone()) {
-                            continue;
-                        }
-
-                        if running_access.conflicts(&planned.access) {
-                            deferred_conflicts = true;
-                            // The deferred row must be replanned once the
-                            // conflict frees, even if no store moves —
-                            // row-granular, so the rest of the system's
-                            // plan stays memoized.
-                            systems[planned.owner.system.0].force_replan(&planned.owner.keys);
-                            running.remove(&planned.owner);
-                            continue;
-                        }
-
-                        let writer = planned
-                            .access
-                            .iter()
-                            .any(|access| access.kind == AccessKind::Write);
-                        let owner = planned.owner;
-                        running_access.insert(owner.clone(), planned.access);
-                        if !writer {
-                            read_owners.insert(owner.clone());
-                        }
-                        let timed = TimedRun {
-                            inner: planned.run,
-                            stats: Arc::clone(&system.stats),
-                        };
-                        let run = async move {
-                            let run = timed.await;
-                            (owner, run)
-                        };
-                        // Access remains reserved per invocation. Never mix
-                        // readers and writers: preemption cancels only readers.
-                        let (batch, stream) = if writer {
-                            (&mut write_batch, &mut write_runs)
-                        } else {
-                            (&mut read_batch, &mut read_runs)
-                        };
-                        batch.push(Box::pin(run));
-                        if batch.len() == grain {
-                            stream.push_batch(std::mem::take(batch));
-                        }
-                    }
-                    if !read_batch.is_empty() {
-                        read_runs.push_batch(read_batch);
-                    }
-                    if !write_batch.is_empty() {
-                        write_runs.push_batch(write_batch);
-                    }
+                    planned_runs.dispatch(&mut crate::dispatch::Admission {
+                        system,
+                        maximum: dispatch_maximum,
+                        running: &mut running,
+                        reservations: &mut running_access,
+                        read_owners: &mut read_owners,
+                        deferred_conflicts: &mut deferred_conflicts,
+                        readers: &mut read_runs,
+                        writers: &mut write_runs,
+                    });
                 }
             }
 

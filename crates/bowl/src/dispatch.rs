@@ -1,10 +1,13 @@
 //! Worker dispatch batches execution, never invocation identity or commits.
 use crate::{system::SystemRun, world::SystemInvocation};
 use futures::{
-    StreamExt,
+    FutureExt, StreamExt,
     future::BoxFuture,
     stream::{BoxStream, FuturesUnordered},
 };
+
+mod plan;
+pub(crate) use plan::{Admission, RunPlan, prepare};
 
 pub(crate) type Row = (SystemInvocation, SystemRun);
 pub(crate) type Run = BoxFuture<'static, Row>;
@@ -28,9 +31,12 @@ impl Queue {
         Self::Cooperative(FuturesUnordered::new())
     }
 
-    pub(crate) fn push_batch(&mut self, runs: Vec<Run>) {
+    pub(crate) fn push_batch<F>(&mut self, runs: Vec<F>)
+    where
+        F: std::future::Future<Output = Row> + Send + 'static,
+    {
         match self {
-            Self::Cooperative(pending) => pending.extend(runs),
+            Self::Cooperative(pending) => pending.extend(runs.into_iter().map(FutureExt::boxed)),
             #[cfg(feature = "parallel")]
             Self::Workers(pending) => pending.push(batch(runs)),
         }
@@ -63,7 +69,10 @@ pub(crate) fn grain(ready: usize, maximum: usize) -> usize {
     maximum
 }
 
-pub(crate) fn batch(runs: Vec<Run>) -> Runs {
+pub(crate) fn batch<F>(runs: Vec<F>) -> Runs
+where
+    F: std::future::Future<Output = Row> + Send + 'static,
+{
     #[cfg(feature = "parallel")]
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
         if runs.len() == 1 {
@@ -192,6 +201,13 @@ mod tests {
         });
     }
 
+    async fn gated_row(id: u64, gate: Option<oneshot::Receiver<()>>) -> Row {
+        if let Some(gate) = gate {
+            gate.await.unwrap();
+        }
+        row(id)
+    }
+
     #[test]
     #[cfg(feature = "parallel")]
     fn ready_row_streams_before_an_awaiting_sibling_finishes() {
@@ -200,14 +216,8 @@ mod tests {
             .unwrap()
             .block_on(async {
                 let (release, waiting) = oneshot::channel::<()>();
-                let mut values = batch(vec![
-                    async move {
-                        waiting.await.unwrap();
-                        row(1)
-                    }
-                    .boxed(),
-                    async { row(2) }.boxed(),
-                ]);
+                // Both rows have the same concrete, !Unpin future type.
+                let mut values = batch(vec![gated_row(1, Some(waiting)), gated_row(2, None)]);
                 assert_eq!(values.next().await.unwrap().0.keys[0].raw(), 2);
                 release.send(()).unwrap();
                 assert_eq!(values.next().await.unwrap().0.keys[0].raw(), 1);
