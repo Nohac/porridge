@@ -537,3 +537,7 @@ or use `-- --test` to smoke-test that target.
 An isolated [purchase comparison](experiments/purchase-comparison/README.md)
 provides a Bevy ECS reference for the same purchase contract, with separate
 dependencies and documented differences in execution and bookkeeping.
+
+[Execution profiling](spec/execution-profiling.md) isolates typed/boxed worker
+dispatch and profiles complete purchases, with a proposed schema-driven driver
+preparation plan and reproducible benchmark controls.

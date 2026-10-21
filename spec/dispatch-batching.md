@@ -125,6 +125,8 @@ prioritizes speed; code growth is an acceptable tradeoff when it improves runtim
 The fully specialized version is retained. The workload-dependent results do not
 establish an execution-speed advantage for either boundary, and smaller code is
 not the objective. Keep the alternative as benchmark evidence, not a runtime
-policy knob. Isolated dispatch measurement and profiling the complete workload
-are needed to distinguish kernel-path improvements from planner/publication
-bottlenecks before prepared-fetch work.
+policy knob. [Isolated dispatch measurements and full-workload profiles](execution-profiling.md)
+now show a benefit from concrete rows in the measured eight-worker tiny-kernel
+cases, while driver bookkeeping dominates light complete workloads. The production
+worker executor lives in `dispatch/executor.rs`; the microbenchmark includes that
+same source. Prepared driver metadata is the proposed next slice.

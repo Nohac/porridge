@@ -19,3 +19,7 @@ harness = false
 [[bench]]
 name = "stateful"
 harness = false
+
+[[bench]]
+name = "dispatch"
+harness = false

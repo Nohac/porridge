@@ -840,7 +840,8 @@ Current shortcut:
 Remaining work:
 - Done: typed per-system execution plans remove explicit ordinary worker-row
   future boxing. Isolated executor measurements and whole-workload profiling
-  remain necessary before attributing an execution speedup.
+  are captured in `spec/execution-profiling.md`; prepare schema/query metadata
+  for driver lookups next. Precise performance acceptance remains open.
 - Planning and publication still run on one evaluator.
 - Per-system admission and commit policies remain proposals. The implemented
   `set_dispatch_batch_size` is a maximum rows-per-task setting only.

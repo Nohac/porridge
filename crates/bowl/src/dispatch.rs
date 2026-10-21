@@ -6,6 +6,8 @@ use futures::{
     stream::{BoxStream, FuturesUnordered},
 };
 
+#[cfg(feature = "parallel")]
+mod executor;
 mod plan;
 pub(crate) use plan::{Admission, RunPlan, prepare};
 
@@ -75,94 +77,10 @@ where
 {
     #[cfg(feature = "parallel")]
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-        if runs.len() == 1 {
-            let run = runs.into_iter().next().expect("one run");
-            return futures::stream::once(SpawnedRun {
-                handle: runtime.spawn(run),
-            })
-            .boxed();
-        }
-        if !runs.is_empty() {
-            // One sender and at most one result per row: bounded storage even if
-            // every row finishes before the evaluator polls this stream again.
-            let (sender, receiver) = futures::channel::mpsc::channel(runs.len());
-            let handle = runtime.spawn(async move {
-                let mut sender = sender;
-                let mut pending: FuturesUnordered<_> = runs.into_iter().collect();
-                while let Some(row) = pending.next().await {
-                    if let Err(error) = sender.try_send(row) {
-                        if error.is_disconnected() {
-                            return;
-                        }
-                        panic!("completion capacity covers every admitted row");
-                    }
-                }
-            });
-            return Box::pin(SpawnedBatch { receiver, handle });
-        }
+        return executor::spawn(&runtime, runs);
     }
-    // Preserve executor-agnostic cooperative operation without feature changes.
+
     runs.into_iter().collect::<FuturesUnordered<_>>().boxed()
-}
-
-#[cfg(feature = "parallel")]
-struct SpawnedRun {
-    handle: tokio::task::JoinHandle<Row>,
-}
-
-#[cfg(feature = "parallel")]
-impl std::future::Future for SpawnedRun {
-    type Output = Row;
-
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Row> {
-        std::pin::Pin::new(&mut self.handle)
-            .poll(cx)
-            .map(|result| result.expect("system task panicked or was aborted"))
-    }
-}
-
-#[cfg(feature = "parallel")]
-impl Drop for SpawnedRun {
-    fn drop(&mut self) {
-        self.handle.abort();
-    }
-}
-
-#[cfg(feature = "parallel")]
-struct SpawnedBatch {
-    receiver: futures::channel::mpsc::Receiver<Row>,
-    handle: tokio::task::JoinHandle<()>,
-}
-
-#[cfg(feature = "parallel")]
-impl futures::Stream for SpawnedBatch {
-    type Item = Row;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Row>> {
-        use std::{future::Future, task::Poll};
-        match self.receiver.poll_next_unpin(cx) {
-            Poll::Ready(None) => std::pin::Pin::new(&mut self.handle).poll(cx).map(|result| {
-                result.expect("system batch panicked or was aborted");
-                None
-            }),
-            ready => ready,
-        }
-    }
-}
-
-#[cfg(feature = "parallel")]
-impl Drop for SpawnedBatch {
-    fn drop(&mut self) {
-        // Read and write batches never mix. Dropping the reader stream cancels
-        // pending reads; writer streams are drained by the preemption path.
-        self.handle.abort();
-    }
 }
 
 #[cfg(test)]

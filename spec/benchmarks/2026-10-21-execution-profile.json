@@ -1,0 +1,5955 @@
+{
+  "date": "2026-10-21",
+  "base_commit": "70ccd1dab428789318b51abbd73a58b65dc9c113",
+  "machine": {
+    "uname": {
+      "system": "Linux",
+      "node": "graphite",
+      "release": "7.2.8",
+      "version": "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+      "machine": "x86_64",
+      "processor": ""
+    },
+    "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  20\nOn-line CPU(s) list:                     0-19\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen AI 9 365 w/ Radeon 880M\nCPU family:                              26\nModel:                                   36\nThread(s) per core:                      2\nCore(s) per socket:                      10\nSocket(s):                               1\nStepping:                                0\nMicrocode version:                       0xb204011\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      58%\nCPU max MHz:                             5090.9102\nCPU min MHz:                             623.3770\nBogoMIPS:                                3992.80\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d amd_lbr_pmc_freeze\nVirtualization:                          AMD-V\nL1d cache:                               480 KiB (10 instances)\nL1i cache:                               320 KiB (10 instances)\nL2 cache:                                10 MiB (10 instances)\nL3 cache:                                24 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-19\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; IBPB on VMEXIT only\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB on VMEXIT\n"
+  },
+  "micro_manifest": {
+    "base_commit": "70ccd1dab428789318b51abbd73a58b65dc9c113",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "binary": "/home/jonas/Development/Rust/porridge/target/release/deps/dispatch-21be2589be365e7d",
+    "binary_sha256": "0e388898960cdd51afcfa96cfbd8ac0771b8f481ed9cc7005fc3e6761be3ddbe",
+    "lockfile_sha256": "4299d568feac33cb46bec57d5cb974401a3035cb0b3e5d9865f60cad1b7290c0",
+    "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+    "source_sha256": {
+      "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+      "crates/benches/benches/dispatch.rs": "f9a8af00901aa0d9f95fb320600bc26dc983ddcc1a706dd54430e9947f53468d"
+    },
+    "notes": [
+      "One optimized executable and workspace feature graph for every variant.",
+      "Fixed batch width 16; rows=1000 matches the production adaptive maximum for 1/8 workers.",
+      "Synthetic inline 128-byte state; construct futures, spawn, poll, send completions and drain inside timing. No Bowl, planning, fetch guards, memo or commit.",
+      "Typed: concrete rows/tasks. Boxed: one BoxFuture per row. Shared task: concrete rows with one erased outer task future.",
+      "Return count/checksum assertions run outside timing. Results pass black_box after timing.",
+      "Active workstation; two fresh processes per variant in rotating/reversed order. No speed acceptance threshold."
+    ]
+  },
+  "micro_measurements": [
+    {
+      "rows": 1,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3136.447827939923,
+          "upper_bound": 3641.734859287462
+        },
+        "point_estimate": 3371.123745701437,
+        "standard_error": 127.74277787065203
+      },
+      "rows_per_second": 296636.98975011305
+    },
+    {
+      "rows": 1,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 2881.484342424494,
+          "upper_bound": 3053.709506007651
+        },
+        "point_estimate": 2974.985988062232,
+        "standard_error": 43.683401941304744
+      },
+      "rows_per_second": 336136.03694696847
+    },
+    {
+      "rows": 1,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3340.4976496609265,
+          "upper_bound": 5943.193384359053
+        },
+        "point_estimate": 4084.219367703004,
+        "standard_error": 689.5853703785822
+      },
+      "rows_per_second": 244844.83079135086
+    },
+    {
+      "rows": 1,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3124.0789063216807,
+          "upper_bound": 3537.1355547999547
+        },
+        "point_estimate": 3357.656661697785,
+        "standard_error": 107.11948501400458
+      },
+      "rows_per_second": 297826.75858655374
+    },
+    {
+      "rows": 1,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 2933.320326689933,
+          "upper_bound": 3251.72160280102
+        },
+        "point_estimate": 3088.7363085605493,
+        "standard_error": 87.0444895373938
+      },
+      "rows_per_second": 323756.9996598487
+    },
+    {
+      "rows": 1,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 2993.4131797624727,
+          "upper_bound": 3126.271221130645
+        },
+        "point_estimate": 3075.852270376986,
+        "standard_error": 34.274397172871794
+      },
+      "rows_per_second": 325113.1433166772
+    },
+    {
+      "rows": 1,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5679.512688022553,
+          "upper_bound": 6035.963120464603
+        },
+        "point_estimate": 5829.705717956955,
+        "standard_error": 95.21343533307228
+      },
+      "rows_per_second": 171535.24523883758
+    },
+    {
+      "rows": 1,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5569.751802960835,
+          "upper_bound": 6094.097046298608
+        },
+        "point_estimate": 5784.709625387735,
+        "standard_error": 142.77261443348493
+      },
+      "rows_per_second": 172869.52410043788
+    },
+    {
+      "rows": 1,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5731.245234709134,
+          "upper_bound": 9900.803776416664
+        },
+        "point_estimate": 8290.435108693953,
+        "standard_error": 1047.3762859410126
+      },
+      "rows_per_second": 120620.93085456121
+    },
+    {
+      "rows": 1,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5624.372781263844,
+          "upper_bound": 9197.344164229737
+        },
+        "point_estimate": 7327.8233570309,
+        "standard_error": 920.3658614540694
+      },
+      "rows_per_second": 136466.17164161307
+    },
+    {
+      "rows": 1,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5637.648991477866,
+          "upper_bound": 5744.568205315956
+        },
+        "point_estimate": 5690.230499472516,
+        "standard_error": 27.475125043247807
+      },
+      "rows_per_second": 175739.80528428504
+    },
+    {
+      "rows": 1,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5399.594819282956,
+          "upper_bound": 10006.332550173622
+        },
+        "point_estimate": 7795.174160322436,
+        "standard_error": 1180.5033434691074
+      },
+      "rows_per_second": 128284.49748948732
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 286573.5197130272,
+          "upper_bound": 291472.0667821794
+        },
+        "point_estimate": 288444.456254272,
+        "standard_error": 1258.9269123990694
+      },
+      "rows_per_second": 3466871.9689952075
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 633310.8733361958,
+          "upper_bound": 658868.3386554621
+        },
+        "point_estimate": 647345.0647822765,
+        "standard_error": 6771.306952616144
+      },
+      "rows_per_second": 1544771.1806319756
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 365946.77230016736,
+          "upper_bound": 368922.20588235295
+        },
+        "point_estimate": 367013.26737967914,
+        "standard_error": 755.3397696486525
+      },
+      "rows_per_second": 2724697.1400777437
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 270105.7559139785,
+          "upper_bound": 319172.8900929952
+        },
+        "point_estimate": 285754.94406926405,
+        "standard_error": 12820.603280053276
+      },
+      "rows_per_second": 3499502.0060181716
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 426133.25469856896,
+          "upper_bound": 437854.1185705368
+        },
+        "point_estimate": 429328.258008658,
+        "standard_error": 3081.1483908035357
+      },
+      "rows_per_second": 2329220.081245697
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 284702.18302331876,
+          "upper_bound": 349676.7513242264
+        },
+        "point_estimate": 301901.9746371276,
+        "standard_error": 17291.208472217622
+      },
+      "rows_per_second": 3312333.4194880784
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 636277.8824168167,
+          "upper_bound": 805602.1320850202
+        },
+        "point_estimate": 698358.0445554445,
+        "standard_error": 43688.200010817985
+      },
+      "rows_per_second": 1431930.2366403933
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 709047.5358480471,
+          "upper_bound": 818477.934534648
+        },
+        "point_estimate": 738692.7764378479,
+        "standard_error": 29696.007766391776
+      },
+      "rows_per_second": 1353742.7627521115
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 430070.2209448161,
+          "upper_bound": 431554.53036206134
+        },
+        "point_estimate": 430515.55324675323,
+        "standard_error": 378.73034429133344
+      },
+      "rows_per_second": 2322796.452900373
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 646080.9888107417,
+          "upper_bound": 648092.4
+        },
+        "point_estimate": 647100.9676088617,
+        "standard_error": 505.9775026659218
+      },
+      "rows_per_second": 1545353.8938369306
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 466209.7032520325,
+          "upper_bound": 471126.3716826923
+        },
+        "point_estimate": 468653.4312770563,
+        "standard_error": 1249.2709726490314
+      },
+      "rows_per_second": 2133772.918881767
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 0,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 449307.0706037611,
+          "upper_bound": 753600.2748421759
+        },
+        "point_estimate": 542826.680952381,
+        "standard_error": 78038.16890980104
+      },
+      "rows_per_second": 1842208.6369179855
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 18085912.774305556,
+          "upper_bound": 18100955.85446282
+        },
+        "point_estimate": 18095114.0987013,
+        "standard_error": 3681.133059181838
+      },
+      "rows_per_second": 55263.53658481606
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 12089195.98381877,
+          "upper_bound": 12200768.27797834
+        },
+        "point_estimate": 12138036.532467533,
+        "standard_error": 28607.161063899453
+      },
+      "rows_per_second": 82385.64757365339
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 8495932.038584482,
+          "upper_bound": 8578726.557692308
+        },
+        "point_estimate": 8526913.998701299,
+        "standard_error": 21000.869337896394
+      },
+      "rows_per_second": 117275.7225125416
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 10489904.62745098,
+          "upper_bound": 16157492.228448275
+        },
+        "point_estimate": 12544734.657142857,
+        "standard_error": 1422539.833035545
+      },
+      "rows_per_second": 79714.7191495684
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 18012465.22244029,
+          "upper_bound": 18031138.79673357
+        },
+        "point_estimate": 18024019.74805195,
+        "standard_error": 4589.1103410745
+      },
+      "rows_per_second": 55481.51932690158
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 17768857.4,
+          "upper_bound": 18077587.13489939
+        },
+        "point_estimate": 17947388.937662337,
+        "standard_error": 94257.0458524261
+      },
+      "rows_per_second": 55718.41137857744
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 12242683.251908397,
+          "upper_bound": 12260019.500225661
+        },
+        "point_estimate": 12253598.945454545,
+        "standard_error": 4394.214088695913
+      },
+      "rows_per_second": 81608.67712835898
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 17106402.88938053,
+          "upper_bound": 18249504.3088685
+        },
+        "point_estimate": 17870612.374025974,
+        "standard_error": 301820.4738793414
+      },
+      "rows_per_second": 55957.791432679114
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 17897748.86055777,
+          "upper_bound": 18297040.021347824
+        },
+        "point_estimate": 18164160.05974026,
+        "standard_error": 106052.27650754164
+      },
+      "rows_per_second": 55053.46774698591
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 11177975.799898194,
+          "upper_bound": 12283650.14917127
+        },
+        "point_estimate": 11824991.792207792,
+        "standard_error": 339545.18280754966
+      },
+      "rows_per_second": 84566.65489264533
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 8969324.616984403,
+          "upper_bound": 11075956.096774194
+        },
+        "point_estimate": 9632652.015584415,
+        "standard_error": 550031.9218450886
+      },
+      "rows_per_second": 103813.57059116496
+    },
+    {
+      "rows": 1000,
+      "workers": 1,
+      "work": 10000,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "1",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 11234950.433947569,
+          "upper_bound": 12775551.871788021
+        },
+        "point_estimate": 11702215.945454545,
+        "standard_error": 419335.3032666302
+      },
+      "rows_per_second": 85453.90075359418
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 285971.4684146945,
+          "upper_bound": 367733.59920311073
+        },
+        "point_estimate": 330929.3293787294,
+        "standard_error": 22309.050831253437
+      },
+      "rows_per_second": 3021793.2084694677
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 461876.7855513308,
+          "upper_bound": 804518.468164794
+        },
+        "point_estimate": 612640.6423376623,
+        "standard_error": 91283.84113564334
+      },
+      "rows_per_second": 1632278.2572574432
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 363561.94022106926,
+          "upper_bound": 426509.85572407424
+        },
+        "point_estimate": 397045.47691663174,
+        "standard_error": 15771.795358352085
+      },
+      "rows_per_second": 2518603.178068621
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 293023.7819838766,
+          "upper_bound": 313282.60002955084
+        },
+        "point_estimate": 304578.5816738817,
+        "standard_error": 4948.5977070700155
+      },
+      "rows_per_second": 3283224.9546382083
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 540854.7736617562,
+          "upper_bound": 888629.0745963963
+        },
+        "point_estimate": 685065.6881385281,
+        "standard_error": 86438.14557162402
+      },
+      "rows_per_second": 1459714.0351857594
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 279795.5480534658,
+          "upper_bound": 293673.5813209272
+        },
+        "point_estimate": 287840.11555111554,
+        "standard_error": 3679.591570813011
+      },
+      "rows_per_second": 3474150.912166435
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 654248.07625,
+          "upper_bound": 773458.5288577022
+        },
+        "point_estimate": 726673.6128138528,
+        "standard_error": 30513.81269933046
+      },
+      "rows_per_second": 1376133.634642054
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 264238.37354497355,
+          "upper_bound": 361045.2605783866
+        },
+        "point_estimate": 302680.98114478117,
+        "standard_error": 25541.282736789602
+      },
+      "rows_per_second": 3303808.505634752
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 243383.7949424542,
+          "upper_bound": 268716.53232498997
+        },
+        "point_estimate": 258323.16539589444,
+        "standard_error": 6498.825911645503
+      },
+      "rows_per_second": 3871120.108285469
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 303659.19047605357,
+          "upper_bound": 318819.5785815603
+        },
+        "point_estimate": 309353.25636363635,
+        "standard_error": 3864.936919526694
+      },
+      "rows_per_second": 3232550.4239222463
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 204665.37911647707,
+          "upper_bound": 283107.20336219337
+        },
+        "point_estimate": 233843.41651205937,
+        "standard_error": 19320.422928860833
+      },
+      "rows_per_second": 4276365.847350805
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 0,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "0",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 745445.7530165913,
+          "upper_bound": 957595.4803913155
+        },
+        "point_estimate": 881604.7683728037,
+        "standard_error": 54140.482957833876
+      },
+      "rows_per_second": 1134295.1352744165
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1608073.9294662385,
+          "upper_bound": 1685991.7721212122
+        },
+        "point_estimate": 1646261.2636363637,
+        "standard_error": 20023.303647901874
+      },
+      "rows_per_second": 607436.9980565164
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1595525.5425007676,
+          "upper_bound": 1700303.467935128
+        },
+        "point_estimate": 1636994.854174397,
+        "standard_error": 26469.84465364541
+      },
+      "rows_per_second": 610875.4694310513
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1508961.0377728508,
+          "upper_bound": 1582369.2591362125
+        },
+        "point_estimate": 1541183.3591836735,
+        "standard_error": 18603.744707283888
+      },
+      "rows_per_second": 648852.0616584357
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": false,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1618841.2105568303,
+          "upper_bound": 1725432.1178451178
+        },
+        "point_estimate": 1658732.0838589983,
+        "standard_error": 27251.49216277549
+      },
+      "rows_per_second": 602870.1137036701
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": false,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1449421.6970152936,
+          "upper_bound": 1497156.372471684
+        },
+        "point_estimate": 1468476.058116883,
+        "standard_error": 12038.767716814158
+      },
+      "rows_per_second": 680978.0755175275
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": false,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "0",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1461468.1815059693,
+          "upper_bound": 1517579.64747191
+        },
+        "point_estimate": 1484106.1357142858,
+        "standard_error": 15224.004386103006
+      },
+      "rows_per_second": 673806.2568002994
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1487736.2836676217,
+          "upper_bound": 1550405.3387002342
+        },
+        "point_estimate": 1512440.3126623377,
+        "standard_error": 16168.940203436474
+      },
+      "rows_per_second": 661183.1168660846
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1601873.2928930365,
+          "upper_bound": 1647169.2583056479
+        },
+        "point_estimate": 1625880.667903525,
+        "standard_error": 11555.308561309203
+      },
+      "rows_per_second": 615051.2886591115
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 0,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1552095.9363017934,
+          "upper_bound": 1598633.1702779054
+        },
+        "point_estimate": 1569055.6749536179,
+        "standard_error": 11535.151478409396
+      },
+      "rows_per_second": 637326.0145976404
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": true,
+      "variant": "shared_task",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "shared_task"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1515349.858357988,
+          "upper_bound": 1550153.2637578617
+        },
+        "point_estimate": 1530486.575,
+        "standard_error": 8980.372558255449
+      },
+      "rows_per_second": 653386.9792356722
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": true,
+      "variant": "boxed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "boxed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1635619.8358662615,
+          "upper_bound": 1689701.3400355598
+        },
+        "point_estimate": 1658573.2515769945,
+        "standard_error": 13761.063737834369
+      },
+      "rows_per_second": 602927.8472019165
+    },
+    {
+      "rows": 1000,
+      "workers": 8,
+      "work": 10000,
+      "suspend": true,
+      "variant": "typed",
+      "repeat": 1,
+      "environment": {
+        "DISPATCH_ROWS": "1000",
+        "DISPATCH_WORKERS": "8",
+        "DISPATCH_WORK": "10000",
+        "DISPATCH_SUSPEND": "1",
+        "DISPATCH_BATCH": "16",
+        "DISPATCH_VARIANT": "typed"
+      },
+      "command": [
+        "dispatch-21be2589be365e7d",
+        "--bench",
+        "dispatch",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.6",
+        "--sample-size",
+        "20",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 1531900.2672193877,
+          "upper_bound": 1582998.5108240882
+        },
+        "point_estimate": 1563895.4727272727,
+        "standard_error": 13317.532016254985
+      },
+      "rows_per_second": 639428.9243999812
+    }
+  ],
+  "profile_manifest": {
+    "base_commit": "70ccd1dab428789318b51abbd73a58b65dc9c113",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "perf_version": "perf version 7.2.8",
+    "binary_sha256": "5648b02ab4a9ba283141a77e43a848b90ecbb04b89d7d7c42143952f17f2f576",
+    "smoke_only": false
+  },
+  "profile_source_sha256": {
+    "crates/benches/examples/profile_purchases.rs": "0358dbbe9be16b05a5640d4f3c3fc51fe777b8e07182d970cf2c6c48d3104570",
+    "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+    "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362"
+  },
+  "profiles": [
+    {
+      "name": "light-1",
+      "environment": {
+        "PROFILE_WORKERS": "1",
+        "PROFILE_REQUESTS": "1000",
+        "PROFILE_PER_OWNER": "1",
+        "PROFILE_WORK": "0",
+        "PROFILE_DISPATCH_BATCH": "16",
+        "PROFILE_ROUNDS": "80",
+        "PROFILE_WARMUP": "2"
+      },
+      "perf_command": [
+        "/nix/store/4abhg06h0n7vr1l94kkiifbf3ayzj74r-perf-linux-7.2.8/bin/perf",
+        "record",
+        "-e",
+        "cpu-clock:u",
+        "-F",
+        "499",
+        "--call-graph",
+        "dwarf,8192",
+        "-D",
+        "-1",
+        "--control",
+        "fifo:/home/jonas/Development/Rust/porridge/target/execution-profile/light-1/control,/home/jonas/Development/Rust/porridge/target/execution-profile/light-1/ack",
+        "-o",
+        "/home/jonas/Development/Rust/porridge/target/execution-profile/light-1/perf.data",
+        "--",
+        "/home/jonas/Development/Rust/porridge/target/release/examples/profile_purchases"
+      ],
+      "sampled_thread_cpu": [
+        {
+          "cpu_percent": 18.25,
+          "samples": 303,
+          "comm": "porridge-worker",
+          "symbol": ""
+        },
+        {
+          "cpu_percent": 81.75,
+          "samples": 1357,
+          "comm": "profile_purchas",
+          "symbol": ""
+        }
+      ],
+      "sample_count": 1660,
+      "lost_samples": 0,
+      "unsampled_means": {
+        "wall_ms": 46.4910096,
+        "settle_ms": 43.309050000000006,
+        "snapshot_ms": 0.6531,
+        "plan_ms": 17.50246505,
+        "summed_poll_ms": 9.1543727,
+        "waves": 11.15,
+        "completed_row_invocations": 5000.0
+      },
+      "unsampled_rounds": {
+        "samples": [
+          {
+            "round": 0,
+            "requests": 1000,
+            "wall_ns": 47924547,
+            "settle_us": 44829,
+            "snapshot_us": 530,
+            "hook_commit_us": 0,
+            "waves": 10
+          },
+          {
+            "round": 1,
+            "requests": 1000,
+            "wall_ns": 44995947,
+            "settle_us": 41803,
+            "snapshot_us": 575,
+            "hook_commit_us": 0,
+            "waves": 11
+          },
+          {
+            "round": 2,
+            "requests": 1000,
+            "wall_ns": 50032495,
+            "settle_us": 46926,
+            "snapshot_us": 1021,
+            "hook_commit_us": 1,
+            "waves": 10
+          },
+          {
+            "round": 3,
+            "requests": 1000,
+            "wall_ns": 46433807,
+            "settle_us": 43211,
+            "snapshot_us": 646,
+            "hook_commit_us": 0,
+            "waves": 11
+          },
+          {
+            "round": 4,
+            "requests": 1000,
+            "wall_ns": 45822359,
+            "settle_us": 42697,
+            "snapshot_us": 564,
+            "hook_commit_us": 1,
+            "waves": 10
+          },
+          {
+            "round": 5,
+            "requests": 1000,
+            "wall_ns": 45408932,
+            "settle_us": 42366,
+            "snapshot_us": 477,
+            "hook_commit_us": 1,
+            "waves": 11
+          },
+          {
+            "round": 6,
+            "requests": 1000,
+            "wall_ns": 42257254,
+            "settle_us": 38896,
+            "snapshot_us": 285,
+            "hook_commit_us": 1,
+            "waves": 9
+          },
+          {
+            "round": 7,
+            "requests": 1000,
+            "wall_ns": 45985646,
+            "settle_us": 42839,
+            "snapshot_us": 570,
+            "hook_commit_us": 1,
+            "waves": 9
+          },
+          {
+            "round": 8,
+            "requests": 1000,
+            "wall_ns": 43181570,
+            "settle_us": 40079,
+            "snapshot_us": 357,
+            "hook_commit_us": 0,
+            "waves": 9
+          },
+          {
+            "round": 9,
+            "requests": 1000,
+            "wall_ns": 58633687,
+            "settle_us": 55462,
+            "snapshot_us": 2526,
+            "hook_commit_us": 1,
+            "waves": 30
+          },
+          {
+            "round": 10,
+            "requests": 1000,
+            "wall_ns": 48367218,
+            "settle_us": 45193,
+            "snapshot_us": 522,
+            "hook_commit_us": 1,
+            "waves": 10
+          },
+          {
+            "round": 11,
+            "requests": 1000,
+            "wall_ns": 44244576,
+            "settle_us": 41199,
+            "snapshot_us": 369,
+            "hook_commit_us": 1,
+            "waves": 9
+          },
+          {
+            "round": 12,
+            "requests": 1000,
+            "wall_ns": 46695178,
+            "settle_us": 43658,
+            "snapshot_us": 392,
+            "hook_commit_us": 0,
+            "waves": 10
+          },
+          {
+            "round": 13,
+            "requests": 1000,
+            "wall_ns": 42924096,
+            "settle_us": 39773,
+            "snapshot_us": 304,
+            "hook_commit_us": 1,
+            "waves": 10
+          },
+          {
+            "round": 14,
+            "requests": 1000,
+            "wall_ns": 46333168,
+            "settle_us": 43228,
+            "snapshot_us": 499,
+            "hook_commit_us": 1,
+            "waves": 13
+          },
+          {
+            "round": 15,
+            "requests": 1000,
+            "wall_ns": 44848360,
+            "settle_us": 41770,
+            "snapshot_us": 919,
+            "hook_commit_us": 1,
+            "waves": 13
+          },
+          {
+            "round": 16,
+            "requests": 1000,
+            "wall_ns": 47434416,
+            "settle_us": 43649,
+            "snapshot_us": 520,
+            "hook_commit_us": 1,
+            "waves": 10
+          },
+          {
+            "round": 17,
+            "requests": 1000,
+            "wall_ns": 45956401,
+            "settle_us": 42851,
+            "snapshot_us": 791,
+            "hook_commit_us": 1,
+            "waves": 9
+          },
+          {
+            "round": 18,
+            "requests": 1000,
+            "wall_ns": 48716404,
+            "settle_us": 45247,
+            "snapshot_us": 713,
+            "hook_commit_us": 1,
+            "waves": 11
+          },
+          {
+            "round": 19,
+            "requests": 1000,
+            "wall_ns": 43624131,
+            "settle_us": 40505,
+            "snapshot_us": 482,
+            "hook_commit_us": 0,
+            "waves": 8
+          }
+        ],
+        "systems": [
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 8124800,
+            "poll_ns": 3459594
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6615275,
+            "poll_ns": 2877244
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4375146,
+            "poll_ns": 3820753
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6748331,
+            "poll_ns": 3384691
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6232303,
+            "poll_ns": 2343992
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3915744,
+            "poll_ns": 2821532
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7328312,
+            "poll_ns": 3133857
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6738554,
+            "poll_ns": 2922155
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4270129,
+            "poll_ns": 2956698
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7284629,
+            "poll_ns": 3399935
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6507228,
+            "poll_ns": 2975788
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4183478,
+            "poll_ns": 3669160
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6959421,
+            "poll_ns": 3250370
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6169776,
+            "poll_ns": 2428429
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3975265,
+            "poll_ns": 2964235
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6816159,
+            "poll_ns": 3752198
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6276267,
+            "poll_ns": 2489338
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4020310,
+            "poll_ns": 3128490
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6548709,
+            "poll_ns": 3342613
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5877067,
+            "poll_ns": 2350229
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3872652,
+            "poll_ns": 2971498
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6873036,
+            "poll_ns": 3292735
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6307095,
+            "poll_ns": 2403300
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4102986,
+            "poll_ns": 2785643
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6465331,
+            "poll_ns": 3443720
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6007231,
+            "poll_ns": 2291203
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3934168,
+            "poll_ns": 3267550
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7732555,
+            "poll_ns": 4139251
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6908465,
+            "poll_ns": 3319207
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4809351,
+            "poll_ns": 2923915
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7863136,
+            "poll_ns": 3253366
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6488205,
+            "poll_ns": 2606876
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4522683,
+            "poll_ns": 2993659
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6972524,
+            "poll_ns": 3299132
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5963148,
+            "poll_ns": 2347349
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4009269,
+            "poll_ns": 3080695
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6992684,
+            "poll_ns": 3272245
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6114513,
+            "poll_ns": 2584690
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4058783,
+            "poll_ns": 2747437
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6720249,
+            "poll_ns": 3062636
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5939493,
+            "poll_ns": 2288736
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3871248,
+            "poll_ns": 3082331
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6788750,
+            "poll_ns": 3439676
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6229409,
+            "poll_ns": 2454726
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4196140,
+            "poll_ns": 3131854
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7037514,
+            "poll_ns": 3914291
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6342920,
+            "poll_ns": 2653188
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4038315,
+            "poll_ns": 3612470
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7040393,
+            "poll_ns": 3814754
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6533487,
+            "poll_ns": 3455692
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4264019,
+            "poll_ns": 3064819
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7180785,
+            "poll_ns": 3364104
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6529290,
+            "poll_ns": 2943934
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4073728,
+            "poll_ns": 2836675
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 7405978,
+            "poll_ns": 2931755
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6099596,
+            "poll_ns": 2758825
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4045798,
+            "poll_ns": 2998336
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6785993,
+            "poll_ns": 3255415
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5939624,
+            "poll_ns": 2908935
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4021854,
+            "poll_ns": 2619530
+          }
+        ]
+      },
+      "exclusive_leaf_groups_percent": {
+        "other": 54.33000000000002,
+        "hashing": 13.79,
+        "allocator": 18.73,
+        "reservations": 5.6,
+        "revision_lookup": 5.0,
+        "fingerprint_lookup": 2.35
+      },
+      "top_self_symbols": [
+        {
+          "cpu_percent": 5.0,
+          "samples": 83,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::revision_for_entity"
+        },
+        {
+          "cpu_percent": 4.16,
+          "samples": 69,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 3.13,
+          "samples": 52,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 2.95,
+          "samples": 49,
+          "comm": "profile_purchas",
+          "symbol": "[.] __libc_malloc2"
+        },
+        {
+          "cpu_percent": 2.83,
+          "samples": 47,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::remove"
+        },
+        {
+          "cpu_percent": 2.41,
+          "samples": 40,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&bowl::entity::Entity>"
+        },
+        {
+          "cpu_percent": 2.35,
+          "samples": 39,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 2.29,
+          "samples": 38,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 2.05,
+          "samples": 34,
+          "comm": "profile_purchas",
+          "symbol": "[.] __memmove_avx512_unaligned_erms"
+        },
+        {
+          "cpu_percent": 1.81,
+          "samples": 30,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::insert"
+        },
+        {
+          "cpu_percent": 1.81,
+          "samples": 30,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::World>::fingerprint::<benches::stateful::purchases::Owner>"
+        },
+        {
+          "cpu_percent": 1.75,
+          "samples": 29,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 1.63,
+          "samples": 27,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 1.57,
+          "samples": 26,
+          "comm": "profile_purchas",
+          "symbol": "[.] realloc"
+        },
+        {
+          "cpu_percent": 1.51,
+          "samples": 25,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::query::component_dep_if_tracked::<benches::stateful::purchases::Owner>"
+        },
+        {
+          "cpu_percent": 1.45,
+          "samples": 24,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::bowl::commit_system_run::{closure#0}"
+        },
+        {
+          "cpu_percent": 1.45,
+          "samples": 24,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc_consolidate"
+        },
+        {
+          "cpu_percent": 1.27,
+          "samples": 21,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 1.2,
+          "samples": 20,
+          "comm": "profile_purchas",
+          "symbol": "[.] <hashbrown::map::HashMap<bowl::world::SystemInvocation, bowl::system::MemoEntry, std::hash::random::RandomState>>::get::<bowl::world::SystemInvocation>"
+        },
+        {
+          "cpu_percent": 1.2,
+          "samples": 20,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::query::component_dep_if_tracked::<benches::stateful::purchases::Outcome>"
+        },
+        {
+          "cpu_percent": 1.2,
+          "samples": 20,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc"
+        },
+        {
+          "cpu_percent": 1.08,
+          "samples": 18,
+          "comm": "profile_purchas",
+          "symbol": "[.] core::slice::sort::unstable::quicksort::quicksort::<bowl::entity::Entity, <bowl::entity::Entity as core::cmp::PartialOrd>::lt>"
+        },
+        {
+          "cpu_percent": 1.02,
+          "samples": 17,
+          "comm": "porridge-worker",
+          "symbol": "[.] <bowl::world::ComponentCell<benches::stateful::purchases::Owner>>::read"
+        },
+        {
+          "cpu_percent": 1.02,
+          "samples": 17,
+          "comm": "porridge-worker",
+          "symbol": "[.] __libc_malloc2"
+        },
+        {
+          "cpu_percent": 1.02,
+          "samples": 17,
+          "comm": "profile_purchas",
+          "symbol": "[.] <hashbrown::map::HashMap<bowl::world::SystemInvocation, (), std::hash::random::RandomState>>::remove::<bowl::world::SystemInvocation>"
+        },
+        {
+          "cpu_percent": 0.96,
+          "samples": 16,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::conflicts"
+        },
+        {
+          "cpu_percent": 0.9,
+          "samples": 15,
+          "comm": "profile_purchas",
+          "symbol": "[.] cfree@GLIBC_2.2.5"
+        },
+        {
+          "cpu_percent": 0.84,
+          "samples": 14,
+          "comm": "porridge-worker",
+          "symbol": "[.] <(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>) as bowl::system::SystemParam>::fetch"
+        },
+        {
+          "cpu_percent": 0.84,
+          "samples": 14,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 0.84,
+          "samples": 14,
+          "comm": "profile_purchas",
+          "symbol": "[.] <&benches::stateful::purchases::Purchase as bowl::query::QueryPart>::deps"
+        }
+      ],
+      "perf_log_tail": [
+        "Events disabled",
+        "[ perf record: Woken up 210 times to write data ]",
+        "[ perf record: Captured and wrote 13.405 MB /home/jonas/Development/Rust/porridge/target/execution-profile/light-1/perf.data (1660 samples) ]"
+      ]
+    },
+    {
+      "name": "light-8",
+      "environment": {
+        "PROFILE_WORKERS": "8",
+        "PROFILE_REQUESTS": "1000",
+        "PROFILE_PER_OWNER": "1",
+        "PROFILE_WORK": "0",
+        "PROFILE_DISPATCH_BATCH": "16",
+        "PROFILE_ROUNDS": "80",
+        "PROFILE_WARMUP": "2"
+      },
+      "perf_command": [
+        "/nix/store/4abhg06h0n7vr1l94kkiifbf3ayzj74r-perf-linux-7.2.8/bin/perf",
+        "record",
+        "-e",
+        "cpu-clock:u",
+        "-F",
+        "499",
+        "--call-graph",
+        "dwarf,8192",
+        "-D",
+        "-1",
+        "--control",
+        "fifo:/home/jonas/Development/Rust/porridge/target/execution-profile/light-8/control,/home/jonas/Development/Rust/porridge/target/execution-profile/light-8/ack",
+        "-o",
+        "/home/jonas/Development/Rust/porridge/target/execution-profile/light-8/perf.data",
+        "--",
+        "/home/jonas/Development/Rust/porridge/target/release/examples/profile_purchases"
+      ],
+      "sampled_thread_cpu": [
+        {
+          "cpu_percent": 22.91,
+          "samples": 553,
+          "comm": "porridge-worker",
+          "symbol": ""
+        },
+        {
+          "cpu_percent": 77.09,
+          "samples": 1861,
+          "comm": "profile_purchas",
+          "symbol": ""
+        }
+      ],
+      "sample_count": 2414,
+      "lost_samples": 0,
+      "unsampled_means": {
+        "wall_ms": 49.0446994,
+        "settle_ms": 46.10605,
+        "snapshot_ms": 0.1684,
+        "plan_ms": 14.83624485,
+        "summed_poll_ms": 23.63895015,
+        "waves": 7.1,
+        "completed_row_invocations": 5000.0
+      },
+      "unsampled_rounds": {
+        "samples": [
+          {
+            "round": 0,
+            "requests": 1000,
+            "wall_ns": 40543966,
+            "settle_us": 38254,
+            "snapshot_us": 109,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 1,
+            "requests": 1000,
+            "wall_ns": 41254882,
+            "settle_us": 38785,
+            "snapshot_us": 114,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 2,
+            "requests": 1000,
+            "wall_ns": 64347828,
+            "settle_us": 59932,
+            "snapshot_us": 207,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 3,
+            "requests": 1000,
+            "wall_ns": 64268499,
+            "settle_us": 60034,
+            "snapshot_us": 229,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 4,
+            "requests": 1000,
+            "wall_ns": 60414412,
+            "settle_us": 56106,
+            "snapshot_us": 198,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 5,
+            "requests": 1000,
+            "wall_ns": 66715865,
+            "settle_us": 62260,
+            "snapshot_us": 205,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 6,
+            "requests": 1000,
+            "wall_ns": 66837113,
+            "settle_us": 62620,
+            "snapshot_us": 262,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 7,
+            "requests": 1000,
+            "wall_ns": 62382608,
+            "settle_us": 59584,
+            "snapshot_us": 294,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 8,
+            "requests": 1000,
+            "wall_ns": 37892007,
+            "settle_us": 35607,
+            "snapshot_us": 114,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 9,
+            "requests": 1000,
+            "wall_ns": 39138728,
+            "settle_us": 36628,
+            "snapshot_us": 109,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 10,
+            "requests": 1000,
+            "wall_ns": 42149662,
+            "settle_us": 39411,
+            "snapshot_us": 166,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 11,
+            "requests": 1000,
+            "wall_ns": 46695438,
+            "settle_us": 44220,
+            "snapshot_us": 137,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 12,
+            "requests": 1000,
+            "wall_ns": 44643505,
+            "settle_us": 42141,
+            "snapshot_us": 311,
+            "hook_commit_us": 1,
+            "waves": 9
+          },
+          {
+            "round": 13,
+            "requests": 1000,
+            "wall_ns": 42138521,
+            "settle_us": 39994,
+            "snapshot_us": 112,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 14,
+            "requests": 1000,
+            "wall_ns": 41805055,
+            "settle_us": 39668,
+            "snapshot_us": 114,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 15,
+            "requests": 1000,
+            "wall_ns": 43340679,
+            "settle_us": 41107,
+            "snapshot_us": 122,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 16,
+            "requests": 1000,
+            "wall_ns": 44069668,
+            "settle_us": 41453,
+            "snapshot_us": 163,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 17,
+            "requests": 1000,
+            "wall_ns": 43459362,
+            "settle_us": 41222,
+            "snapshot_us": 134,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 18,
+            "requests": 1000,
+            "wall_ns": 44493284,
+            "settle_us": 41277,
+            "snapshot_us": 136,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 19,
+            "requests": 1000,
+            "wall_ns": 44302906,
+            "settle_us": 41818,
+            "snapshot_us": 132,
+            "hook_commit_us": 0,
+            "waves": 7
+          }
+        ],
+        "systems": [
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4106202,
+            "poll_ns": 12559173
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5208452,
+            "poll_ns": 7484933
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2564336,
+            "poll_ns": 6945075
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4196931,
+            "poll_ns": 11761764
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4209634,
+            "poll_ns": 7235672
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2650578,
+            "poll_ns": 7499527
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 8039196,
+            "poll_ns": 8669223
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 7355913,
+            "poll_ns": 5632730
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 5576574,
+            "poll_ns": 6077416
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 9467289,
+            "poll_ns": 6002556
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 8316549,
+            "poll_ns": 4857270
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 5419577,
+            "poll_ns": 6823662
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 8811909,
+            "poll_ns": 5520238
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 8197674,
+            "poll_ns": 4114850
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 5408738,
+            "poll_ns": 5817960
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 8920341,
+            "poll_ns": 7458693
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 8489071,
+            "poll_ns": 6422615
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 5500239,
+            "poll_ns": 6245914
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 9562729,
+            "poll_ns": 5978497
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 8382152,
+            "poll_ns": 5360201
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 5787498,
+            "poll_ns": 6005774
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 8437624,
+            "poll_ns": 7643238
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 7536222,
+            "poll_ns": 6023877
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 5449113,
+            "poll_ns": 5621034
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 3992147,
+            "poll_ns": 13112062
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4124675,
+            "poll_ns": 6687189
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2500936,
+            "poll_ns": 6091793
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4097854,
+            "poll_ns": 10339592
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4178585,
+            "poll_ns": 7458779
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2620752,
+            "poll_ns": 6146014
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4494801,
+            "poll_ns": 8346693
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4213543,
+            "poll_ns": 7245057
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2603510,
+            "poll_ns": 7771123
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4590621,
+            "poll_ns": 8697580
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4476616,
+            "poll_ns": 6891481
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2909873,
+            "poll_ns": 6422075
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4910922,
+            "poll_ns": 14366735
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4962497,
+            "poll_ns": 7629507
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2940523,
+            "poll_ns": 11096705
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4284817,
+            "poll_ns": 9345521
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4077277,
+            "poll_ns": 7026355
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2701593,
+            "poll_ns": 6552455
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4141076,
+            "poll_ns": 10399574
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4525569,
+            "poll_ns": 7477233
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2711602,
+            "poll_ns": 6640014
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4839788,
+            "poll_ns": 13139369
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4622070,
+            "poll_ns": 7661885
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2632544,
+            "poll_ns": 6422077
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4368153,
+            "poll_ns": 11225942
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4645562,
+            "poll_ns": 7384910
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3186053,
+            "poll_ns": 7046076
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4287821,
+            "poll_ns": 9153717
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4189768,
+            "poll_ns": 7423408
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2711913,
+            "poll_ns": 7535802
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4642549,
+            "poll_ns": 12114458
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4450568,
+            "poll_ns": 7776986
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2706482,
+            "poll_ns": 10595446
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4993147,
+            "poll_ns": 10429416
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4168327,
+            "poll_ns": 7311577
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2625822,
+            "poll_ns": 8052505
+          }
+        ]
+      },
+      "exclusive_leaf_groups_percent": {
+        "other": 57.169999999999845,
+        "hashing": 12.46,
+        "allocator": 16.99,
+        "reservations": 5.72,
+        "revision_lookup": 5.34,
+        "fingerprint_lookup": 2.16
+      },
+      "top_self_symbols": [
+        {
+          "cpu_percent": 5.34,
+          "samples": 129,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::revision_for_entity"
+        },
+        {
+          "cpu_percent": 3.77,
+          "samples": 91,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::remove"
+        },
+        {
+          "cpu_percent": 3.07,
+          "samples": 74,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 2.9,
+          "samples": 70,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 2.24,
+          "samples": 54,
+          "comm": "profile_purchas",
+          "symbol": "[.] __libc_malloc2"
+        },
+        {
+          "cpu_percent": 2.24,
+          "samples": 54,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 2.15,
+          "samples": 52,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&bowl::entity::Entity>"
+        },
+        {
+          "cpu_percent": 1.95,
+          "samples": 47,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 1.91,
+          "samples": 46,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc_consolidate"
+        },
+        {
+          "cpu_percent": 1.66,
+          "samples": 40,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 1.62,
+          "samples": 39,
+          "comm": "porridge-worker",
+          "symbol": "[.] <(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>) as bowl::system::SystemParam>::fetch"
+        },
+        {
+          "cpu_percent": 1.49,
+          "samples": 36,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 1.41,
+          "samples": 34,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::World>::fingerprint::<benches::stateful::purchases::Owner>"
+        },
+        {
+          "cpu_percent": 1.41,
+          "samples": 34,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 1.41,
+          "samples": 34,
+          "comm": "profile_purchas",
+          "symbol": "[.] unlink_chunk.isra.0"
+        },
+        {
+          "cpu_percent": 1.28,
+          "samples": 31,
+          "comm": "profile_purchas",
+          "symbol": "[.] __memmove_avx512_unaligned_erms"
+        },
+        {
+          "cpu_percent": 1.24,
+          "samples": 30,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 1.24,
+          "samples": 30,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::bowl::commit_system_run::{closure#0}"
+        },
+        {
+          "cpu_percent": 1.16,
+          "samples": 28,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::conflicts"
+        },
+        {
+          "cpu_percent": 1.16,
+          "samples": 28,
+          "comm": "profile_purchas",
+          "symbol": "[.] <hashbrown::map::HashMap<bowl::world::SystemInvocation, (), std::hash::random::RandomState>>::remove::<bowl::world::SystemInvocation>"
+        },
+        {
+          "cpu_percent": 1.16,
+          "samples": 28,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc"
+        },
+        {
+          "cpu_percent": 1.12,
+          "samples": 27,
+          "comm": "profile_purchas",
+          "symbol": "[.] <hashbrown::map::HashMap<bowl::world::SystemInvocation, bowl::system::MemoEntry, std::hash::random::RandomState>>::get::<bowl::world::SystemInvocation>"
+        },
+        {
+          "cpu_percent": 1.12,
+          "samples": 27,
+          "comm": "profile_purchas",
+          "symbol": "[.] core::slice::sort::unstable::quicksort::quicksort::<bowl::entity::Entity, <bowl::entity::Entity as core::cmp::PartialOrd>::lt>"
+        },
+        {
+          "cpu_percent": 1.08,
+          "samples": 26,
+          "comm": "porridge-worker",
+          "symbol": "[.] syscall"
+        },
+        {
+          "cpu_percent": 1.08,
+          "samples": 26,
+          "comm": "profile_purchas",
+          "symbol": "[.] <(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>) as bowl::system::SystemParam>::deps"
+        },
+        {
+          "cpu_percent": 0.99,
+          "samples": 24,
+          "comm": "profile_purchas",
+          "symbol": "[.] realloc"
+        },
+        {
+          "cpu_percent": 0.95,
+          "samples": 23,
+          "comm": "porridge-worker",
+          "symbol": "[.] __vdso_clock_gettime"
+        },
+        {
+          "cpu_percent": 0.95,
+          "samples": 23,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::system::MemoEntry>::is_current"
+        },
+        {
+          "cpu_percent": 0.91,
+          "samples": 22,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::query::component_dep_if_tracked::<benches::stateful::purchases::Outcome>"
+        },
+        {
+          "cpu_percent": 0.87,
+          "samples": 21,
+          "comm": "profile_purchas",
+          "symbol": "[.] <hashbrown::map::HashMap<bowl::world::SystemInvocation, std::collections::hash::set::HashSet<(core::any::TypeId, bowl::entity::Entity)>, std::hash::random::RandomState>>::remove::<bowl::world::SystemInvocation>"
+        }
+      ],
+      "perf_log_tail": [
+        "Events disabled",
+        "[ perf record: Woken up 235 times to write data ]",
+        "[ perf record: Captured and wrote 19.470 MB /home/jonas/Development/Rust/porridge/target/execution-profile/light-8/perf.data (2414 samples) ]"
+      ]
+    },
+    {
+      "name": "contended-8",
+      "environment": {
+        "PROFILE_WORKERS": "8",
+        "PROFILE_REQUESTS": "1000",
+        "PROFILE_PER_OWNER": "4",
+        "PROFILE_WORK": "0",
+        "PROFILE_DISPATCH_BATCH": "16",
+        "PROFILE_ROUNDS": "30",
+        "PROFILE_WARMUP": "2"
+      },
+      "perf_command": [
+        "/nix/store/4abhg06h0n7vr1l94kkiifbf3ayzj74r-perf-linux-7.2.8/bin/perf",
+        "record",
+        "-e",
+        "cpu-clock:u",
+        "-F",
+        "499",
+        "--call-graph",
+        "dwarf,8192",
+        "-D",
+        "-1",
+        "--control",
+        "fifo:/home/jonas/Development/Rust/porridge/target/execution-profile/contended-8/control,/home/jonas/Development/Rust/porridge/target/execution-profile/contended-8/ack",
+        "-o",
+        "/home/jonas/Development/Rust/porridge/target/execution-profile/contended-8/perf.data",
+        "--",
+        "/home/jonas/Development/Rust/porridge/target/release/examples/profile_purchases"
+      ],
+      "sampled_thread_cpu": [
+        {
+          "cpu_percent": 20.67,
+          "samples": 532,
+          "comm": "porridge-worker",
+          "symbol": ""
+        },
+        {
+          "cpu_percent": 79.33,
+          "samples": 2042,
+          "comm": "profile_purchas",
+          "symbol": ""
+        }
+      ],
+      "sample_count": 2574,
+      "lost_samples": 0,
+      "unsampled_means": {
+        "wall_ms": 135.82601044999998,
+        "settle_ms": 132.812,
+        "snapshot_ms": 1.46195,
+        "plan_ms": 66.1822302,
+        "summed_poll_ms": 34.8003405,
+        "waves": 38.25,
+        "completed_row_invocations": 12500.0
+      },
+      "unsampled_rounds": {
+        "samples": [
+          {
+            "round": 0,
+            "requests": 1000,
+            "wall_ns": 143836478,
+            "settle_us": 140815,
+            "snapshot_us": 1682,
+            "hook_commit_us": 0,
+            "waves": 36
+          },
+          {
+            "round": 1,
+            "requests": 1000,
+            "wall_ns": 126982899,
+            "settle_us": 123844,
+            "snapshot_us": 1097,
+            "hook_commit_us": 0,
+            "waves": 25
+          },
+          {
+            "round": 2,
+            "requests": 1000,
+            "wall_ns": 139411709,
+            "settle_us": 136316,
+            "snapshot_us": 1300,
+            "hook_commit_us": 0,
+            "waves": 28
+          },
+          {
+            "round": 3,
+            "requests": 1000,
+            "wall_ns": 131076337,
+            "settle_us": 128010,
+            "snapshot_us": 1070,
+            "hook_commit_us": 1,
+            "waves": 22
+          },
+          {
+            "round": 4,
+            "requests": 1000,
+            "wall_ns": 143299500,
+            "settle_us": 140346,
+            "snapshot_us": 1659,
+            "hook_commit_us": 1,
+            "waves": 43
+          },
+          {
+            "round": 5,
+            "requests": 1000,
+            "wall_ns": 151321704,
+            "settle_us": 148321,
+            "snapshot_us": 1718,
+            "hook_commit_us": 1,
+            "waves": 42
+          },
+          {
+            "round": 6,
+            "requests": 1000,
+            "wall_ns": 157913283,
+            "settle_us": 154990,
+            "snapshot_us": 2008,
+            "hook_commit_us": 1,
+            "waves": 53
+          },
+          {
+            "round": 7,
+            "requests": 1000,
+            "wall_ns": 121727089,
+            "settle_us": 118588,
+            "snapshot_us": 1145,
+            "hook_commit_us": 0,
+            "waves": 30
+          },
+          {
+            "round": 8,
+            "requests": 1000,
+            "wall_ns": 116245796,
+            "settle_us": 113353,
+            "snapshot_us": 1078,
+            "hook_commit_us": 0,
+            "waves": 28
+          },
+          {
+            "round": 9,
+            "requests": 1000,
+            "wall_ns": 147255629,
+            "settle_us": 144177,
+            "snapshot_us": 1932,
+            "hook_commit_us": 0,
+            "waves": 50
+          },
+          {
+            "round": 10,
+            "requests": 1000,
+            "wall_ns": 113550174,
+            "settle_us": 110638,
+            "snapshot_us": 906,
+            "hook_commit_us": 0,
+            "waves": 24
+          },
+          {
+            "round": 11,
+            "requests": 1000,
+            "wall_ns": 144370070,
+            "settle_us": 141432,
+            "snapshot_us": 1538,
+            "hook_commit_us": 0,
+            "waves": 42
+          },
+          {
+            "round": 12,
+            "requests": 1000,
+            "wall_ns": 138298218,
+            "settle_us": 135151,
+            "snapshot_us": 1662,
+            "hook_commit_us": 0,
+            "waves": 52
+          },
+          {
+            "round": 13,
+            "requests": 1000,
+            "wall_ns": 147899929,
+            "settle_us": 145020,
+            "snapshot_us": 1861,
+            "hook_commit_us": 0,
+            "waves": 51
+          },
+          {
+            "round": 14,
+            "requests": 1000,
+            "wall_ns": 137295565,
+            "settle_us": 134070,
+            "snapshot_us": 1728,
+            "hook_commit_us": 0,
+            "waves": 48
+          },
+          {
+            "round": 15,
+            "requests": 1000,
+            "wall_ns": 134823513,
+            "settle_us": 131860,
+            "snapshot_us": 1469,
+            "hook_commit_us": 0,
+            "waves": 42
+          },
+          {
+            "round": 16,
+            "requests": 1000,
+            "wall_ns": 142165801,
+            "settle_us": 139255,
+            "snapshot_us": 1635,
+            "hook_commit_us": 0,
+            "waves": 45
+          },
+          {
+            "round": 17,
+            "requests": 1000,
+            "wall_ns": 123263835,
+            "settle_us": 120290,
+            "snapshot_us": 1182,
+            "hook_commit_us": 0,
+            "waves": 29
+          },
+          {
+            "round": 18,
+            "requests": 1000,
+            "wall_ns": 118415421,
+            "settle_us": 115369,
+            "snapshot_us": 891,
+            "hook_commit_us": 0,
+            "waves": 24
+          },
+          {
+            "round": 19,
+            "requests": 1000,
+            "wall_ns": 137367259,
+            "settle_us": 134395,
+            "snapshot_us": 1678,
+            "hook_commit_us": 1,
+            "waves": 51
+          }
+        ],
+        "systems": [
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 19160098,
+            "poll_ns": 18769101
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 17784458,
+            "poll_ns": 13602665
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 21815762,
+            "poll_ns": 21325197
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 18045288,
+            "poll_ns": 12579330
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 17151599,
+            "poll_ns": 12004057
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 20378590,
+            "poll_ns": 14322066
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20400883,
+            "poll_ns": 14825721
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 19044881,
+            "poll_ns": 13099584
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 21395138,
+            "poll_ns": 16487918
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 17307550,
+            "poll_ns": 14984093
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 15842141,
+            "poll_ns": 12597984
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 18585821,
+            "poll_ns": 14956352
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20657200,
+            "poll_ns": 11602931
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18944045,
+            "poll_ns": 8779765
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 33432776,
+            "poll_ns": 10546630
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20264084,
+            "poll_ns": 15662327
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18827237,
+            "poll_ns": 10888778
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 37905463,
+            "poll_ns": 14290468
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20590819,
+            "poll_ns": 12527125
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18980647,
+            "poll_ns": 9228221
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 45598800,
+            "poll_ns": 11570296
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20217857,
+            "poll_ns": 9765098
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18585072,
+            "poll_ns": 6959579
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 19633991,
+            "poll_ns": 12717490
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 18130386,
+            "poll_ns": 12079701
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 16751780,
+            "poll_ns": 6864458
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 20199774,
+            "poll_ns": 11902426
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 21731636,
+            "poll_ns": 14154721
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 19489831,
+            "poll_ns": 10009337
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 29838003,
+            "poll_ns": 14103086
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 18343246,
+            "poll_ns": 10460325
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 17040301,
+            "poll_ns": 6701918
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 17687615,
+            "poll_ns": 13774205
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20535803,
+            "poll_ns": 11095545
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18707826,
+            "poll_ns": 7631084
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 37699729,
+            "poll_ns": 10364664
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20518915,
+            "poll_ns": 10930934
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18589375,
+            "poll_ns": 7771697
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 32496412,
+            "poll_ns": 12824130
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20310880,
+            "poll_ns": 10363153
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18587342,
+            "poll_ns": 7961557
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 41790300,
+            "poll_ns": 10117164
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 21138838,
+            "poll_ns": 9930494
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 19309801,
+            "poll_ns": 7701960
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 29147443,
+            "poll_ns": 12716548
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 21241127,
+            "poll_ns": 10538541
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 19100524,
+            "poll_ns": 7904604
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 27783034,
+            "poll_ns": 10594944
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20422685,
+            "poll_ns": 10286868
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18652518,
+            "poll_ns": 7617274
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 36415176,
+            "poll_ns": 11474603
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 19923915,
+            "poll_ns": 12579337
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18667277,
+            "poll_ns": 9627987
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 18819627,
+            "poll_ns": 14054050
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 18526086,
+            "poll_ns": 13069504
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 17219840,
+            "poll_ns": 8647981
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 18135896,
+            "poll_ns": 13688107
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 5000,
+            "plan_ns": 20895796,
+            "poll_ns": 12517330
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 5000,
+            "plan_ns": 18951377,
+            "poll_ns": 7497512
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 2500,
+            "plan_ns": 30294290,
+            "poll_ns": 12356285
+          }
+        ]
+      },
+      "exclusive_leaf_groups_percent": {
+        "other": 58.909999999999854,
+        "hashing": 11.82,
+        "allocator": 17.26,
+        "reservations": 5.279999999999999,
+        "revision_lookup": 4.39,
+        "fingerprint_lookup": 2.6399999999999997
+      },
+      "top_self_symbols": [
+        {
+          "cpu_percent": 4.39,
+          "samples": 113,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::revision_for_entity"
+        },
+        {
+          "cpu_percent": 3.07,
+          "samples": 79,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 2.99,
+          "samples": 77,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 2.84,
+          "samples": 73,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 2.6,
+          "samples": 67,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::remove"
+        },
+        {
+          "cpu_percent": 2.18,
+          "samples": 56,
+          "comm": "porridge-worker",
+          "symbol": "[.] <(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>) as bowl::system::SystemParam>::fetch"
+        },
+        {
+          "cpu_percent": 2.1,
+          "samples": 54,
+          "comm": "profile_purchas",
+          "symbol": "[.] <(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>) as bowl::system::SystemParam>::deps"
+        },
+        {
+          "cpu_percent": 2.1,
+          "samples": 54,
+          "comm": "profile_purchas",
+          "symbol": "[.] __libc_malloc2"
+        },
+        {
+          "cpu_percent": 2.06,
+          "samples": 53,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 1.9,
+          "samples": 49,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::World>::fingerprint::<benches::stateful::purchases::Owner>"
+        },
+        {
+          "cpu_percent": 1.86,
+          "samples": 48,
+          "comm": "profile_purchas",
+          "symbol": "[.] <hashbrown::map::HashMap<bowl::world::SystemInvocation, bowl::system::MemoEntry, std::hash::random::RandomState>>::get::<bowl::world::SystemInvocation>"
+        },
+        {
+          "cpu_percent": 1.83,
+          "samples": 47,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 1.75,
+          "samples": 45,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::query::component_dep_if_tracked::<benches::stateful::purchases::Owner>"
+        },
+        {
+          "cpu_percent": 1.71,
+          "samples": 44,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::conflicts"
+        },
+        {
+          "cpu_percent": 1.63,
+          "samples": 42,
+          "comm": "profile_purchas",
+          "symbol": "[.] __memmove_avx512_unaligned_erms"
+        },
+        {
+          "cpu_percent": 1.63,
+          "samples": 42,
+          "comm": "profile_purchas",
+          "symbol": "[.] realloc"
+        },
+        {
+          "cpu_percent": 1.55,
+          "samples": 40,
+          "comm": "profile_purchas",
+          "symbol": "[.] <&benches::stateful::purchases::Purchase as bowl::query::QueryPart>::deps"
+        },
+        {
+          "cpu_percent": 1.55,
+          "samples": 40,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::query::component_dep_if_tracked::<benches::stateful::purchases::Outcome>"
+        },
+        {
+          "cpu_percent": 1.52,
+          "samples": 39,
+          "comm": "profile_purchas",
+          "symbol": "[.] unlink_chunk.isra.0"
+        },
+        {
+          "cpu_percent": 1.36,
+          "samples": 35,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 1.36,
+          "samples": 35,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc"
+        },
+        {
+          "cpu_percent": 1.32,
+          "samples": 34,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc_consolidate"
+        },
+        {
+          "cpu_percent": 1.24,
+          "samples": 32,
+          "comm": "profile_purchas",
+          "symbol": "[.] cfree@GLIBC_2.2.5"
+        },
+        {
+          "cpu_percent": 1.2,
+          "samples": 31,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&bowl::entity::Entity>"
+        },
+        {
+          "cpu_percent": 1.17,
+          "samples": 30,
+          "comm": "porridge-worker",
+          "symbol": "[.] syscall"
+        },
+        {
+          "cpu_percent": 1.09,
+          "samples": 28,
+          "comm": "profile_purchas",
+          "symbol": "[.] <hashbrown::map::HashMap<bowl::world::SystemInvocation, (), std::hash::random::RandomState>>::remove::<bowl::world::SystemInvocation>"
+        },
+        {
+          "cpu_percent": 1.05,
+          "samples": 27,
+          "comm": "profile_purchas",
+          "symbol": "[.] <alloc::vec::Vec<bowl::entity::Entity> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bowl::entity::Entity, core::iter::adapters::copied::Copied<alloc::collections::btree::set::Iter<bowl::entity::Entity>>>>::from_iter"
+        },
+        {
+          "cpu_percent": 1.01,
+          "samples": 26,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 1.01,
+          "samples": 26,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 1.01,
+          "samples": 26,
+          "comm": "profile_purchas",
+          "symbol": "[.] core::slice::sort::unstable::quicksort::quicksort::<bowl::entity::Entity, <bowl::entity::Entity as core::cmp::PartialOrd>::lt>"
+        }
+      ],
+      "perf_log_tail": [
+        "Events disabled",
+        "[ perf record: Woken up 142 times to write data ]",
+        "[ perf record: Captured and wrote 20.757 MB /home/jonas/Development/Rust/porridge/target/execution-profile/contended-8/perf.data (2574 samples) ]"
+      ]
+    },
+    {
+      "name": "compute-8",
+      "environment": {
+        "PROFILE_WORKERS": "8",
+        "PROFILE_REQUESTS": "1000",
+        "PROFILE_PER_OWNER": "1",
+        "PROFILE_WORK": "10000",
+        "PROFILE_DISPATCH_BATCH": "16",
+        "PROFILE_ROUNDS": "80",
+        "PROFILE_WARMUP": "2"
+      },
+      "perf_command": [
+        "/nix/store/4abhg06h0n7vr1l94kkiifbf3ayzj74r-perf-linux-7.2.8/bin/perf",
+        "record",
+        "-e",
+        "cpu-clock:u",
+        "-F",
+        "499",
+        "--call-graph",
+        "dwarf,8192",
+        "-D",
+        "-1",
+        "--control",
+        "fifo:/home/jonas/Development/Rust/porridge/target/execution-profile/compute-8/control,/home/jonas/Development/Rust/porridge/target/execution-profile/compute-8/ack",
+        "-o",
+        "/home/jonas/Development/Rust/porridge/target/execution-profile/compute-8/perf.data",
+        "--",
+        "/home/jonas/Development/Rust/porridge/target/release/examples/profile_purchases"
+      ],
+      "sampled_thread_cpu": [
+        {
+          "cpu_percent": 50.59,
+          "samples": 1513,
+          "comm": "porridge-worker",
+          "symbol": ""
+        },
+        {
+          "cpu_percent": 49.41,
+          "samples": 1478,
+          "comm": "profile_purchas",
+          "symbol": ""
+        }
+      ],
+      "sample_count": 2991,
+      "lost_samples": 0,
+      "unsampled_means": {
+        "wall_ms": 39.2078779,
+        "settle_ms": 36.72785,
+        "snapshot_ms": 0.1484,
+        "plan_ms": 12.9430218,
+        "summed_poll_ms": 40.8112019,
+        "waves": 8.05,
+        "completed_row_invocations": 5000.0
+      },
+      "unsampled_rounds": {
+        "samples": [
+          {
+            "round": 0,
+            "requests": 1000,
+            "wall_ns": 49988243,
+            "settle_us": 46782,
+            "snapshot_us": 145,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 1,
+            "requests": 1000,
+            "wall_ns": 44488334,
+            "settle_us": 41689,
+            "snapshot_us": 135,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 2,
+            "requests": 1000,
+            "wall_ns": 43550713,
+            "settle_us": 40681,
+            "snapshot_us": 150,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 3,
+            "requests": 1000,
+            "wall_ns": 46545968,
+            "settle_us": 43526,
+            "snapshot_us": 167,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 4,
+            "requests": 1000,
+            "wall_ns": 47753235,
+            "settle_us": 44654,
+            "snapshot_us": 135,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 5,
+            "requests": 1000,
+            "wall_ns": 52602231,
+            "settle_us": 49680,
+            "snapshot_us": 158,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 6,
+            "requests": 1000,
+            "wall_ns": 48729168,
+            "settle_us": 45744,
+            "snapshot_us": 295,
+            "hook_commit_us": 1,
+            "waves": 12
+          },
+          {
+            "round": 7,
+            "requests": 1000,
+            "wall_ns": 40486439,
+            "settle_us": 38084,
+            "snapshot_us": 125,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 8,
+            "requests": 1000,
+            "wall_ns": 35845344,
+            "settle_us": 33659,
+            "snapshot_us": 211,
+            "hook_commit_us": 0,
+            "waves": 12
+          },
+          {
+            "round": 9,
+            "requests": 1000,
+            "wall_ns": 37140505,
+            "settle_us": 34856,
+            "snapshot_us": 105,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 10,
+            "requests": 1000,
+            "wall_ns": 35694119,
+            "settle_us": 33276,
+            "snapshot_us": 106,
+            "hook_commit_us": 1,
+            "waves": 7
+          },
+          {
+            "round": 11,
+            "requests": 1000,
+            "wall_ns": 36911756,
+            "settle_us": 34594,
+            "snapshot_us": 274,
+            "hook_commit_us": 1,
+            "waves": 9
+          },
+          {
+            "round": 12,
+            "requests": 1000,
+            "wall_ns": 43963869,
+            "settle_us": 41766,
+            "snapshot_us": 101,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 13,
+            "requests": 1000,
+            "wall_ns": 32983670,
+            "settle_us": 30786,
+            "snapshot_us": 101,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 14,
+            "requests": 1000,
+            "wall_ns": 29793749,
+            "settle_us": 27843,
+            "snapshot_us": 83,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 15,
+            "requests": 1000,
+            "wall_ns": 30325729,
+            "settle_us": 28242,
+            "snapshot_us": 231,
+            "hook_commit_us": 1,
+            "waves": 13
+          },
+          {
+            "round": 16,
+            "requests": 1000,
+            "wall_ns": 30378878,
+            "settle_us": 28353,
+            "snapshot_us": 171,
+            "hook_commit_us": 0,
+            "waves": 10
+          },
+          {
+            "round": 17,
+            "requests": 1000,
+            "wall_ns": 30163112,
+            "settle_us": 28056,
+            "snapshot_us": 86,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 18,
+            "requests": 1000,
+            "wall_ns": 32961708,
+            "settle_us": 30805,
+            "snapshot_us": 104,
+            "hook_commit_us": 0,
+            "waves": 7
+          },
+          {
+            "round": 19,
+            "requests": 1000,
+            "wall_ns": 33850788,
+            "settle_us": 31481,
+            "snapshot_us": 85,
+            "hook_commit_us": 0,
+            "waves": 7
+          }
+        ],
+        "systems": [
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6326180,
+            "poll_ns": 23010435
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 6659637,
+            "poll_ns": 19546154
+          },
+          {
+            "round": 0,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3839148,
+            "poll_ns": 5093196
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 5783662,
+            "poll_ns": 24678132
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5782339,
+            "poll_ns": 16595627
+          },
+          {
+            "round": 1,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3571928,
+            "poll_ns": 4810587
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 5829718,
+            "poll_ns": 19474830
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5680376,
+            "poll_ns": 18998222
+          },
+          {
+            "round": 2,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3672395,
+            "poll_ns": 3525151
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 5925468,
+            "poll_ns": 19410470
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5495861,
+            "poll_ns": 19216758
+          },
+          {
+            "round": 3,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3590764,
+            "poll_ns": 5766724
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6100606,
+            "poll_ns": 20674096
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5732495,
+            "poll_ns": 19420555
+          },
+          {
+            "round": 4,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4220597,
+            "poll_ns": 4828326
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 6353561,
+            "poll_ns": 21661800
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5807325,
+            "poll_ns": 19565778
+          },
+          {
+            "round": 5,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 4056437,
+            "poll_ns": 5085332
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 5824667,
+            "poll_ns": 19934922
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5647097,
+            "poll_ns": 23145745
+          },
+          {
+            "round": 6,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3961479,
+            "poll_ns": 6469766
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 5187462,
+            "poll_ns": 25368854
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5455395,
+            "poll_ns": 16957588
+          },
+          {
+            "round": 7,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 3160966,
+            "poll_ns": 6086371
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4649930,
+            "poll_ns": 18553246
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4470756,
+            "poll_ns": 15454540
+          },
+          {
+            "round": 8,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2957092,
+            "poll_ns": 4277617
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4389203,
+            "poll_ns": 17042943
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4176944,
+            "poll_ns": 16143317
+          },
+          {
+            "round": 9,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2785119,
+            "poll_ns": 6056359
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4258647,
+            "poll_ns": 19618387
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4501365,
+            "poll_ns": 15372120
+          },
+          {
+            "round": 10,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2720187,
+            "poll_ns": 4532669
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4561344,
+            "poll_ns": 19985714
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4590160,
+            "poll_ns": 15137137
+          },
+          {
+            "round": 11,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2872255,
+            "poll_ns": 4757021
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 5166682,
+            "poll_ns": 19498049
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 5185096,
+            "poll_ns": 14985795
+          },
+          {
+            "round": 12,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2877363,
+            "poll_ns": 4301923
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4164462,
+            "poll_ns": 17756428
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 3997276,
+            "poll_ns": 15164037
+          },
+          {
+            "round": 13,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2571269,
+            "poll_ns": 3797447
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 3952941,
+            "poll_ns": 18588531
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4152427,
+            "poll_ns": 14486584
+          },
+          {
+            "round": 14,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2494454,
+            "poll_ns": 3369674
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 3947574,
+            "poll_ns": 14536156
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 3841013,
+            "poll_ns": 12972672
+          },
+          {
+            "round": 15,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2546422,
+            "poll_ns": 5371405
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4124014,
+            "poll_ns": 14370227
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 3995844,
+            "poll_ns": 12987585
+          },
+          {
+            "round": 16,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2536072,
+            "poll_ns": 5197288
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4037774,
+            "poll_ns": 13491580
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 3873163,
+            "poll_ns": 14148431
+          },
+          {
+            "round": 17,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2524930,
+            "poll_ns": 4885580
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4196351,
+            "poll_ns": 18873437
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4370628,
+            "poll_ns": 14921507
+          },
+          {
+            "round": 18,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2579052,
+            "poll_ns": 5750398
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_wallet",
+            "runs": 2000,
+            "plan_ns": 4079991,
+            "poll_ns": 19756843
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::validate_inventory",
+            "runs": 2000,
+            "plan_ns": 4249840,
+            "poll_ns": 15737623
+          },
+          {
+            "round": 19,
+            "name": "benches::stateful::purchases::apply",
+            "runs": 1000,
+            "plan_ns": 2797233,
+            "poll_ns": 5018349
+          }
+        ]
+      },
+      "exclusive_leaf_groups_percent": {
+        "other": 69.91000000000005,
+        "hashing": 7.629999999999999,
+        "allocator": 13.110000000000001,
+        "reservations": 3.85,
+        "revision_lookup": 3.81,
+        "fingerprint_lookup": 1.4700000000000002
+      },
+      "top_self_symbols": [
+        {
+          "cpu_percent": 15.01,
+          "samples": 449,
+          "comm": "porridge-worker",
+          "symbol": "[.] benches::stateful::purchases::validate_wallet::{closure#0}"
+        },
+        {
+          "cpu_percent": 14.88,
+          "samples": 445,
+          "comm": "porridge-worker",
+          "symbol": "[.] benches::stateful::purchases::validate_inventory::{closure#0}"
+        },
+        {
+          "cpu_percent": 3.81,
+          "samples": 114,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::revision_for_entity"
+        },
+        {
+          "cpu_percent": 2.67,
+          "samples": 80,
+          "comm": "profile_purchas",
+          "symbol": "[.] __libc_malloc2"
+        },
+        {
+          "cpu_percent": 2.21,
+          "samples": 66,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 2.04,
+          "samples": 61,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::remove"
+        },
+        {
+          "cpu_percent": 1.94,
+          "samples": 58,
+          "comm": "profile_purchas",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 1.6,
+          "samples": 48,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 1.54,
+          "samples": 46,
+          "comm": "porridge-worker",
+          "symbol": "[.] <(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>) as bowl::system::SystemParam>::fetch"
+        },
+        {
+          "cpu_percent": 1.44,
+          "samples": 43,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_free_chunk"
+        },
+        {
+          "cpu_percent": 1.3,
+          "samples": 39,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&bowl::entity::Entity>"
+        },
+        {
+          "cpu_percent": 1.3,
+          "samples": 39,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 1.14,
+          "samples": 34,
+          "comm": "porridge-worker",
+          "symbol": "[.] <bowl::world::ComponentCell<benches::stateful::purchases::Owner>>::read"
+        },
+        {
+          "cpu_percent": 1.14,
+          "samples": 34,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::access::Reservations>::insert"
+        },
+        {
+          "cpu_percent": 1.1,
+          "samples": 33,
+          "comm": "porridge-worker",
+          "symbol": "[.] syscall"
+        },
+        {
+          "cpu_percent": 1.1,
+          "samples": 33,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::world::World>::fingerprint::<benches::stateful::purchases::Owner>"
+        },
+        {
+          "cpu_percent": 0.94,
+          "samples": 28,
+          "comm": "porridge-worker",
+          "symbol": "[.] _int_malloc"
+        },
+        {
+          "cpu_percent": 0.94,
+          "samples": 28,
+          "comm": "profile_purchas",
+          "symbol": "[.] realloc"
+        },
+        {
+          "cpu_percent": 0.9,
+          "samples": 27,
+          "comm": "profile_purchas",
+          "symbol": "[.] <bowl::system::FunctionSystem<benches::stateful::purchases::validate_wallet, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows::{closure#0}"
+        },
+        {
+          "cpu_percent": 0.9,
+          "samples": 27,
+          "comm": "profile_purchas",
+          "symbol": "[.] __memmove_avx512_unaligned_erms"
+        },
+        {
+          "cpu_percent": 0.9,
+          "samples": 27,
+          "comm": "profile_purchas",
+          "symbol": "[.] bowl::bowl::commit_system_run::{closure#0}"
+        },
+        {
+          "cpu_percent": 0.84,
+          "samples": 25,
+          "comm": "porridge-worker",
+          "symbol": "[.] <bowl::world::ComponentCell<benches::stateful::purchases::Debit>>::read"
+        },
+        {
+          "cpu_percent": 0.84,
+          "samples": 25,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+        },
+        {
+          "cpu_percent": 0.84,
+          "samples": 25,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc_consolidate"
+        },
+        {
+          "cpu_percent": 0.8,
+          "samples": 24,
+          "comm": "profile_purchas",
+          "symbol": "[.] cfree@GLIBC_2.2.5"
+        },
+        {
+          "cpu_percent": 0.77,
+          "samples": 23,
+          "comm": "profile_purchas",
+          "symbol": "[.] unlink_chunk.isra.0"
+        },
+        {
+          "cpu_percent": 0.74,
+          "samples": 22,
+          "comm": "profile_purchas",
+          "symbol": "[.] <std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+        },
+        {
+          "cpu_percent": 0.74,
+          "samples": 22,
+          "comm": "profile_purchas",
+          "symbol": "[.] core::slice::sort::unstable::quicksort::quicksort::<bowl::entity::Entity, <bowl::entity::Entity as core::cmp::PartialOrd>::lt>"
+        },
+        {
+          "cpu_percent": 0.7,
+          "samples": 21,
+          "comm": "profile_purchas",
+          "symbol": "[.] malloc"
+        },
+        {
+          "cpu_percent": 0.67,
+          "samples": 20,
+          "comm": "porridge-worker",
+          "symbol": "[.] <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows::{closure#0}::{closure#0}"
+        }
+      ],
+      "perf_log_tail": [
+        "Events disabled",
+        "[ perf record: Woken up 250 times to write data ]",
+        "[ perf record: Captured and wrote 24.101 MB /home/jonas/Development/Rust/porridge/target/execution-profile/compute-8/perf.data (2991 samples) ]"
+      ]
+    }
+  ],
+  "method_notes": [
+    "CPU profiles use cpu-clock:u at 499 Hz with DWARF stacks; only the spawned fixture process and inherited threads are sampled.",
+    "FIFO enable/disable acknowledgements bound the request lifecycle. Setup, warmup, statistics reads, assertions, formatting and final world destruction are excluded.",
+    "Unsampled rounds are separate from perf rounds. CPU shares are fractions of sampled process user CPU, not fractions of wall time.",
+    "Per-system poll counters sum elapsed poll durations across workers and include fetch/guard/output costs; they are not pure kernel CPU time.",
+    "Plan time, settle time and snapshot time overlap; the existing commit bucket covers hook commits only and cannot measure streamed publication.",
+    "Leaf groups are exclusive name-based lower-bound categories, not exhaustive engine-stage attribution. Full leaf/caller tables and per-round sampled counters remain in target/execution-profile.",
+    "One-worker isolated results are variable and include regressions. The eight-worker tiny typed/boxed separation repeats, while task-only erasure remains close.",
+    "No inferred whole-engine speedup or Amdahl ceiling is calculated from CPU shares; paths overlap in time."
+  ],
+  "validation": [
+    "cargo build --workspace --all-targets -j 20",
+    "cargo test --workspace -j 20: 150 unit tests and doctest passed",
+    "cargo build --workspace --all-targets --profile bench -j 20 --message-format=json: passed",
+    "Built dispatch, engine and stateful benchmark executables --test: passed",
+    "target/debug/playground: passed",
+    "cargo clippy --workspace --all-targets -j 20: passed with existing warnings",
+    "Optimized profiling driver: all replies accepted for every sampled and unsampled round; assertions outside measurement",
+    "Perf control smoke initially exposed a NUL-terminated acknowledgement; corrected before measured runs"
+  ]
+}

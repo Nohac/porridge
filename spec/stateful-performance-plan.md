@@ -2,7 +2,9 @@
 
 Status: benchmark foundation, indexed reservations, retirement batching, the
 concrete kernel adapter and worker dispatch batching are committed. Typed execution
-plans are implemented; isolated execution-speed attribution remains open. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
+plans are committed; isolated executor benchmarks and full-workload CPU profiles
+are complete. See [execution profiling](execution-profiling.md) for results and the
+proposed schema-driven driver preparation. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
 access reservations, async systems, publication and retirement paths.
 
 ## Goals and boundaries
@@ -77,11 +79,12 @@ counter percentages.
 - [x] Isolated purchase build, three contract tests and optimized smoke.
 - [x] Preserve cancellation, pending-sibling publication, conflict/retry and hook
   behavior; exercise a concrete suspended `!Unpin` row future in the dispatch test.
-- [ ] Isolate dispatch execution with representative immediate and suspended
+- [x] Isolate dispatch execution with representative immediate and suspended
   kernels, comparing typed and boxed rows independently of planning/publication.
-- [ ] Profile complete workloads to quantify how much time the isolated path
+- [x] Profile complete workloads to quantify how much time the isolated path
   represents; do not infer an executor speedup from code size or total throughput.
-- [ ] Then implement prepared typed-store fetching as a separately measured slice.
+- [ ] Prepare schema/query metadata for driver dependency lookups and typed store
+  fetching as a separately measured slice; see the [implementation plan](execution-profiling.md#proposed-implementation-prepare-the-driver-from-the-schema).
 
 [Raw comparisons, variation and provenance](benchmarks/2026-10-21-typed-batches.json)
 are retained. Local binaries and scripts live under `target/typed-batches/`.
@@ -485,7 +488,7 @@ are archived; raw logs and Criterion output are under `target/unboxed-future/`.
 
 ### E. Direct dirty routing after the preceding measurements
 
-Implement schema component IDs and a reverse component-to-system interest index
+Reuse the schema presence-bit component IDs for a reverse component-to-system interest index
 at registration. Route changes into per-system entity candidate queues instead
 of making every system filter the shared write log. Presence transitions handle
 membership; value revisions still handle stale reads. Preserve provider-side join
