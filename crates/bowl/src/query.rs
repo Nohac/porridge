@@ -1114,6 +1114,10 @@ impl<T: Component> QueryParam for &T {
     type State = Entity;
     type Item<'a> = &'a T;
 
+    fn interest_types() -> Option<Vec<TypeId>> {
+        Some(vec![TypeId::of::<T>()])
+    }
+
     fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
         snapshot.entities_with::<T>()
     }

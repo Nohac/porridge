@@ -1,7 +1,8 @@
 # Stateful workload performance plan
 
 Status: benchmark foundation, indexed access reservations and the concrete kernel
-future adapter are committed. Batched retirement is implemented and validated. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
+future adapter are committed. Batched retirement is committed; worker dispatch batching is implemented and
+validated. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
 access reservations, async systems, publication and retirement paths.
 
 ## Goals and boundaries
@@ -17,6 +18,74 @@ not end-to-end application capacity. Keep fixture changes separate from engine
 changes when comparing candidates.
 
 ## Current implementation slice
+
+**Worker dispatch batching** (batch D) is brought forward after the purchase
+reference. Its contract and the additional scalar-query correctness fix are in
+[dispatch-batching.md](dispatch-batching.md). Typed per-system batches and profiling
+remaining serial work follow this slice; live-candidate enumeration remains open.
+
+### Dispatch batching measurements (2026-10-21)
+
+Implemented and validated against `f9c6cd7`. Each final comparison below uses one
+executable with runtime maxima 1 and 16, two fresh processes per setting in
+alternating order, 0.1-second warmup, requested 0.4-second measurement and ten
+Criterion samples. Values are medians of two process estimates, in milliseconds
+per complete request batch. The runtime setting is a maximum; small plans use
+smaller tasks. Maximum 1 is the new dispatcher's individual-task mode, not the
+previous executable. Both settings include the scalar-query correctness fix.
+
+| Requests | Workers | Workload | Maximum 1, ms | Maximum 16, ms | Ratio |
+| ---: | ---: | --- | ---: | ---: | ---: |
+| 1 | 1 | Independent | 0.118 | 0.099 | 1.19x |
+| 1 | 8 | Independent | 0.101 | 0.082 | 1.23x |
+| 100 | 1 | Independent | 4.431 | 3.545 | 1.25x |
+| 100 | 8 | Independent | 3.908 | 4.146 | 0.94x |
+| 1,000 | 1 | Independent | 37.471 | 44.157 | 0.85x |
+| 1,000 | 8 | Independent | 72.109 | 48.939 | 1.47x |
+| 1,000 | 1 | Contended (4/owner) | 216.567 | 118.760 | 1.82x |
+| 1,000 | 8 | Contended (4/owner) | 227.716 | 138.853 | 1.64x |
+| 1,000 | 1 | Heavier | 65.399 | 83.073 | 0.79x |
+| 1,000 | 8 | Heavier | 57.475 | 42.273 | 1.36x |
+
+The most repeatable gains were the three large/eight-worker cases: 1.47x for
+independent light requests, 1.64x with four requests per owner, and 1.36x with
+10,000 arithmetic iterations per validator. Their final batched throughputs were
+about 20.4k, 7.2k and 23.7k completed requests/s respectively. The first implementation
+pass also improved those cases (1.45x, 1.63x and 1.41x).
+
+One-worker conclusions are unresolved: the independent and heavier cases reversed
+between passes, and contention varied widely. Do not use the table to claim a
+universal improvement or a well-tuned default. At one request both settings select
+exactly the same grain of 1; the apparent difference is measurement variation.
+Maxima 4/64 and four-worker tuning are deferred to a controlled run. The initial
+maximum of 16 remains provisional.
+
+The first implementation nested cooperative streams even without Tokio. Fresh
+cold-settle comparisons showed before 601–652 us versus after 667–676 us. The
+final implementation restores a flat cooperative future queue: fresh cold runs
+were before 629–638 us, after 627–642 us; incremental runs were before 73–76 us,
+after 73–75 us. Tiny worker cases still varied sharply: one-worker before 46–90 us,
+after 91–114 us; eight-worker before 97–103 us, after 52–83 us. Small-case overhead
+remains open, not proof of a regression-free universal win.
+
+Validation passes: workspace build, 150 unit tests and the doctest, playground,
+both optimized benchmark smoke targets, and Clippy (existing warnings). The
+isolated reference build, three purchase contract tests and optimized smoke pass.
+No dependency or feature changes were introduced. The initial integration test
+stalled on the pre-existing scalar-query interest bug, now fixed and covered.
+
+[Raw final and initial estimates, hashes, commands and validation](benchmarks/2026-10-21-dispatch-batching.json)
+are archived. Local logs, preserved baseline executables and scripts are under
+`target/dispatch-batching/`; the superseded first pass is retained in its `initial/`
+subdirectory. Bevy's earlier reference is reused rather than rerun; this slice does
+not establish a new precise Porridge/Bevy ratio.
+
+Next: profile remaining per-row planning/publication costs and prototype homogeneous
+typed system batches. The current implementation still boxes planned rows and
+retains all per-invocation bookkeeping. Live-candidate enumeration and direct dirty
+routing remain on the plan.
+
+### Previous slice: batched retirement
 
 **Batched entity retirement** (batch B, step 2), based on commit `6154292`.
 Access indexing and the concrete function future stay identical in both measured
@@ -68,7 +137,8 @@ Bevy batches ordinary systems, while Porridge maintains per-invocation increment
 bookkeeping. The large gap supports investigating execution granularity and
 locality, not attributing it all to one dispatch layer. Exact ratios need a quiet
 host; see the scratchpad's per-run results and feature differences.
-After that, batch C starts with live-candidate typed facet enumeration.
+Batch D is now brought forward to test task amortization first; batch C remains
+planned rather than silently dropped.
 The broader [schema/partition direction](ideas/schema-execution-and-partitions.md)
 remains exploratory; worker ownership and clustering need separate contracts.
 
@@ -275,13 +345,15 @@ sketch. No further timed tuning was run after the environment discussion.
 
 ### D. Dispatch batching with independently completed rows
 
-Port `dispatch.rs` and the narrow `bowl.rs` integration from the experiment.
-Start with an internal/default grain and a runtime override for benchmarking.
+Implemented: `dispatch.rs`, narrow `bowl.rs` integration and a runtime maximum
+for benchmarking. The cooperative path uses a flat queue; the original port did
+not. See the current-slice measurements above.
 Do not batch dependency identities, publication or domain transactions together.
 Each completed row must publish without waiting for a pending sibling. Reader
 cancellation, writer draining, panic propagation, bounded completion channels and
-execution without Tokio need contracts. Compare grain 1/4/16/64 with 1/4/8 workers,
-light/heavy work and small populations before choosing a default.
+execution without Tokio need contracts. Initial measurements cover maxima 1/16 with 1/8 workers, light/heavy work,
+contention and small populations. Broader 4/64 and four-worker tuning remains open;
+16 is provisional rather than an established optimum.
 
 ### D1. Reduce per-invocation type erasure
 
@@ -371,7 +443,7 @@ contracts are established.
 - [ ] Mixed arrivals: movement, purchases, exchanges and membership churn, with
   controlled queues and explicit session ordering. The engine remains identical;
   only the input source changes.
-- [ ] Suspended async kernels with fast siblings: prove dispatch batching does not
+- [x] Suspended async kernels with fast siblings: prove dispatch batching does not
   create a completion barrier or starve downstream work.
 
 These expand coverage; they are not prerequisites for measuring the first two

@@ -517,10 +517,10 @@ let rows = diagnostics.collect();
   `'static + Send` futures; with an ambient tokio runtime the wave loop
   spawns them onto workers (abort-on-drop preserves preemption
   cancellation), else they poll cooperatively as before. 2.1× on the
-  `parallel_compute` bench at 32×~14µs rows. Remaining headroom: per-task
-  spawn overhead (batch small rows per task), wave/commit serialization
-  (commit pipelining — apply finished batches while later runs still
-  execute), and a heavier-row bench matrix. Pure racing readers use
+  `parallel_compute` bench at 32×~14µs rows. Worker dispatch now batches
+  small rows while streaming completed results; see `spec/dispatch-batching.md`.
+  Remaining headroom: per-row allocation/type erasure, planning/publication
+  serialization, and broader controlled measurements. Pure racing readers use
   `.last_settled()` to skip the settle queue (dogfooded in the storm;
   commit-bucket lock waits collapsed 108ms → 6.6ms).
 - **Done: ambient healing (the A→B→A staleness fix).** Settle-epoch-
@@ -822,10 +822,10 @@ Current shortcut:
 ## 13. Add Async Parallel System Execution
 
 - Keep system functions async.
-- Move from full-batch barriers toward streaming evaluation once ownership and
-  scheduling semantics are clearer.
-- Run independent system invocations concurrently and commit completed
-  invocations as soon as their captured deps are still current.
+- Done: stream independent invocations and publish completed results after
+  validating their captured dependencies.
+- Done: amortize worker dispatch across small batches without a completion
+  barrier; preserve a flat cooperative queue without an ambient runtime.
 - Add per-system streaming policy hints:
   - `max_concurrency(n)` limits running invocations for that system
   - `min_batch_size(n)` waits for at least `n` runnable rows unless settling
@@ -834,18 +834,18 @@ Current shortcut:
   - many callers can wait
   - only one evaluation driver runs
   - pending inserts batch into the current/next settlement cycle
-- Decide whether parallel execution requires `Send` futures or a local executor
-  mode.
+- System futures are `Send`; an ambient Tokio runtime supplies worker execution.
+  Cooperative execution remains available without changing features.
 
-Current shortcut:
-- Systems and invalid query rows are polled with local `join_all`.
-- `Runnable` returns `LocalBoxFuture`, so the current implementation does not
-  require system futures to be `Send` and does not spawn work onto a
-  multi-threaded executor.
-- The current runner still commits a batch barrier after planned work completes.
+Remaining work:
+- Typed per-system execution batches to reduce per-invocation type erasure.
+- Planning and publication still run on one evaluator.
+- Per-system admission and commit policies remain proposals. The implemented
+  `set_dispatch_batch_size` is a maximum rows-per-task setting only.
 
 See:
 - `spec/streaming-evaluation.md`
+- `spec/dispatch-batching.md`
 
 ## 14. Add Dependency Graph Introspection
 

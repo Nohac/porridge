@@ -107,6 +107,8 @@ struct Inner {
     /// This is kept outside async state so changing it does not require an
     /// executor turn. The value is tiny and copied when an operation starts.
     commit_limit: StdMutex<CommitLimit>,
+    /// Maximum rows per worker task, captured once per evaluator phase.
+    dispatch_batch_size: atomic::AtomicUsize,
     /// Bound entity handles cannot `await` in `Drop`, so dropped handles enqueue
     /// their entity here. The next bowl operation drains this queue after
     /// evaluation has had a chance to materialize request outputs.
@@ -1099,53 +1101,6 @@ impl Drop for ScopeTimer<'_> {
     }
 }
 
-/// A spawned system run that aborts if the runner drops it (preemption
-/// discards read-only work; a detached task must not keep holding cell
-/// guards).
-#[cfg(feature = "parallel")]
-struct SpawnedRun<T> {
-    handle: tokio::task::JoinHandle<T>,
-}
-
-#[cfg(feature = "parallel")]
-impl<T> std::future::Future for SpawnedRun<T> {
-    type Output = T;
-
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        std::pin::Pin::new(&mut self.handle)
-            .poll(cx)
-            .map(|result| result.expect("system task panicked or was aborted"))
-    }
-}
-
-#[cfg(feature = "parallel")]
-impl<T> Drop for SpawnedRun<T> {
-    fn drop(&mut self) {
-        self.handle.abort();
-    }
-}
-
-/// Dispatches a planned run: onto ambient tokio workers under the
-/// `parallel` feature (falling back to cooperative polling without a
-/// runtime), always cooperative otherwise — the engine itself stays
-/// executor-agnostic.
-fn dispatch_run(
-    run: impl std::future::Future<Output = (SystemInvocation, SystemRun)> + Send + 'static,
-) -> futures::future::BoxFuture<'static, (SystemInvocation, SystemRun)> {
-    #[cfg(feature = "parallel")]
-    {
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            return Box::pin(SpawnedRun {
-                handle: handle.spawn(run),
-            });
-        }
-    }
-    Box::pin(run)
-}
-
 /// Poll-time measuring wrapper: charges only the time spent inside the
 /// inner future's `poll` to the owning system, so awaiting siblings in the
 /// same wave is not misattributed.
@@ -1223,6 +1178,7 @@ impl Bowl {
                 settled_read: std::sync::RwLock::new(None),
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
+                dispatch_batch_size: atomic::AtomicUsize::new(16),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
                 preempt_waiters: std::sync::atomic::AtomicUsize::new(0),
                 preempt_signal: futures::task::AtomicWaker::new(),
@@ -1251,6 +1207,21 @@ impl Bowl {
             .commit_limit
             .lock()
             .expect("commit limit lock poisoned")
+    }
+
+    /// Maximum independent rows per worker task in future evaluation phases.
+    /// Defaults to 16. The runner chooses smaller batches to retain parallelism;
+    /// setting one restores individual dispatch. This does not batch commits.
+    pub fn set_dispatch_batch_size(&self, maximum: usize) {
+        assert!(maximum > 0, "dispatch batch size must be positive");
+        self.inner
+            .dispatch_batch_size
+            .store(maximum, atomic::Ordering::Relaxed);
+    }
+
+    /// Current maximum; active phases keep the value they started with.
+    pub fn dispatch_batch_size(&self) -> usize {
+        self.inner.dispatch_batch_size.load(atomic::Ordering::Relaxed)
     }
 
     pub(crate) async fn with_component_original<T, F, R>(
@@ -2285,8 +2256,9 @@ impl Bowl {
         let mut running_access = Reservations::default();
         // Tiered preemption drops read-only work wholesale while draining
         // writers, so in-flight runs are split by access class.
-        let mut read_runs = FuturesUnordered::new();
-        let mut write_runs = FuturesUnordered::new();
+        let mut read_runs = crate::dispatch::Queue::new();
+        let mut write_runs = crate::dispatch::Queue::new();
+        let dispatch_maximum = self.dispatch_batch_size();
         let mut read_owners: HashSet<SystemInvocation> = HashSet::new();
         let mut needs_plan = true;
         let mut deferred_conflicts = false;
@@ -2424,6 +2396,9 @@ impl Bowl {
                         plan_start.elapsed().as_nanos() as u64,
                         std::sync::atomic::Ordering::Relaxed,
                     );
+                    let grain = crate::dispatch::grain(planned_runs.len(), dispatch_maximum);
+                    let mut read_batch: Vec<crate::dispatch::Run> = Vec::new();
+                    let mut write_batch: Vec<crate::dispatch::Run> = Vec::new();
                     for planned in planned_runs {
                         if !running.insert(planned.owner.clone()) {
                             continue;
@@ -2457,17 +2432,23 @@ impl Bowl {
                             let run = timed.await;
                             (owner, run)
                         };
-                        // Parallel execution when an executor is ambient
-                        // (feature `parallel`): planned runs are owned +
-                        // `Send`, `Access` scheduling already keeps
-                        // conflicting rows apart, and commits stay
-                        // serialized on the driver.
-                        let run = dispatch_run(run);
-                        if writer {
-                            write_runs.push(run);
+                        // Access remains reserved per invocation. Never mix
+                        // readers and writers: preemption cancels only readers.
+                        let (batch, stream) = if writer {
+                            (&mut write_batch, &mut write_runs)
                         } else {
-                            read_runs.push(run);
+                            (&mut read_batch, &mut read_runs)
+                        };
+                        batch.push(Box::pin(run));
+                        if batch.len() == grain {
+                            stream.push_batch(std::mem::take(batch));
                         }
+                    }
+                    if !read_batch.is_empty() {
+                        read_runs.push_batch(read_batch);
+                    }
+                    if !write_batch.is_empty() {
+                        write_runs.push_batch(write_batch);
                     }
                 }
             }
@@ -2532,12 +2513,12 @@ impl Bowl {
     /// cancellation boundaries.
     async fn await_next_run<F>(
         &self,
-        read_runs: &mut FuturesUnordered<F>,
-        write_runs: &mut FuturesUnordered<F>,
+        read_runs: &mut F,
+        write_runs: &mut F,
         allow_preempt: bool,
     ) -> RunEvent
     where
-        F: Future<Output = (SystemInvocation, SystemRun)>,
+        F: futures::Stream<Item = (SystemInvocation, SystemRun)> + Unpin,
     {
         futures::future::poll_fn(|context| {
             // AtomicWaker protocol: check, register, re-check — a mutator

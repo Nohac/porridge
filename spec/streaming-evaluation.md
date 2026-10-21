@@ -1,14 +1,14 @@
 # Streaming Evaluation
 
-This spec describes the likely next execution model for `bowl`.
+The streaming core described here is implemented: evaluation remains
+single-flight, and completed invocations publish without waiting for pending
+siblings. [Worker dispatch batching](dispatch-batching.md) groups execution tasks
+without adding a completion barrier.
 
-The current implementation plans a batch of system invocations, runs them
-concurrently, then applies all command buffers at a barrier. That is simple and
-deterministic, but it means one slow async invocation can hold back outputs from
-completed invocations.
-
-The proposed model keeps single-flight evaluation, but commits completed
-invocations as they finish.
+The per-system admission and commit-policy APIs illustrated below remain proposals,
+not available methods. The implemented runtime setting controls only the maximum
+rows per worker task. Historically, the engine used an all-invocations completion
+barrier; the examples below explain the transition away from that model.
 
 ## Core Model
 

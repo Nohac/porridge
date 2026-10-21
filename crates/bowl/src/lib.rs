@@ -100,6 +100,7 @@ mod access;
 mod bowl;
 mod commands;
 mod component;
+mod dispatch;
 mod declare;
 mod entity;
 mod query;

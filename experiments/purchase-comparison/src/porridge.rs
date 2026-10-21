@@ -9,6 +9,10 @@ impl Engine {
         Self(purchases::create(owners, balance, capacity).await)
     }
 
+    pub fn set_dispatch_batch_size(&self, maximum: usize) {
+        self.0.set_dispatch_batch_size(maximum);
+    }
+
     pub async fn submit(&self, owner: usize, request: Purchase) {
         purchases::submit(&self.0, owner, request).await;
     }

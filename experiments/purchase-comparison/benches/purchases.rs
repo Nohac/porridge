@@ -16,6 +16,8 @@ fn purchases(c: &mut Criterion) {
     let workers = number("PURCHASE_WORKERS", 1);
     let requests = number("PURCHASE_REQUESTS", 1000);
     let per_owner = number("PURCHASE_PER_OWNER", 1);
+    let dispatch = number("PURCHASE_DISPATCH_BATCH", 16);
+    assert!(dispatch > 0);
     let work = u32::try_from(number("PURCHASE_WORK", 0)).expect("work must fit u32");
     assert!(workers > 0 && requests > 0 && per_owner > 0);
     let backend = env::var("PURCHASE_BACKEND").unwrap_or_else(|_| "both".into());
@@ -30,35 +32,42 @@ fn purchases(c: &mut Criterion) {
             .worker_threads(workers)
             .build()
             .unwrap();
-        group.bench_function(BenchmarkId::new("porridge", &case), |b| {
-            b.iter_custom(|iterations| {
-                let mut elapsed = Duration::ZERO;
-                runtime.block_on(async {
-                    for _ in 0..iterations {
-                        let engine =
-                            porridge::Engine::new(requests.div_ceil(per_owner), u64::MAX, u64::MAX)
-                                .await;
-                        let start = Instant::now();
-                        for index in (0..requests).rev() {
-                            engine
-                                .submit(
-                                    index / per_owner,
-                                    Purchase {
-                                        sequence: (index % per_owner + 1) as u64,
-                                        price: 1,
-                                        work,
-                                    },
-                                )
-                                .await;
+        group.bench_function(
+            BenchmarkId::new("porridge", format!("{case}/dispatch={dispatch}")),
+            |b| {
+                b.iter_custom(|iterations| {
+                    let mut elapsed = Duration::ZERO;
+                    runtime.block_on(async {
+                        for _ in 0..iterations {
+                            let engine = porridge::Engine::new(
+                                requests.div_ceil(per_owner),
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                            .await;
+                            engine.set_dispatch_batch_size(dispatch);
+                            let start = Instant::now();
+                            for index in (0..requests).rev() {
+                                engine
+                                    .submit(
+                                        index / per_owner,
+                                        Purchase {
+                                            sequence: (index % per_owner + 1) as u64,
+                                            price: 1,
+                                            work,
+                                        },
+                                    )
+                                    .await;
+                            }
+                            let responses = engine.finish().await;
+                            elapsed += start.elapsed();
+                            black_box(responses);
                         }
-                        let responses = engine.finish().await;
-                        elapsed += start.elapsed();
-                        black_box(responses);
-                    }
+                    });
+                    elapsed
                 });
-                elapsed
-            });
-        });
+            },
+        );
     }
     if backend != "porridge" {
         bevy::init_workers(workers);

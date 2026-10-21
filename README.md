@@ -315,9 +315,12 @@ dependencies went stale is discarded and replanned.
 
 Snapshots clone maps and shared guarded component cells, not user payloads.
 The scheduler admits concurrent row reads and disjoint writes while
-serializing conflicting access. User systems are locally polled together by
-the active runner; they are not currently dispatched as a general worker-pool
-job graph.
+serializing conflicting access. With the default `parallel` feature and an
+ambient Tokio runtime, admitted rows execute in worker tasks. Independent rows
+from one system share small dispatch batches; each row can publish before its
+siblings finish. Without Tokio, execution remains cooperatively polled.
+`bowl.set_dispatch_batch_size(16)` sets the maximum rows per task (the default);
+`1` selects individual dispatch. See [dispatch batching](spec/dispatch-batching.md).
 
 `Bowl` itself is cheap to clone. Evaluation is single-flight: one caller drives
 pending work while concurrent callers wait on the same generation rather than
@@ -440,8 +443,8 @@ Important constraints and open directions:
 - Non-convergence and dependency explanations can become much richer (TODO:
   **Add Better Non-Settling And Cycle Diagnostics** and **Add Dependency Graph
   Introspection**).
-- Systems are concurrently polled locally, but broader parallel execution is
-  still a design track (TODO: **Add Async Parallel System Execution**).
+- Worker execution is available, while planning and publication remain on one
+  evaluator. Typed execution batches and distributed planning remain future work.
 - Long-running daemon/client operation, persistence boundaries, tombstones,
   and replication streams remain exploratory (TODO: **Explore Long-Running
   Daemon Runtime** and **Explore Replication / Change Streams**).

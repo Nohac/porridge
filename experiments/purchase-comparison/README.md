@@ -91,6 +91,10 @@ Runtime settings (no feature changes/recompilation):
 | `PURCHASE_REQUESTS` | `1000` | Requests in a batch |
 | `PURCHASE_PER_OWNER` | `1` | Requests sharing each owner; try `4` for contention |
 | `PURCHASE_WORK` | `0` | Synthetic arithmetic iterations per validation |
+| `PURCHASE_DISPATCH_BATCH` | `16` | Porridge maximum rows per worker task; `1` for individual dispatch |
+
+The dispatch maximum is included in Porridge benchmark IDs and does not affect
+Bevy. The engine may choose smaller batches to preserve parallelism.
 
 Counts must be positive; work can be zero and must fit `u32`. No artificial input
 limits. The local workstation can reveal a large gap, but small percentage targets
@@ -144,3 +148,11 @@ and Clippy pass (dependency warnings remain). Contract tests include a separate
 1,000-request check confirming every response and expected final state; there
 are no correctness assertions in timed iterations. The first compile used an
 older Bevy executor API and was corrected to 0.20's `MultiThreadedExecutor`.
+
+## Dispatch batching follow-up
+
+The Porridge adapter now exposes `PURCHASE_DISPATCH_BATCH` so limits can be compared
+without recompilation. The [dispatch report](../../spec/stateful-performance-plan.md#dispatch-batching-measurements-2026-10-21)
+records same-executable comparisons at maxima 1 and 16 and retains the original
+Bevy reference. Eight-worker large cases improved about 1.4–1.6x; one-worker
+results were mixed and unstable. This is not a new precise cross-engine ratio.
