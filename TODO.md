@@ -6,9 +6,10 @@ important.
 
 ## 0. Major Direction Notes
 
-- Next measured optimization: indexed access reservations, followed independently
-  by batched retirement. See `spec/stateful-performance-plan.md` for the baseline,
-  scoped next slice and acceptance checks.
+- Indexed access reservations are implemented and correctness-tested; precise
+  performance/small-case acceptance remains open. Batched retirement follows as
+  a separate change. See `spec/stateful-performance-plan.md` for the baseline,
+  workstation-versus-controlled measurement policy and acceptance checks.
 - Explore schema-prepared execution, affinity and eventual partition clustering
   in `spec/ideas/schema-execution-and-partitions.md`. These are future directions,
   not new current execution/settlement guarantees.

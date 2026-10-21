@@ -1,0 +1,1221 @@
+{
+  "baseline": "indexed reservations with boxed user-function future",
+  "candidate": "same indexed reservations with concrete user-function future",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "base_commit": "b8889c26596d2a786c8008a8dc1478e4414a8345",
+  "binaries": {
+    "before-stateful": "ee12d9faa587ba09c53d69e2eae85453f9a560dac53269aa97b13c498a0cc665",
+    "after-stateful": "d19b18e4b131b31db53dd3b1a4645c2ac5767b443f0ef0e3d555dedf9f715585",
+    "before-engine": "3785e87266c3a345c77b9f2fdbf880c9490213f839486a9c625d3200a3f7e17e",
+    "after-engine": "b368ce93a1a3147790c4132599140f0ebf8e0c7de57d9bb1d2df9a6ea4d1e6d8"
+  },
+  "settings": {
+    "repetitions_per_variant": 2,
+    "order": [
+      "before",
+      "after",
+      "after",
+      "before"
+    ],
+    "warmup_seconds": 0.1,
+    "requested_measurement_seconds": 0.4,
+    "samples": 10,
+    "bootstrap_resamples": 10000,
+    "environment": "active developer workstation; uncontrolled contention",
+    "note": "Both variants include the reservation index. Only the generic function future changed. Large batches can exceed the requested measurement duration."
+  },
+  "measurements": [
+    {
+      "case": "purchase-1-1",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 89420.56351228683,
+          "upper_bound": 90864.1184043686
+        },
+        "point_estimate": 90001.57589763177,
+        "standard_error": 370.6007608301518
+      }
+    },
+    {
+      "case": "purchase-1-1",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 87417.25763146167,
+          "upper_bound": 97971.46861797821
+        },
+        "point_estimate": 93529.52868601987,
+        "standard_error": 2816.546412516844
+      }
+    },
+    {
+      "case": "purchase-1-1",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 52476.323633156964,
+          "upper_bound": 61338.07092481703
+        },
+        "point_estimate": 57159.3565945166,
+        "standard_error": 2489.3582802740784
+      }
+    },
+    {
+      "case": "purchase-1-1",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 41321.54903963696,
+          "upper_bound": 43541.93500958952
+        },
+        "point_estimate": 42269.466653647105,
+        "standard_error": 590.1530778749402
+      }
+    },
+    {
+      "case": "purchase-1-8",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46972.06981006004,
+          "upper_bound": 47329.55293452704
+        },
+        "point_estimate": 47097.21531664212,
+        "standard_error": 93.15687270821483
+      }
+    },
+    {
+      "case": "purchase-1-8",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 46071.139454018165,
+          "upper_bound": 46792.25932459677
+        },
+        "point_estimate": 46423.599162128194,
+        "standard_error": 180.50070163582774
+      }
+    },
+    {
+      "case": "purchase-1-8",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 45617.3986371841,
+          "upper_bound": 46758.90704697508
+        },
+        "point_estimate": 46085.22895698052,
+        "standard_error": 288.649148817164
+      }
+    },
+    {
+      "case": "purchase-1-8",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1",
+      "throughput": {
+        "Elements": 1
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 96086.52785558668,
+          "upper_bound": 97508.13378674052
+        },
+        "point_estimate": 96617.2136878994,
+        "standard_error": 365.664550849604
+      }
+    },
+    {
+      "case": "purchase-100-1",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 6206248.810670225,
+          "upper_bound": 6561065.752312577
+        },
+        "point_estimate": 6327626.733766234,
+        "standard_error": 90914.44396385914
+      }
+    },
+    {
+      "case": "purchase-100-1",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5370123.741550696,
+          "upper_bound": 6753240.36753599
+        },
+        "point_estimate": 5849337.389610389,
+        "standard_error": 348743.49211344763
+      }
+    },
+    {
+      "case": "purchase-100-1",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5186156.698245887,
+          "upper_bound": 5567508.252148997
+        },
+        "point_estimate": 5414341.709090909,
+        "standard_error": 100581.01907951487
+      }
+    },
+    {
+      "case": "purchase-100-1",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3476864.1619547624,
+          "upper_bound": 4650343.512244898
+        },
+        "point_estimate": 3833181.4623376625,
+        "standard_error": 303293.971159844
+      }
+    },
+    {
+      "case": "purchase-100-8",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5364388.188002652,
+          "upper_bound": 5717250.79023329
+        },
+        "point_estimate": 5459561.623376624,
+        "standard_error": 93079.42889166833
+      }
+    },
+    {
+      "case": "purchase-100-8",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5245439.728313444,
+          "upper_bound": 5322163.198489774
+        },
+        "point_estimate": 5276432.107792208,
+        "standard_error": 20119.47039351388
+      }
+    },
+    {
+      "case": "purchase-100-8",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5266663.484615385,
+          "upper_bound": 5595830.31590937
+        },
+        "point_estimate": 5353360.948051948,
+        "standard_error": 89709.55424916395
+      }
+    },
+    {
+      "case": "purchase-100-8",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "100",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/100",
+      "throughput": {
+        "Elements": 100
+      },
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 5552250.839021101,
+          "upper_bound": 6739427.790849674
+        },
+        "point_estimate": 6057452.241558442,
+        "standard_error": 307639.57703879225
+      }
+    },
+    {
+      "case": "purchase-1000-1",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 136399635.7,
+          "upper_bound": 172227738.715
+        },
+        "point_estimate": 152386700.4,
+        "standard_error": 9112520.764268316
+      }
+    },
+    {
+      "case": "purchase-1000-1",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 133331275.8,
+          "upper_bound": 143654233.445
+        },
+        "point_estimate": 137556345.8,
+        "standard_error": 2769103.275591952
+      }
+    },
+    {
+      "case": "purchase-1000-1",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 132666593.7,
+          "upper_bound": 134834854.2
+        },
+        "point_estimate": 133701817.6,
+        "standard_error": 553835.178928809
+      }
+    },
+    {
+      "case": "purchase-1000-1",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "1",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=1/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 140595916.2,
+          "upper_bound": 155158295.815
+        },
+        "point_estimate": 147787723.6,
+        "standard_error": 3646779.7306846436
+      }
+    },
+    {
+      "case": "purchase-1000-8",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 145481692.7,
+          "upper_bound": 173979185.5
+        },
+        "point_estimate": 156852708.7,
+        "standard_error": 7757746.0373633085
+      }
+    },
+    {
+      "case": "purchase-1000-8",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 157954092.5,
+          "upper_bound": 191976977.6
+        },
+        "point_estimate": 169650998.0,
+        "standard_error": 10688594.787842957
+      }
+    },
+    {
+      "case": "purchase-1000-8",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 155750908.30749997,
+          "upper_bound": 159142003.64749998
+        },
+        "point_estimate": 157518045.5,
+        "standard_error": 865698.483952209
+      }
+    },
+    {
+      "case": "purchase-1000-8",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-stateful",
+        "--bench",
+        "purchases",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1000",
+        "PORRIDGE_WORKERS": "8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "id": "purchases/workers=8/per_owner=1/work=0/1000",
+      "throughput": {
+        "Elements": 1000
+      },
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 179539122.26250002,
+          "upper_bound": 226210327.2
+        },
+        "point_estimate": 200975110.3,
+        "standard_error": 12108825.792979171
+      }
+    },
+    {
+      "case": "cold_settle-128",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-engine",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "cold_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 612412.5284654142,
+          "upper_bound": 615072.0593160632
+        },
+        "point_estimate": 613460.6314049587,
+        "standard_error": 687.56807027502
+      }
+    },
+    {
+      "case": "cold_settle-128",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-engine",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "cold_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 605404.4414491691,
+          "upper_bound": 613814.2136690718
+        },
+        "point_estimate": 609304.0744588744,
+        "standard_error": 2124.6359759494253
+      }
+    },
+    {
+      "case": "cold_settle-128",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-engine",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "cold_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 597865.6673894912,
+          "upper_bound": 695815.2677459527
+        },
+        "point_estimate": 627886.3017709564,
+        "standard_error": 25276.049993649453
+      }
+    },
+    {
+      "case": "cold_settle-128",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-engine",
+        "--bench",
+        "^cold_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "cold_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 615137.3962031178,
+          "upper_bound": 619387.2542372881
+        },
+        "point_estimate": 617080.6573789846,
+        "standard_error": 1055.6378450244952
+      }
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "before",
+      "repeat": 0,
+      "command": [
+        "before-engine",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "incremental_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 76616.11556864188,
+          "upper_bound": 93734.29010405656
+        },
+        "point_estimate": 84318.53813459269,
+        "standard_error": 4684.502735840819
+      }
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "after",
+      "repeat": 0,
+      "command": [
+        "after-engine",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "incremental_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 73814.28168814053,
+          "upper_bound": 76171.04056795132
+        },
+        "point_estimate": 75108.0665879575,
+        "standard_error": 620.1118132077918
+      }
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "after",
+      "repeat": 1,
+      "command": [
+        "after-engine",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "incremental_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 75173.4551285408,
+          "upper_bound": 77527.0663900415
+        },
+        "point_estimate": 75914.69468713105,
+        "standard_error": 620.5661146699032
+      }
+    },
+    {
+      "case": "incremental_settle-128",
+      "variant": "before",
+      "repeat": 1,
+      "command": [
+        "before-engine",
+        "--bench",
+        "^incremental_settle/128$",
+        "--warm-up-time",
+        "0.1",
+        "--measurement-time",
+        "0.4",
+        "--sample-size",
+        "10",
+        "--nresamples",
+        "10000",
+        "--noplot"
+      ],
+      "environment": {},
+      "id": "incremental_settle/128",
+      "throughput": null,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 71850.6323093906,
+          "upper_bound": 72237.04446383119
+        },
+        "point_estimate": 72072.3873015873,
+        "standard_error": 100.91173763291965
+      }
+    }
+  ]
+}

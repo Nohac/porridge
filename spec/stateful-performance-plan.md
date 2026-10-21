@@ -1,7 +1,7 @@
 # Stateful workload performance plan
 
-Status: benchmark foundation added; engine optimizations below are not yet
-ported. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
+Status: benchmark foundation committed; indexed access reservations implemented
+and correctness-tested. Precise performance acceptance remains open. Baseline engine: `4eb62fc`. All workloads use the ordinary Bowl planner,
 access reservations, async systems, publication and retirement paths.
 
 ## Goals and boundaries
@@ -13,26 +13,30 @@ is not itself success: small kernels may be fastest with one worker.
 
 No networking, database, packet encoding, game assets or external project
 requirements belong in these fixtures. The results measure engine operations,
-not end-to-end application capacity. No engine algorithm changes in this batch.
+not end-to-end application capacity. Keep fixture changes separate from engine
+changes when comparing candidates.
 
 ## Next implementation slice
 
-Start with **indexed access reservations** (batch B, step 1). The current
-`bowl.rs::conflicts_with_running` compares each candidate access against accesses
-of running invocations. The prototype improvement can be evaluated without
-changing schemas, request ordering, storage ownership or settlement.
+The current slice is **indexed access reservations** (batch B, step 1).
+The previous `bowl.rs::conflicts_with_running` compared each candidate access
+against accesses of running invocations. The new private index preserves the
+conflict rule without changing schemas, request ordering or storage ownership.
+See [access scheduling](access-scheduling.md#indexed-phase-reservations).
 
-- [ ] Add private `crates/bowl/src/access.rs` for component/entity reservation
+- [x] Add private `crates/bowl/src/access.rs` for component/entity reservation
   counts, including whole-store access and duplicate declarations.
-- [ ] Integrate admission/release in `bowl.rs`; keep reservations through the
+- [x] Integrate admission/release in `bowl.rs`; keep reservations through the
   appropriate publication boundary, including stale, cancelled and preempted work.
-- [ ] Compare the index against the existing pairwise conflict predicate in tests;
+- [x] Compare the index against the existing pairwise conflict predicate in tests;
   cover overlapping readers/writers, disjoint entities and removal of reservations.
-- [ ] Run workspace tests and both benchmark smoke targets. Measure independent
+- [x] Run workspace tests and both benchmark smoke targets. Measure independent
   and contended purchase batches at 1/10/100/1,000 requests and 1/4/8 workers with
   unchanged features. Include small cases and existing compiler workloads.
-- [ ] Record before/after ranges with identical fixtures and fresh processes.
-  Evaluate this change separately before batched retirement.
+- [x] Record exploratory before/after ranges with identical fixtures and fresh
+  processes. The workstation run alternated variants and included compiler cases.
+- [ ] Establish repeatable small-case costs and precise speedups on a quiet host.
+  Keep access indexing separate from batched retirement in comparisons.
 
 The broader [schema/partition direction](ideas/schema-execution-and-partitions.md)
 is exploratory. Dense schema metadata and dirty routing build on batches C–E;
@@ -146,6 +150,61 @@ PORRIDGE_ROWS=10,100,1000 PORRIDGE_WORKERS=1,4,8 \
   cargo bench -p benches --bench stateful -- sparse_changes
 ```
 
+## Benchmark environment policy
+
+This workstation runs other applications. It remains useful for correctness,
+smoke tests, profiling hypotheses and detecting large algorithmic effects.
+Repeated large changes across workload sizes can justify pursuing an optimization;
+single-run percentages and small changes are not reliable tuning evidence here.
+Criterion confidence intervals within a process do not capture all variation
+between processes, CPU placement or concurrent application load.
+
+Before choosing small-set crossovers, dispatch grains, hashers or other micro
+optimizations, use a quiet dedicated machine. A dedicated-vCPU host is another
+option to assess; a shared VPS is not automatically less noisy than a workstation.
+No host/provider is selected and no infrastructure has been provisioned.
+
+Controlled comparison checklist:
+
+- [ ] Pin toolchain, dependency lockfile, profile and features; archive exact
+  baseline/candidate source and executable hashes.
+- [ ] Record CPU model/topology, effective CPU allocation and runtime worker count.
+  Include the evaluator driver when allocating cores; distinguish physical cores
+  from SMT threads. Record virtualization and CPU contention where observable.
+- [ ] Keep competing jobs off the measured CPUs, record frequency/power settings,
+  warm up, and alternate candidates in fresh processes across repeated runs.
+- [ ] Preserve workload size and history, including setup/timing boundaries.
+  Measure throughput and latency, and investigate small-case regressions.
+- [ ] Retain raw samples and between-process ranges; repeat on another session
+  before selecting a threshold from a small percentage difference.
+
+### Reservation-index experiment status
+
+The index-only implementation passes 142 workspace unit tests plus the component
+doctest, both benchmark smoke targets, normal workspace build and the playground.
+Clippy completes with existing workspace warnings and none in the new module.
+Three new tests compare indexed conflicts/releases against the original rule,
+including whole-store access, duplicates, multiple readers and identity reuse.
+
+The local comparison covered 1/10/100/1,000 requests, 1/4/8 workers, independent and
+four-per-owner contention, heavier 1,000-request kernels, and five existing engine
+cases. Two fresh-process runs per variant alternated before/after order. At 1,000
+requests, point-estimate ratios suggest a substantial gain (roughly 1.35–1.75x
+across the measured cases), consistent with removing the broad conflict scan.
+These are exploratory results, not precise or guaranteed speedups. Tiny-case
+process estimates varied widely, and some 10-request cases became slower.
+
+A provisional scan-to-index crossover at 32 active invocations was explored in
+source but not retained: the local results do not establish a crossover threshold.
+The retained implementation indexes all reservations; small-case index maintenance
+cost is an explicit follow-up, not a resolved regression claim. Do not combine
+these results with retirement batching or claim universal improvement.
+
+Baseline is commit `b8889c2`; candidate source and executable hashes, per-process
+commands and confidence intervals are retained in the local ignored directory
+`target/access-reservations/`. This directory also retains the deferred crossover
+sketch. No further timed tuning was run after the environment discussion.
+
 ## Ordered implementation batches
 
 ### A. Establish measurement and reconciliation
@@ -194,6 +253,69 @@ Each completed row must publish without waiting for a pending sibling. Reader
 cancellation, writer draining, panic propagation, bounded completion channels and
 execution without Tokio need contracts. Compare grain 1/4/16/64 with 1/4/8 workers,
 light/heavy work and small populations before choosing a default.
+
+### D1. Reduce per-invocation type erasure
+
+Audit dispatch boundaries independently of task batching. Registered systems
+remain heterogeneous (`Arc<dyn Runnable>`), but `FunctionSystem<F, Marker>` knows
+the callee type. Its `SystemParamFunction::run` need not erase that future too.
+
+- [x] Return a concrete `impl Future<Output = ()> + Send` from the internal generic
+  function adapter. Preserve borrowed parameter/guard lifetimes and existing APIs.
+- [x] Validate ordinary and hook-driven execution, async suspension, cancellation,
+  preemption and both cooperative/worker dispatch through existing contracts.
+- [ ] Evaluate a concrete enum or equivalent for the dispatch wrapper rather than
+  boxing solely to unify spawned and cooperative execution.
+- [ ] Consider homogeneous per-system batches so type erasure happens once per
+  batch where possible. Keep per-invocation access, memo and publication semantics.
+- [ ] Measure allocations and small-kernel cost on a quiet host before claiming
+  a precise speedup. Watch code size and build time from more monomorphization.
+
+The inner function-future box has been removed as a small independent change,
+ahead of the larger dispatch-batching work. `SystemParamFunction::run` returns a
+concrete future; the generated adapter calls the async function directly. The
+outer planned invocation and dispatch wrapper remain boxed. No public API or
+suspension/guard-lifetime policy changed. Reservation-index timings above predate
+this change and must not be used to claim its performance effect.
+Validation: `cargo build --workspace -j 20`, `cargo test --workspace -j 20`
+(142 unit tests and the doctest), and `cargo bench -p benches -j 20 -- --test`
+all pass. A subsequent short exploratory comparison is recorded below; it is
+not a controlled micro-optimization acceptance run.
+
+The outer planned invocation still needs a common representation for the registry.
+A stored function pointer is also an indirect call; replacing trait objects with
+function pointers alone is not elimination of dynamic dispatch. This work does
+not require distributed scheduling or a new synchronous public API first.
+
+#### Exploratory inner-future comparison (2026-10-21)
+
+Eight cases, two fresh-process runs per variant in before/after/after/before
+order, using preserved executables with identical default features and benchmark
+fixtures. Both variants include indexed reservations; this isolates the inner
+future change. No rebuild was needed. Warmup 0.1 seconds, requested measurement
+0.4 seconds, 10 samples; larger batches required longer to collect those samples.
+
+| Case | Boxed, median batch time | Concrete future, median batch time |
+| --- | ---: | ---: |
+| 1 request, 1 worker | 66.1 us | 75.3 us |
+| 1 request, 8 workers | 71.9 us | 46.3 us |
+| 100 requests, 1 worker | 5.08 ms | 5.63 ms |
+| 100 requests, 8 workers | 5.76 ms | 5.31 ms |
+| 1,000 requests, 1 worker | 150.1 ms | 135.6 ms |
+| 1,000 requests, 8 workers | 178.9 ms | 163.6 ms |
+| Cold settle, 128 inputs | 615.3 us | 618.6 us |
+| Incremental settle, 128 inputs | 78.2 us | 75.5 us |
+
+These are medians of only two per-process Criterion point estimates. The
+1,000-request/one-worker case improved in both runs: boxed 147.8–152.4 ms versus
+concrete 133.7–137.6 ms, a promising coarse signal. Eight-worker boxed runs spanned
+156.9–201.0 ms, so its median improvement is less convincing. Tiny runs varied
+widely (individual one-request estimates ranged about 42–97 us); the small-case
+results do not establish either a general gain or a reliable regression.
+Compiler cases were close overall. No universal speedup is claimed.
+
+[Hashes, commands and per-process estimates](benchmarks/2026-10-21-unboxed-future.json)
+are archived; raw logs and Criterion output are under `target/unboxed-future/`.
 
 ### E. Direct dirty routing after the preceding measurements
 

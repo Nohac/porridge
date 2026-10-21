@@ -19,12 +19,13 @@ use variadics_please::all_tuples;
 
 use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
+    access::Reservations,
     commands::{
         BaseCommandOp, CommandOp, DespawnBaseCommand, InsertBaseCommand, RemoveComponentBaseCommand,
     },
     declare::{Schema, ShapeDesc},
     query::{
-        Access, AccessKind, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
+        AccessKind, ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
         ExternalQueryFilter, ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
     },
     system::{BoxedSystem, MemoEntry, Phase, SystemRun},
@@ -2285,7 +2286,7 @@ impl Bowl {
     ) -> PhaseRun {
         let mut phase_changed = false;
         let mut running = HashSet::new();
-        let mut running_access: HashMap<SystemInvocation, Vec<Access>> = HashMap::new();
+        let mut running_access = Reservations::default();
         // Tiered preemption drops read-only work wholesale while draining
         // writers, so in-flight runs are split by access class.
         let mut read_runs = FuturesUnordered::new();
@@ -2309,9 +2310,9 @@ impl Bowl {
                 }
                 while let Some((owner, run)) = write_runs.next().await {
                     running.remove(&owner);
-                    running_access.remove(&owner);
                     let progress =
                         commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
+                    running_access.remove(&owner);
                     commit_budget.record(progress.commits);
                     phase_changed |= progress.needs_followup;
                 }
@@ -2361,11 +2362,11 @@ impl Bowl {
                             }
                             for (owner, run) in batch {
                                 running.remove(&owner);
-                                running_access.remove(&owner);
                                 read_owners.remove(&owner);
                                 let progress =
                                     commit_system_run(memo, &self.inner.state, run, Some(phase))
                                         .await;
+                                running_access.remove(&owner);
                                 commit_budget.record(progress.commits);
                                 phase_changed |= progress.needs_followup;
                                 if progress.stale {
@@ -2432,7 +2433,7 @@ impl Bowl {
                             continue;
                         }
 
-                        if conflicts_with_running(&planned.access, &running_access) {
+                        if running_access.conflicts(&planned.access) {
                             deferred_conflicts = true;
                             // The deferred row must be replanned once the
                             // conflict frees, even if no store moves —
@@ -2501,9 +2502,9 @@ impl Bowl {
             let mut stale = false;
             for (owner, run) in batch {
                 running.remove(&owner);
-                running_access.remove(&owner);
                 read_owners.remove(&owner);
                 let progress = commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
+                running_access.remove(&owner);
                 commit_budget.record(progress.commits);
                 followup |= progress.needs_followup;
                 if progress.stale {
@@ -2998,17 +2999,6 @@ async fn yield_once() {
         }
     })
     .await;
-}
-
-fn conflicts_with_running(
-    access: &[Access],
-    running_access: &HashMap<SystemInvocation, Vec<Access>>,
-) -> bool {
-    running_access.values().any(|running| {
-        access
-            .iter()
-            .any(|candidate| running.iter().any(|active| candidate.conflicts(*active)))
-    })
 }
 
 /// Registration-time same-phase analysis (debug builds, schema required

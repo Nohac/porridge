@@ -398,6 +398,8 @@ impl Access {
         }
     }
 
+    // Keep the pairwise rule as an independent oracle for reservation tests.
+    #[cfg(test)]
     pub(crate) fn conflicts(self, other: Self) -> bool {
         self.component == other.component
             && (self.kind == AccessKind::Write || other.kind == AccessKind::Write)

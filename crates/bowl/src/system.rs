@@ -2529,7 +2529,12 @@ where
 pub(crate) trait SystemParamFunction<Marker>: Send + Sync + 'static {
     type Param: SystemParam;
 
-    fn run<'a>(&'a self, params: <Self::Param as SystemParam>::Item<'a>) -> BoxFuture<'a, ()>;
+    // FunctionSystem is generic over the callee: keep its future concrete until
+    // the outer invocation crosses the heterogeneous Runnable boundary.
+    fn run<'a>(
+        &'a self,
+        params: <Self::Param as SystemParam>::Item<'a>,
+    ) -> impl Future<Output = ()> + Send + 'a;
 }
 
 macro_rules! impl_system_param_function {
@@ -2547,10 +2552,10 @@ macro_rules! impl_system_param_function {
             fn run<'a>(
                 &'a self,
                 params: <Self::Param as SystemParam>::Item<'a>,
-            ) -> BoxFuture<'a, ()> {
+            ) -> impl Future<Output = ()> + Send + 'a {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = params;
-                (self)($($P),*).boxed()
+                (self)($($P),*)
             }
         }
     };

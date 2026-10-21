@@ -64,6 +64,40 @@ entity component cell
 Structural snapshots still exist for row enumeration and memo planning, but
 component reads are guard-backed.
 
+## Indexed phase reservations
+
+`access.rs::Reservations` indexes planned in-flight accesses for one normal
+phase. The evaluator driver owns it; workers do not share a new lock.
+
+```text
+invocation -> declared accesses (for exact release)
+component  -> total reader/writer counts
+           -> whole-store reader/writer counts
+           -> entity -> row reader/writer counts
+```
+
+A row read checks whole-store and same-row writers. A row write checks readers
+and writers at those two scopes. A whole-store read checks total writers; a
+whole-store write checks all access to that component. Duplicate declarations
+and multiple readers are counted, so releasing one invocation cannot release
+another's reservation. Empty rows/components are removed from the index.
+
+Candidate checks perform hash lookups per declared access instead of comparing
+against every running invocation. Admission and release also cost work per
+access; this is not a claim of constant total scheduler cost.
+
+Completed invocations retain reservations until commit processing finishes,
+including stale-output rejection. Preemption discards reader reservations and
+drains writers through publication before opening the external mutation window.
+The current driver does not admit work while awaiting that commit, but retaining
+the reservation through publication makes the lifetime explicit. These records
+do not replace guarded component cells, order requests, or provide fairness.
+
+The original pairwise predicate remains a test-only oracle. Tests cover row and
+whole-store combinations, repeated accesses, multiple readers, identity reuse,
+and mixed admission/release sequences. Existing engine tests cover phase
+integration, cancellation, preemption and conflicting/non-conflicting kernels.
+
 ## Current Cow Semantics
 
 External `Cow<T>` is used through a scoop:

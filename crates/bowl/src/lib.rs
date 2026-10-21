@@ -96,6 +96,7 @@
 //! This crate is intentionally small right now and is the primary runtime for
 //! the prototype.
 
+mod access;
 mod bowl;
 mod commands;
 mod component;
