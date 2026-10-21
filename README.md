@@ -514,6 +514,8 @@ the code and [`TODO.md`](TODO.md) when implementation status matters.
   scopes.
 - [`daemon-client.md`](spec/daemon-client.md) — out-of-core state and
   long-running service direction.
+- [Schema-guided execution and partitions](spec/ideas/schema-execution-and-partitions.md)
+  — exploratory construction-time planning, worker affinity and future clustering.
 - [`performance-plan.md`](spec/performance-plan.md) and
   [`bench-reports.md`](spec/bench-reports.md) — measurement strategy and
   recorded investigations.
@@ -521,3 +523,10 @@ the code and [`TODO.md`](TODO.md) when implementation status matters.
 If you are evaluating whether the model fits a real compiler or service, start
 with the quick example, run the playground with tracing, then read the formal
 semantics and streaming evaluation documents alongside the engine source.
+
+### Stateful performance workloads
+
+The [stateful performance plan](spec/stateful-performance-plan.md) describes the
+request, contention, entity-churn and sparse-change benchmarks, runtime controls,
+and staged engine optimization work. Run `cargo bench -p benches --bench stateful`
+or use `-- --test` to smoke-test that target.

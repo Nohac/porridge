@@ -330,6 +330,9 @@ macro_rules! fleet_insert {
 /// 32 slot systems, `rows` entities per slot, settled.
 pub async fn fleet_bowl(rows: usize) -> (Bowl, Entity) {
     let bowl = fleet_builder!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
+    // Benchmark sizes are intentional; do not confuse the application commit
+    // guardrail with the cost of evaluating a large fleet.
+    bowl.set_commit_limit(bowl::CommitLimit::None);
     fleet_insert!(bowl, rows; 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
     let inserted = bowl.insert((Slot::<0>(999),)).await;
     let target = inserted.entity();
@@ -413,3 +416,5 @@ pub async fn gated_fleet_bowl(rows: usize) -> (Bowl, Entity) {
     bowl.scoop::<Query<(Entity, &Slot<0>)>>().await;
     (bowl, target)
 }
+
+pub mod stateful;

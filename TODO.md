@@ -6,6 +6,12 @@ important.
 
 ## 0. Major Direction Notes
 
+- Next measured optimization: indexed access reservations, followed independently
+  by batched retirement. See `spec/stateful-performance-plan.md` for the baseline,
+  scoped next slice and acceptance checks.
+- Explore schema-prepared execution, affinity and eventual partition clustering
+  in `spec/ideas/schema-execution-and-partitions.md`. These are future directions,
+  not new current execution/settlement guarantees.
 - Move the runner toward streaming evaluation:
   - plan from the current world
   - run planned invocations concurrently

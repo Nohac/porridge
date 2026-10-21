@@ -1,0 +1,392 @@
+{
+  "commit": "4eb62fc4bb67aba40d143a0f0d74d1af30b862e7",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "cases": [
+    {
+      "command": [
+        "cargo",
+        "bench",
+        "-p",
+        "benches",
+        "-j",
+        "20",
+        "--bench",
+        "stateful",
+        "--",
+        "purchases",
+        "--warm-up-time",
+        "0.2",
+        "--measurement-time",
+        "1",
+        "--sample-size",
+        "10",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_REQUESTS": "1,100,1000",
+        "PORRIDGE_WORKERS": "1,8",
+        "PORRIDGE_PER_OWNER": "1",
+        "PORRIDGE_WORK": "0"
+      },
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "cargo",
+        "bench",
+        "-p",
+        "benches",
+        "-j",
+        "20",
+        "--bench",
+        "stateful",
+        "--",
+        "entity_churn",
+        "--warm-up-time",
+        "0.2",
+        "--measurement-time",
+        "1",
+        "--sample-size",
+        "10",
+        "--noplot"
+      ],
+      "environment": {},
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "cargo",
+        "bench",
+        "-p",
+        "benches",
+        "-j",
+        "20",
+        "--bench",
+        "stateful",
+        "--",
+        "sparse_changes",
+        "--warm-up-time",
+        "0.2",
+        "--measurement-time",
+        "1",
+        "--sample-size",
+        "10",
+        "--noplot"
+      ],
+      "environment": {
+        "PORRIDGE_ROWS": "10,1000",
+        "PORRIDGE_WORKERS": "1,8"
+      },
+      "exit_code": 0
+    }
+  ],
+  "notes": [
+    "Short diagnostic baseline, not a before/after comparison. Machine load uncontrolled.",
+    "Purchase and sparse runs preceded the facet/store harness addition; engine source was unchanged.",
+    "All measurements use normal default parallel features and bench profile with codegen-units=1.",
+    "Churn uses the final facet/store comparison; earlier untyped-only measurements are omitted."
+  ],
+  "final_commands": [
+    [
+      "build",
+      [
+        "cargo",
+        "build",
+        "--workspace",
+        "-j",
+        "20"
+      ]
+    ],
+    [
+      "fixture-tests",
+      [
+        "cargo",
+        "test",
+        "-p",
+        "benches",
+        "-j",
+        "20"
+      ]
+    ],
+    [
+      "churn-comparison",
+      [
+        "cargo",
+        "bench",
+        "-p",
+        "benches",
+        "-j",
+        "20",
+        "--bench",
+        "stateful",
+        "--",
+        "entity_churn",
+        "--warm-up-time",
+        "0.2",
+        "--measurement-time",
+        "1",
+        "--sample-size",
+        "10",
+        "--noplot"
+      ]
+    ]
+  ],
+  "measurements": [
+    {
+      "id": "entity_churn/facet/live=64/0",
+      "units": "rows",
+      "units_per_iteration": 64,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 19429.11677696802,
+          "upper_bound": 25134.616694265373
+        },
+        "point_estimate": 22488.408996136182,
+        "standard_error": 1429.1365311906789
+      },
+      "units_per_second": 2845910.5315541034
+    },
+    {
+      "id": "entity_churn/facet/live=64/10000",
+      "units": "rows",
+      "units_per_iteration": 64,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 30615.67657995198,
+          "upper_bound": 31459.654634369712
+        },
+        "point_estimate": 30845.55352470408,
+        "standard_error": 227.9820085757462
+      },
+      "units_per_second": 2074853.347946655
+    },
+    {
+      "id": "entity_churn/facet/live=64/100000",
+      "units": "rows",
+      "units_per_iteration": 64,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 80170.58061579612,
+          "upper_bound": 85029.91767764371
+        },
+        "point_estimate": 82571.4161962482,
+        "standard_error": 1361.6319818072725
+      },
+      "units_per_second": 775086.6213544242
+    },
+    {
+      "id": "entity_churn/store/live=64/0",
+      "units": "rows",
+      "units_per_iteration": 64,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 14437.627707246429,
+          "upper_bound": 18076.67311169874
+        },
+        "point_estimate": 15476.33229513849,
+        "standard_error": 957.957686324243
+      },
+      "units_per_second": 4135346.720366299
+    },
+    {
+      "id": "entity_churn/store/live=64/10000",
+      "units": "rows",
+      "units_per_iteration": 64,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 14497.879536531353,
+          "upper_bound": 14809.754273181063
+        },
+        "point_estimate": 14626.621462065388,
+        "standard_error": 79.5876958422683
+      },
+      "units_per_second": 4375583.258648353
+    },
+    {
+      "id": "entity_churn/store/live=64/100000",
+      "units": "rows",
+      "units_per_iteration": 64,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 14588.393841413661,
+          "upper_bound": 15031.960654638393
+        },
+        "point_estimate": 14801.930408040804,
+        "standard_error": 125.68809775117981
+      },
+      "units_per_second": 4323760.363393784
+    },
+    {
+      "id": "purchases/workers=1/per_owner=1/work=0/1",
+      "units": "requests",
+      "units_per_iteration": 1,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 42326.59956923946,
+          "upper_bound": 42942.357609710554
+        },
+        "point_estimate": 42629.1627960275,
+        "standard_error": 163.12490942465527
+      },
+      "units_per_second": 23458.119616019936
+    },
+    {
+      "id": "purchases/workers=1/per_owner=1/work=0/100",
+      "units": "requests",
+      "units_per_iteration": 100,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 3791886.095031056,
+          "upper_bound": 3814373.6595375724
+        },
+        "point_estimate": 3805023.9885714287,
+        "standard_error": 5782.318938213884
+      },
+      "units_per_second": 26281.043247126636
+    },
+    {
+      "id": "purchases/workers=1/per_owner=1/work=0/1000",
+      "units": "requests",
+      "units_per_iteration": 1000,
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 215360225.9,
+          "upper_bound": 219213412.8
+        },
+        "point_estimate": 217309079.7,
+        "standard_error": 983190.6764322883
+      },
+      "units_per_second": 4601.740531875254
+    },
+    {
+      "id": "purchases/workers=8/per_owner=1/work=0/1",
+      "units": "requests",
+      "units_per_iteration": 1,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 44414.3398649212,
+          "upper_bound": 44617.65328786754
+        },
+        "point_estimate": 44521.895770151634,
+        "standard_error": 51.65618514506789
+      },
+      "units_per_second": 22460.85847652561
+    },
+    {
+      "id": "purchases/workers=8/per_owner=1/work=0/100",
+      "units": "requests",
+      "units_per_iteration": 100,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 4363077.414803765,
+          "upper_bound": 4442550.572665631
+        },
+        "point_estimate": 4408583.308441559,
+        "standard_error": 20744.748243816153
+      },
+      "units_per_second": 22683.023775125203
+    },
+    {
+      "id": "purchases/workers=8/per_owner=1/work=0/1000",
+      "units": "requests",
+      "units_per_iteration": 1000,
+      "estimator": "mean",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 219336793.3,
+          "upper_bound": 222292061.19
+        },
+        "point_estimate": 220780608.8,
+        "standard_error": 754887.3354576774
+      },
+      "units_per_second": 4529.383288846153
+    },
+    {
+      "id": "sparse_changes/workers=1/10",
+      "units": "updates",
+      "units_per_iteration": 1,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 25234.91515185814,
+          "upper_bound": 37185.12768726796
+        },
+        "point_estimate": 29211.446080656187,
+        "standard_error": 2897.524775445173
+      },
+      "units_per_second": 34233.156319577065
+    },
+    {
+      "id": "sparse_changes/workers=1/1000",
+      "units": "updates",
+      "units_per_iteration": 1,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 86114.6779561862,
+          "upper_bound": 97532.8632825602
+        },
+        "point_estimate": 90115.94309670912,
+        "standard_error": 2928.797817651803
+      },
+      "units_per_second": 11096.815564886634
+    },
+    {
+      "id": "sparse_changes/workers=8/10",
+      "units": "updates",
+      "units_per_iteration": 1,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 30685.142235067236,
+          "upper_bound": 36147.19267468588
+        },
+        "point_estimate": 33014.33480057907,
+        "standard_error": 1311.3703281722537
+      },
+      "units_per_second": 30289.87274892663
+    },
+    {
+      "id": "sparse_changes/workers=8/1000",
+      "units": "updates",
+      "units_per_iteration": 1,
+      "estimator": "slope",
+      "time_ns": {
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 91362.38480022094,
+          "upper_bound": 178413.8280945503
+        },
+        "point_estimate": 128745.42394916911,
+        "standard_error": 26406.25287889445
+      },
+      "units_per_second": 7767.266356548851
+    }
+  ]
+}

@@ -15,3 +15,7 @@ criterion = "0.5"
 [[bench]]
 name = "engine"
 harness = false
+
+[[bench]]
+name = "stateful"
+harness = false
