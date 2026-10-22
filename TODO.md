@@ -840,9 +840,14 @@ Current shortcut:
 Remaining work:
 - Done: typed per-system execution plans remove explicit ordinary worker-row
   future boxing. Isolated executor measurements and whole-workload profiling
-  are captured in `spec/execution-profiling.md`; prepare schema/query metadata
-  for driver lookups next. Precise performance acceptance remains open.
+  are captured in `spec/execution-profiling.md`. Ordinary prepared query stores
+  and schema-slot dependency checks are implemented (`spec/prepared-driver.md`).
+  Reverse dirty routing and broader prepared projections remain open. Precise
+  performance acceptance remains open.
 - Planning and publication still run on one evaluator.
+- Skip ambient-healing memo scans when the registered system set has no ambient
+  views; sparse profiles identify this as unnecessary driver work. See
+  `spec/prepared-driver.md` before the larger direct-dirty-routing slice.
 - Per-system admission and commit policies remain proposals. The implemented
   `set_dispatch_batch_size` is a maximum rows-per-task setting only.
 

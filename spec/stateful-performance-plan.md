@@ -83,8 +83,9 @@ counter percentages.
   kernels, comparing typed and boxed rows independently of planning/publication.
 - [x] Profile complete workloads to quantify how much time the isolated path
   represents; do not infer an executor speedup from code size or total throughput.
-- [ ] Prepare schema/query metadata for driver dependency lookups and typed store
-  fetching as a separately measured slice; see the [implementation plan](execution-profiling.md#proposed-implementation-prepare-the-driver-from-the-schema).
+- [x] Prepare ordinary query stores and schema slots for driver dependency lookups
+  and typed fetching; broader registration-time layouts remain open. See
+  [prepared driver](prepared-driver.md) and the [implementation plan](execution-profiling.md#proposed-implementation-prepare-the-driver-from-the-schema).
 
 [Raw comparisons, variation and provenance](benchmarks/2026-10-21-typed-batches.json)
 are retained. Local binaries and scripts live under `target/typed-batches/`.

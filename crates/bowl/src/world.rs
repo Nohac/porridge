@@ -1,3 +1,6 @@
+mod stores;
+use stores::Stores;
+
 use std::{
     any::{Any, TypeId},
     cell::UnsafeCell,
@@ -330,6 +333,47 @@ struct Store<T> {
     watermark: u64,
 }
 
+pub(crate) struct ResolvedStore<T> {
+    slot: Option<u32>,
+    entries: Option<Arc<BTreeMap<Entity, ComponentEntry<T>>>>,
+}
+
+impl<T: Component> ResolvedStore<T> {
+    pub(crate) fn dependency(&self, entity: Entity, optional: bool) -> Option<crate::query::Dep> {
+        if !T::tracked() {
+            return None;
+        }
+
+        let revision = self
+            .entries
+            .as_ref()
+            .and_then(|entries| entries.get(&entity))
+            .map(|entry| entry.revision);
+        if !optional {
+            assert!(revision.is_some(), "prepared dependency missing component");
+        }
+        Some(crate::query::Dep::component::<T>(
+            entity, revision, self.slot,
+        ))
+    }
+
+    pub(crate) fn get(&self, entity: Entity) -> Option<ComponentRef<'_, T>> {
+        let guard = self.entries.as_ref()?.get(&entity)?.value.read();
+        Some(ComponentRef {
+            guard,
+            _marker: std::marker::PhantomData,
+        })
+    }
+
+    pub(crate) fn get_mut(&self, entity: Entity) -> Option<ComponentMut<'_, T>> {
+        let guard = self.entries.as_ref()?.get(&entity)?.value.write();
+        Some(ComponentMut {
+            guard,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
 impl<T> Store<T> {
     fn index_fingerprint(&mut self, entity: Entity, fingerprint: Option<u64>) {
         let Some(fingerprint) = fingerprint else {
@@ -517,7 +561,7 @@ pub struct World {
     /// components. Unlike `revision`, this signals "the world is different"
     /// without implying dependency invalidation.
     mutations: u64,
-    stores: HashMap<TypeId, Box<dyn StoreDyn>>,
+    stores: Stores,
     singleton_entities: HashMap<TypeId, Entity>,
     /// Derived outputs currently owned by each system invocation.
     ///
@@ -755,7 +799,7 @@ impl World {
             next_entity: Arc::new(AtomicU64::new(0)),
             revision: Revision(0),
             mutations: 0,
-            stores: HashMap::new(),
+            stores: Stores::default(),
             singleton_entities: HashMap::new(),
             derived_owners: HashMap::new(),
             derived_spawns: Arc::new(Mutex::new(HashMap::new())),
@@ -800,7 +844,9 @@ impl World {
             self.stores.is_empty(),
             "presence index must be installed before any component is stored"
         );
-        self.presence = Some(PresenceIndex::new(universe));
+        let presence = PresenceIndex::new(universe);
+        self.stores = Stores::with_registry(Arc::clone(&presence.bit_for));
+        self.presence = Some(presence);
     }
 
     /// The presence index, when this bowl was constructed over a schema.
@@ -1274,6 +1320,17 @@ impl World {
     pub(crate) fn revision_by_type(&self, type_id: TypeId, entity: Entity) -> Option<Revision> {
         self.stores
             .get(&type_id)
+            .and_then(|store| store.revision_for_entity(entity))
+    }
+
+    pub(crate) fn revision_by_slot(
+        &self,
+        slot: u32,
+        type_id: TypeId,
+        entity: Entity,
+    ) -> Option<Revision> {
+        self.stores
+            .get_slot(slot, type_id)
             .and_then(|store| store.revision_for_entity(entity))
     }
 
@@ -1761,6 +1818,13 @@ impl World {
         self.mutations
     }
 
+    pub(crate) fn resolve_store<T: Component>(&self) -> ResolvedStore<T> {
+        ResolvedStore {
+            slot: self.stores.slot(TypeId::of::<T>()),
+            entries: self.store::<T>().map(|store| Arc::clone(&store.entries)),
+        }
+    }
+
     /// Returns the typed component store for `T`, if it exists.
     fn store<T: Component>(&self) -> Option<&Store<T>> {
         self.stores
@@ -1771,8 +1835,7 @@ impl World {
     /// Returns the typed component store for `T`, creating it if needed.
     fn store_mut<T: Component>(&mut self) -> &mut Store<T> {
         self.stores
-            .entry(TypeId::of::<T>())
-            .or_insert_with(|| Box::<Store<T>>::default())
+            .get_or_insert::<T>()
             .as_any_mut()
             .downcast_mut()
             .expect("component store has the wrong concrete type")

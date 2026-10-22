@@ -8,6 +8,7 @@ use futures::future::{BoxFuture, FutureExt, join_all};
 use crate::{
     Bowl, Commands, DerivedFrom, Entity, Query, TrackedView, View,
     commands::CommandOp,
+    prepared::PreparedParam,
     declare::{Anything, DeclarationList},
     query::{
         Access, AccessKind, Dep, GuardStore, QueryFilter, QueryParam, filtered_access,
@@ -192,6 +193,15 @@ pub enum DeltaShape {
 }
 
 pub trait SystemParam {
+    /// Resolves snapshot-local lookup state. Custom params use the existing API.
+    fn prepare(snapshot: &Snapshot) -> impl PreparedParam<Self> + 'static + use<Self>
+    where
+        Self: Sized + 'static,
+    {
+        let _ = snapshot;
+        crate::prepared::Fallback::<Self>::new()
+    }
+
     type State: Clone + Send;
     type Item<'a>: Send;
 
@@ -366,6 +376,13 @@ where
 {
     type State = Q::State;
     type Item<'a> = Query<Q::Item<'a>, Filter>;
+
+    fn prepare(snapshot: &Snapshot) -> impl PreparedParam<Self> + 'static + use<Q, Filter>
+    where
+        Self: 'static,
+    {
+        crate::prepared::Filtered(Q::prepare(snapshot))
+    }
 
     fn interest_types() -> Option<Vec<TypeId>> {
         let filter = <Filter as QueryFilter<Q>>::interest_types();
@@ -1194,6 +1211,11 @@ macro_rules! impl_system_param_tuple {
                 keys
             }
 
+            fn prepare(snapshot: &Snapshot) -> impl PreparedParam<Self> + 'static + use<$($P),*>
+            where Self: 'static {
+                ($($P::prepare(snapshot),)*)
+            }
+
             fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = state;
@@ -1338,7 +1360,7 @@ fn plan_invocations<Params>(
     memo: &HashMap<SystemInvocation, MemoEntry>,
 ) -> PlannedRun<Params::State>
 where
-    Params: SystemParam,
+    Params: SystemParam + 'static,
 {
     plan_invocations_hinted::<Params>(system, snapshot, memo, None)
 }
@@ -1350,8 +1372,19 @@ fn plan_invocations_hinted<Params>(
     hint: Option<&[Entity]>,
 ) -> PlannedRun<Params::State>
 where
-    Params: SystemParam,
+    Params: SystemParam + 'static,
 {
+    let prepared = Params::prepare(snapshot);
+    plan_prepared::<Params>(system, snapshot, memo, hint, &prepared)
+}
+
+fn plan_prepared<Params: SystemParam>(
+    system: SystemId,
+    snapshot: &Snapshot,
+    memo: &HashMap<SystemInvocation, MemoEntry>,
+    hint: Option<&[Entity]>,
+    prepared: &impl PreparedParam<Params>,
+) -> PlannedRun<Params::State> {
     let states = match hint {
         Some(hint) => Params::states_hinted(snapshot, hint),
         None => Params::states(snapshot),
@@ -1364,16 +1397,19 @@ where
                 system,
                 keys: Params::keys(&state),
             };
-            let deps = Params::deps(snapshot, &state);
-            let access = Params::access(snapshot, &state);
+            let mut deps = Vec::new();
+            prepared.deps(snapshot, &state, &mut deps);
+            if !Params::always_run() && memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+                return None;
+            }
 
-            (Params::always_run() || memo.get(&owner).is_none_or(|entry| entry.deps != deps))
-                .then_some(PlannedInvocation {
-                    state,
-                    owner,
-                    deps,
-                    access,
-                })
+            let access = Params::access(snapshot, &state);
+            Some(PlannedInvocation {
+                state,
+                owner,
+                deps,
+                access,
+            })
         })
         .collect();
 
@@ -2444,52 +2480,50 @@ where
     > + Send
     + 'static {
         let function = Arc::clone(&self.function);
-        plan_invocations_hinted::<F::Param>(self.id, &snapshot, memo, hint)
-            .invocations
-            .into_iter()
-            .map(move |invocation| {
-                let owner = invocation.owner.clone();
-                let access = invocation.access.clone();
-                let bowl = bowl.clone();
-                let snapshot = Arc::clone(&snapshot);
-                let function = Arc::clone(&function);
-                let run = async move {
-                    let writes = written_rows(&invocation.access);
-                    let commands = Commands::new(
-                        snapshot.spawn_slots(&invocation.owner),
-                        snapshot.entity_allocator(),
-                    );
-                    // Read guards live here, in the invocation frame, so
-                    // borrows handed to the system stay locked until the
-                    // system function returns.
-                    let mut guards = GuardStore::new();
-                    let params = F::Param::fetch(
-                        &bowl,
-                        &snapshot,
-                        &invocation.state,
-                        &commands,
-                        &mut guards,
-                    );
-                    function.run(params).await;
-                    drop(guards);
+        let prepared = F::Param::prepare(&snapshot);
+        let planned = plan_prepared::<F::Param>(self.id, &snapshot, memo, hint, &prepared);
+        // One shared context replaces the row's snapshot handle, avoiding an
+        // additional reference-count operation per admitted row.
+        let context = Arc::new((snapshot, prepared));
+        planned.invocations.into_iter().map(move |invocation| {
+            let owner = invocation.owner.clone();
+            let access = invocation.access.clone();
+            let bowl = bowl.clone();
+            let function = Arc::clone(&function);
+            let context = Arc::clone(&context);
+            let run = async move {
+                let (snapshot, prepared) = context.as_ref();
+                let writes = written_rows(&invocation.access);
+                let commands = Commands::new(
+                    snapshot.spawn_slots(&invocation.owner),
+                    snapshot.entity_allocator(),
+                );
+                // Read guards live here, in the invocation frame, so
+                // borrows handed to the system stay locked until the
+                // system function returns.
+                let mut guards = GuardStore::new();
+                let params =
+                    prepared.fetch(&bowl, snapshot, &invocation.state, &commands, &mut guards);
+                function.run(params).await;
+                drop(guards);
 
-                    let (output, memo_update) = finish_invocation(
-                        invocation.owner,
-                        invocation.deps,
-                        snapshot.revision_raw(),
-                        commands,
-                    );
+                let (output, memo_update) = finish_invocation(
+                    invocation.owner,
+                    invocation.deps,
+                    snapshot.revision_raw(),
+                    commands,
+                );
 
-                    SystemRun {
-                        completed: true,
-                        outputs: vec![output],
-                        memo_updates: vec![memo_update],
-                        writes,
-                    }
-                };
+                SystemRun {
+                    completed: true,
+                    outputs: vec![output],
+                    memo_updates: vec![memo_update],
+                    writes,
+                }
+            };
 
-                PlannedSystemRun { owner, access, run }
-            })
+            PlannedSystemRun { owner, access, run }
+        })
     }
 }
 
@@ -2682,3 +2716,7 @@ where
         )
     }
 }
+
+#[cfg(test)]
+#[path = "system/planning_tests.rs"]
+mod planning_tests;

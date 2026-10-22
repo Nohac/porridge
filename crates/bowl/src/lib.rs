@@ -103,6 +103,7 @@ mod component;
 mod dispatch;
 mod declare;
 mod entity;
+mod prepared;
 mod query;
 mod system;
 mod world;
@@ -177,6 +178,7 @@ pub use macros::SystemParam;
 #[doc(hidden)]
 pub mod __derive {
     pub use crate::declare::Anything;
+    pub use crate::prepared::{PreparedParam, PreparedPart, PreparedQuery};
     pub use crate::query::{Access, Dep, GuardStore};
     pub use crate::system::SystemParam;
     pub use crate::world::Snapshot;

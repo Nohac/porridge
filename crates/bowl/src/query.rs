@@ -55,7 +55,7 @@ impl<T, F> Query<T, F> {
     }
 }
 
-fn store_read_guard<'a, T: Component>(
+pub(crate) fn store_read_guard<'a, T: Component>(
     guard: ComponentRef<'a, T>,
     guards: &mut GuardStore,
 ) -> &'a T {
@@ -78,7 +78,7 @@ fn store_read_guard<'a, T: Component>(
     unsafe { &*value }
 }
 
-fn store_write_guard<'a, T: Component>(
+pub(crate) fn store_write_guard<'a, T: Component>(
     mut guard: ComponentMut<'a, T>,
     guards: &mut GuardStore,
 ) -> &'a mut T {
@@ -799,10 +799,12 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 #[doc(hidden)]
 pub struct Dep {
     type_id: TypeId,
+    /// Optional lookup accelerator; not part of the logical dependency identity.
+    slot: Option<u32>,
     entity: Entity,
     /// `None` records "observed absent": an `Option<&T>` part saw no
     /// component, and the dep goes stale the moment one appears. Presence
@@ -816,7 +818,32 @@ pub struct Dep {
     store_scoped: bool,
 }
 
+impl PartialEq for Dep {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_id == other.type_id
+            && self.entity == other.entity
+            && self.revision == other.revision
+            && self.store_scoped == other.store_scoped
+    }
+}
+
+impl std::cmp::Eq for Dep {}
+
 impl Dep {
+    pub(crate) fn component<T: Component>(
+        entity: Entity,
+        revision: Option<Revision>,
+        slot: Option<u32>,
+    ) -> Self {
+        Self {
+            type_id: TypeId::of::<T>(),
+            slot,
+            entity,
+            revision,
+            store_scoped: false,
+        }
+    }
+
     /// Raw revision counter of this dependency, for cursor comparisons.
     /// Absence observations report zero (they precede every revision).
     pub(crate) fn revision_raw(&self) -> u64 {
@@ -828,7 +855,11 @@ impl Dep {
             return snapshot.store_watermark(self.type_id)
                 == self.revision.map(|revision| revision.0).unwrap_or(0);
         }
-        snapshot.revision_by_type(self.type_id, self.entity) == self.revision
+        let current = match self.slot {
+            Some(slot) => snapshot.revision_by_slot(slot, self.type_id, self.entity),
+            None => snapshot.revision_by_type(self.type_id, self.entity),
+        };
+        current == self.revision
     }
 
     /// Absorbs the post-commit revision when the dep row was written by the
@@ -872,6 +903,18 @@ impl Dep {
 /// `fetch` is safe because row states are produced from the same structural
 /// snapshot and read guards are kept alive by the owning query/result.
 pub trait QueryParam {
+    /// Resolves snapshot-local lookup state once, without acquiring row guards.
+    /// The default preserves custom parameter behavior.
+    fn prepare(
+        snapshot: &Snapshot,
+    ) -> impl crate::prepared::PreparedQuery<Self> + 'static + use<Self>
+    where
+        Self: Sized + 'static,
+    {
+        let _ = snapshot;
+        crate::prepared::Fallback::<Self>::new()
+    }
+
     type State: Clone + Send;
     type Item<'a>: Send;
 
@@ -1110,7 +1153,16 @@ impl<H: FacetKind> QueryParam for Entity<H> {
 
 impl<H: FacetKind> ExternalReadQueryParam for Entity<H> {}
 
-impl<T: Component> QueryParam for &T {
+impl<'q, T: Component> QueryParam for &'q T {
+    fn prepare(
+        snapshot: &Snapshot,
+    ) -> impl crate::prepared::PreparedQuery<Self> + 'static + use<'q, T>
+    where
+        Self: 'static,
+    {
+        crate::prepared::Scalar::<T, _>(snapshot.resolve_store::<T>(), PhantomData)
+    }
+
     type State = Entity;
     type Item<'a> = &'a T;
 
@@ -1188,7 +1240,16 @@ impl<T: Component> QueryParam for &T {
 
 impl<T: Component> ExternalReadQueryParam for &T {}
 
-impl<T: Component> QueryParam for (MutRef<'_, T>,) {
+impl<'q, T: Component> QueryParam for (MutRef<'q, T>,) {
+    fn prepare(
+        snapshot: &Snapshot,
+    ) -> impl crate::prepared::PreparedQuery<Self> + 'static + use<'q, T>
+    where
+        Self: 'static,
+    {
+        crate::prepared::Scalar::<T, _>(snapshot.resolve_store::<T>(), PhantomData)
+    }
+
     type State = Entity;
     type Item<'a> = MutRef<'a, T>;
 
@@ -1254,6 +1315,18 @@ pub enum PresenceReq {
 }
 
 pub trait QueryPart {
+    /// Resolves snapshot-local lookup state once, without acquiring row guards.
+    /// The default preserves custom parameter behavior.
+    fn prepare(
+        snapshot: &Snapshot,
+    ) -> impl crate::prepared::PreparedPart<Self> + 'static + use<Self>
+    where
+        Self: Sized + 'static,
+    {
+        let _ = snapshot;
+        crate::prepared::Fallback::<Self>::new()
+    }
+
     type Item<'a>: Send;
 
     /// Number of entities this part's component store currently holds.
@@ -1329,7 +1402,16 @@ pub trait QueryPart {
 #[doc(hidden)]
 pub trait ExternalReadQueryPart: QueryPart {}
 
-impl<T: Component> QueryPart for &T {
+impl<'q, T: Component> QueryPart for &'q T {
+    fn prepare(
+        snapshot: &Snapshot,
+    ) -> impl crate::prepared::PreparedPart<Self> + 'static + use<'q, T>
+    where
+        Self: 'static,
+    {
+        snapshot.resolve_store::<T>()
+    }
+
     type Item<'a> = &'a T;
 
     fn store_len(snapshot: &Snapshot) -> usize {
@@ -1406,7 +1488,16 @@ impl<T: Component> QueryPart for &T {
 
 impl<T: Component> ExternalReadQueryPart for &T {}
 
-impl<T: Component> QueryPart for Option<&T> {
+impl<'q, T: Component> QueryPart for Option<&'q T> {
+    fn prepare(
+        snapshot: &Snapshot,
+    ) -> impl crate::prepared::PreparedPart<Self> + 'static + use<'q, T>
+    where
+        Self: 'static,
+    {
+        snapshot.resolve_store::<T>()
+    }
+
     type Item<'a> = Option<&'a T>;
 
     fn store_len(_snapshot: &Snapshot) -> usize {
@@ -1512,6 +1603,7 @@ impl<H: FacetKind> QueryPart for Tracked<H> {
             .filter(|part| part.tracked)
             .map(|part| Dep {
                 type_id: part.type_id,
+                slot: None,
                 entity,
                 // Present parts record their revision; absent (optional)
                 // parts record the absence, going stale on appearance —
@@ -1554,7 +1646,16 @@ impl<H: FacetKind> QueryPart for Tracked<H> {
     }
 }
 
-impl<T: Component> QueryPart for MutRef<'_, T> {
+impl<'q, T: Component> QueryPart for MutRef<'q, T> {
+    fn prepare(
+        snapshot: &Snapshot,
+    ) -> impl crate::prepared::PreparedPart<Self> + 'static + use<'q, T>
+    where
+        Self: 'static,
+    {
+        snapshot.resolve_store::<T>()
+    }
+
     type Item<'a> = MutRef<'a, T>;
 
     fn store_len(snapshot: &Snapshot) -> usize {
@@ -1638,6 +1739,12 @@ macro_rules! impl_entity_query_param {
         {
             type State = Entity;
             type Item<'a> = (Entity<FH>, $(<$P as QueryPart>::Item<'a>,)*);
+
+            fn prepare(snapshot: &Snapshot) -> impl crate::prepared::PreparedQuery<Self> + 'static + use<FH, $($P),*>
+            where Self: 'static {
+                crate::prepared::EntityParts(($($P::prepare(snapshot),)*))
+            }
+
 
             fn rows(snapshot: &Snapshot) -> Vec<Self::State> {
                 const PARTS: usize = [$(stringify!($P)),*].len();
@@ -2780,6 +2887,7 @@ where
 fn component_dep_if_tracked<T: Component>(snapshot: &Snapshot, entity: Entity) -> Option<Dep> {
     T::tracked().then(|| Dep {
         type_id: TypeId::of::<T>(),
+        slot: None,
         entity,
         revision: Some(
             snapshot
@@ -2795,6 +2903,7 @@ fn component_dep_if_tracked<T: Component>(snapshot: &Snapshot, entity: Entity) -
 fn optional_component_dep<T: Component>(snapshot: &Snapshot, entity: Entity) -> Option<Dep> {
     T::tracked().then(|| Dep {
         type_id: TypeId::of::<T>(),
+        slot: None,
         entity,
         revision: snapshot.revision::<T>(entity),
         store_scoped: false,
@@ -2806,6 +2915,7 @@ fn optional_component_dep<T: Component>(snapshot: &Snapshot, entity: Entity) -> 
 pub(crate) fn store_watermark_dep(snapshot: &Snapshot, type_id: TypeId) -> Dep {
     Dep {
         type_id,
+        slot: None,
         entity: Entity::from_raw(0),
         revision: Some(Revision(snapshot.store_watermark(type_id))),
         store_scoped: true,

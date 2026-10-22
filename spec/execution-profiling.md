@@ -1,6 +1,8 @@
 # Execution profiling and driver preparation
 
-Status: measurement slice complete; driver changes below are proposed, not implemented.
+Status: measurement slice complete. The first prepared-driver slice is implemented
+in [prepared-driver.md](prepared-driver.md); the proposal below records the original
+sequence, including the still-deferred direct dirty routing.
 Base: `70ccd1d`. [Machine, commands, hashes and results](benchmarks/2026-10-21-execution-profile.json).
 
 ## Conclusion
