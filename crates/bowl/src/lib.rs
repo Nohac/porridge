@@ -104,6 +104,8 @@ mod dispatch;
 mod declare;
 mod entity;
 mod prepared;
+#[doc(hidden)]
+pub mod metrics;
 mod query;
 mod system;
 mod world;

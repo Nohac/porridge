@@ -19,6 +19,13 @@ requirements belong in these fixtures. The results measure engine operations,
 not end-to-end application capacity. Keep fixture changes separate from engine
 changes when comparing candidates.
 
+## Hardware accounting
+
+[Fixed-work hardware profiling](hardware-profiling.md) now records hardware events
+with coverage, operation counts, stage spans, allocator traffic and polling counts.
+The measured no-view healing scan and allocation volume are concrete next targets;
+no new scheduler or synchronous-kernel policy was introduced in this measurement slice.
+
 ## Current implementation slice
 
 **Typed execution plans** (batch D1), based on commit `c864956`. Ordinary kernels

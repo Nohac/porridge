@@ -844,10 +844,14 @@ Remaining work:
   and schema-slot dependency checks are implemented (`spec/prepared-driver.md`).
   Reverse dirty routing and broader prepared projections remain open. Precise
   performance acceptance remains open.
-- Planning and publication still run on one evaluator.
-- Skip ambient-healing memo scans when the registered system set has no ambient
-  views; sparse profiles identify this as unnecessary driver work. See
-  `spec/prepared-driver.md` before the larger direct-dirty-routing slice.
+- Planning and publication still run on one evaluator. Fixed-work hardware and
+  operation counts are recorded in `spec/hardware-profiling.md`; diagnostics are
+  runtime-controlled and hardware passes keep them off.
+- Done: disable ambient healing when the sealed registry has no eligible viewers;
+  return before locking or scanning. Sparse counters confirm 32,001 → 0 memo
+  entries examined/update (`spec/hardware-profiling.md`). For active views, use
+  declared component interests and current-settle invocation candidates to narrow
+  healing instead of scanning unrelated memo entries.
 - Per-system admission and commit policies remain proposals. The implemented
   `set_dispatch_batch_size` is a maximum rows-per-task setting only.
 

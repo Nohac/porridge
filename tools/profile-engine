@@ -1,0 +1,216 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Fixed-work Linux PMU, operation-count and sampled profiles; no Cargo feature changes."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import time
+
+GROUPS = {
+    "core": "{cycles:u,instructions:u,branches:u,branch-misses:u}",
+    "cache": "{cache-references:u,cache-misses:u}",
+    "l1_tlb": "{L1-dcache-loads:u,L1-dcache-load-misses:u,dTLB-loads:u,dTLB-load-misses:u}",
+    "software": "task-clock:u,page-faults:u",
+}
+CASES = {
+    "independent-1": ("purchases", 1, 1000, 1, 0),
+    "independent-8": ("purchases", 8, 1000, 1, 0),
+    "contended-1": ("purchases", 1, 1000, 4, 0),
+    "contended-8": ("purchases", 8, 1000, 4, 0),
+    "compute-8": ("purchases", 8, 1000, 1, 10000),
+    "sparse-1": ("sparse", 1, 100, 1, 0),
+    "sparse-8": ("sparse", 8, 100, 1, 0),
+    "control": ("empty", 1, 1, 1, 0),
+}
+
+
+def cpu_list(text):
+    result = set()
+    for part in text.split(","):
+        ends = part.split("-")
+        result.update(range(int(ends[0]), int(ends[-1]) + 1))
+    return sorted(result)
+
+
+def siblings(cpu):
+    return cpu_list(Path(f"/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list").read_text().strip())
+
+
+def worker_order(allowed, driver):
+    remaining = set(allowed) - set(siblings(driver))
+    first, second = [], []
+    while remaining:
+        cpu = min(remaining)
+        family = remaining.intersection(siblings(cpu))
+        first.append(cpu)
+        second.extend(sorted(family - {cpu}))
+        remaining -= family
+    return first + second
+
+
+def parse_tsv(path):
+    samples, systems, metrics = [], [], []
+    for line in path.read_text().splitlines():
+        parts = line.split("\t")
+        if parts[0] == "sample":
+            samples.append(dict(zip(["round", "operations", "wall_ns", "settle_us", "snapshot_us", "hook_commit_us", "waves"], map(int, parts[1:]))))
+        elif parts[0] == "system":
+            systems.append(dict(round=int(parts[1]), name=parts[2], completed=int(parts[3]), plan_ns=int(parts[4]), poll_ns=int(parts[5])))
+        elif parts[0] == "metric":
+            metrics.append(dict(round=int(parts[1]), name=parts[2], value=int(parts[3])))
+    return dict(samples=samples, systems=systems, metrics=metrics)
+
+
+def parse_stat(path):
+    rows = []
+    for line in path.read_text().splitlines():
+        parts = line.split(";")
+        if len(parts) < 5 or line.startswith("#"):
+            continue
+        try:
+            value = float(parts[0].strip())
+        except ValueError:
+            value = None
+        try:
+            coverage = float(parts[4].strip())
+        except ValueError:
+            coverage = None
+        rows.append(dict(event=parts[2].strip(), unit=parts[1].strip(), count=value,
+                         running_ns=parts[3].strip(), coverage_percent=coverage, raw=line))
+    return rows
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--binary", type=Path, default=Path("target/release/examples/profile_purchases"))
+    candidates = sorted(Path("/nix/store").glob("*-perf-linux-*/bin/perf")) if Path("/nix/store").exists() else []
+    parser.add_argument("--perf", type=Path, default=shutil.which("perf") or (candidates[-1] if candidates else None))
+    parser.add_argument("--out", type=Path, default=Path("target/hardware-profile") / time.strftime("%Y%m%d-%H%M%S"))
+    parser.add_argument("--cases", default="independent-1,independent-8,contended-8,sparse-8,control")
+    parser.add_argument("--modes", default="counters,diagnostics,sample")
+    parser.add_argument("--groups", default=",".join(GROUPS))
+    parser.add_argument("--rounds", type=int, default=10)
+    parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--warmup", type=int, default=2)
+    parser.add_argument("--driver-cpu", type=int, default=min(os.sched_getaffinity(0)))
+    parser.add_argument("--worker-cpus", help="CPU list; defaults to separate physical cores before SMT siblings")
+    args = parser.parse_args()
+    if args.rounds <= 0 or args.repetitions <= 0 or args.warmup < 0:
+        parser.error("rounds/repetitions must be positive and warmup nonnegative")
+    cases, modes, groups = args.cases.split(","), args.modes.split(","), args.groups.split(",")
+    if set(cases) - CASES.keys() or set(groups) - GROUPS.keys() or set(modes) - {"counters", "diagnostics", "sample"}:
+        parser.error("unknown case, group, or mode")
+    allowed = set(os.sched_getaffinity(0))
+    workers = cpu_list(args.worker_cpus) if args.worker_cpus else worker_order(allowed, args.driver_cpu)
+    if args.driver_cpu not in allowed or not set(workers) <= allowed or args.driver_cpu in workers:
+        parser.error("CPU selections must be allowed and driver/worker CPUs distinct")
+    if len(workers) < max(CASES[case][1] for case in cases):
+        parser.error("provide at least one distinct CPU per requested worker")
+    if args.out.exists() and any(args.out.iterdir()):
+        parser.error("output directory must be new or empty")
+    args.out.mkdir(parents=True, exist_ok=True)
+    root, binary = args.out.resolve(), args.binary.resolve()
+    if args.perf is None and set(modes) != {"diagnostics"}:
+        parser.error("perf is required for hardware counters and sampling")
+    perf = str(args.perf)
+    manifest = dict(base_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                    binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+                    source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for directory in ["crates/bowl/src", "crates/benches/examples"] for p in Path(directory).rglob("*.rs")},
+                    runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                    features=subprocess.check_output(["cargo", "tree", "--workspace", "-e", "features", "-i", "tokio"], text=True),
+                    build_command="cargo build --workspace --all-targets --profile bench -j 20 --message-format=json",
+                    kernel=list(os.uname()),
+                    rustc=subprocess.check_output(["rustc", "--version"], text=True).strip(),
+                    lockfile_sha256=hashlib.sha256(Path("Cargo.lock").read_bytes()).hexdigest(),
+                    perf_version=subprocess.check_output([perf, "--version"], text=True).strip() if args.perf else None,
+                    cpu_topology=subprocess.check_output(["lscpu", "-e=CPU,CORE,SOCKET,MAXMHZ"], text=True),
+                    configuration=vars(args) | {"allowed_cpus": sorted(allowed), "worker_order": workers}, records=[])
+
+    def run(case, mode, repeat, group=None):
+        workload, count, requests, owners, work = CASES[case]
+        directory = root / f"{case}-{mode}-{group or 'none'}-{repeat}"
+        directory.mkdir()
+        ready, control, ack = [directory / name for name in ["ready", "control", "ack"]]
+        settings = {"PROFILE_WORKLOAD": workload, "PROFILE_WORKERS": str(count), "PROFILE_REQUESTS": str(requests),
+                    "PROFILE_PER_OWNER": str(owners), "PROFILE_WORK": str(work), "PROFILE_ROWS": "1000",
+                    "PROFILE_ROUNDS": str(args.rounds), "PROFILE_WARMUP": str(args.warmup),
+                    "PROFILE_DISPATCH_BATCH": "16", "PROFILE_READY": str(ready), "PROFILE_METRICS": str(int(mode == "diagnostics"))}
+        command = [str(binary)]
+        if mode != "diagnostics":
+            os.mkfifo(control); os.mkfifo(ack)
+            settings |= {"PROFILE_PERF_CONTROL": str(control), "PROFILE_PERF_ACK": str(ack)}
+            if mode == "counters":
+                command = [perf, "stat", "--no-big-num", "-x", ";", "-o", str(directory / "stat.csv"), "-D", "-1", "--control", f"fifo:{control},{ack}", "-e", GROUPS[group], "--", *command]
+            else:
+                command = [perf, "record", "-e", "cycles:u", "-c", "1000000", "--call-graph", "dwarf,8192", "-D", "-1", "--control", f"fifo:{control},{ack}", "-o", str(directory / "perf.data"), "--", *command]
+        with (directory / "output.tsv").open("w") as out, (directory / "stderr.log").open("w") as err:
+            process = subprocess.Popen(command, env=os.environ | settings, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, start_new_session=True)
+            try:
+                deadline = time.monotonic() + 30
+                while not ready.exists() or not ready.read_text().strip():
+                    if process.poll() is not None or time.monotonic() > deadline:
+                        raise RuntimeError(f"startup failed; inspect {directory}")
+                    time.sleep(0.005)
+                pid = int(ready.read_text())
+                tids = sorted(int(path.name) for path in Path(f"/proc/{pid}/task").iterdir())
+                other = [tid for tid in tids if tid != pid]
+                if len(other) != count:
+                    raise RuntimeError(f"expected {count} workers, got {other}")
+                affinity = {pid: args.driver_cpu} | dict(zip(other, workers[:count]))
+                for tid, cpu in affinity.items(): os.sched_setaffinity(tid, {cpu})
+                process.stdin.write("go\n"); process.stdin.flush(); process.stdin.close()
+                if process.wait() != 0: raise RuntimeError(f"measurement failed; inspect {directory}")
+            finally:
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM); process.wait()
+                control.unlink(missing_ok=True); ack.unlink(missing_ok=True)
+        parsed = parse_tsv(directory / "output.tsv")
+        if len(parsed["samples"]) != args.rounds: raise RuntimeError("incomplete workload")
+        operations = sum(sample["operations"] for sample in parsed["samples"])
+        entry = dict(case=case, mode=mode, group=group, repeat=repeat, command=command,
+                     environment=settings, thread_affinity=affinity, operations=operations, **parsed)
+        if mode == "diagnostics":
+            totals = {}
+            for metric in parsed["metrics"]:
+                totals[metric["name"]] = totals.get(metric["name"], 0) + metric["value"]
+            completed = sum(system["completed"] for system in parsed["systems"])
+            if totals["admitted_rows"] != completed or totals["started_rows"] != completed or totals["completed_row_polls"] < completed:
+                raise RuntimeError("diagnostic invocation accounting does not match completed work")
+            if workload == "purchases" and totals["bound_cleanup_roots"] != operations:
+                raise RuntimeError("request retirement does not match completed purchases")
+            entry["diagnostic_checks"] = "completion, poll, and purchase-retirement accounting passed"
+        if mode == "counters":
+            entry["events"] = parse_stat(directory / "stat.csv")
+            for event in entry["events"]:
+                event["per_operation"] = event["count"] / operations if event["count"] is not None else None
+            entry["full_coverage"] = bool(entry["events"]) and all(event["count"] is not None and event["coverage_percent"] is not None and event["coverage_percent"] >= 99.5 for event in entry["events"])
+        if mode == "sample":
+            for report, flags in [("self", ["--no-children", "-g", "none"]), ("callers", ["--children", "-g", "graph,1,caller"])]:
+                with (directory / (report + ".txt")).open("w") as out:
+                    subprocess.run([perf, "report", "-i", str(directory / "perf.data"), "--stdio", "--sort", "comm,symbol", "--percent-limit", "0.5", *flags], stdout=out, stderr=subprocess.DEVNULL, check=True)
+            entry["sampling_log"] = (directory / "stderr.log").read_text()
+        manifest["records"].append(entry)
+        (root / "results.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+        elapsed = sum(sample["wall_ns"] for sample in parsed["samples"])
+        print(case, mode, group or "", repeat, f"{elapsed / operations / 1000:.2f} us/op", "coverage=" + str(entry.get("full_coverage", "n/a")), flush=True)
+
+    for repeat in range(args.repetitions):
+        for case in cases if repeat % 2 == 0 else reversed(cases):
+            if "counters" in modes:
+                for group in groups if repeat % 2 == 0 else reversed(groups): run(case, "counters", repeat, group)
+            if "diagnostics" in modes: run(case, "diagnostics", repeat)
+    if "sample" in modes:
+        for case in cases:
+            if case != "control": run(case, "sample", 0)
+
+
+if __name__ == "__main__":
+    main()

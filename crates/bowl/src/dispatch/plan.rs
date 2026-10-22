@@ -43,16 +43,22 @@ where
     F: Future<Output = SystemRun> + Send + 'static,
 {
     fn dispatch(self: Box<Self>, admission: &mut Admission<'_>) {
+        use crate::metrics::{self, Counter::*};
+        let _timer = metrics::Timer::new(AdmissionNs);
+        metrics::add(AdmissionCandidates, self.0.len() as u64);
+        let (mut duplicates, mut conflicts, mut admitted, mut batches) = (0, 0, 0, 0);
         let size = super::grain(self.0.len(), admission.maximum);
         let mut readers = Vec::new();
         let mut writers = Vec::new();
 
         for planned in self.0 {
             if !admission.running.insert(planned.owner.clone()) {
+                duplicates += 1;
                 continue;
             }
 
             if admission.reservations.conflicts(&planned.access) {
+                conflicts += 1;
                 *admission.deferred_conflicts = true;
                 admission.system.force_replan(&planned.owner.keys);
                 admission.running.remove(&planned.owner);
@@ -69,8 +75,10 @@ where
                 admission.read_owners.insert(owner.clone());
             }
 
+            admitted += 1;
+            let queued = metrics::enabled().then(std::time::Instant::now);
             let stats = Arc::clone(&admission.system.stats);
-            let run = async move { (owner, timed(planned.run, stats).await) };
+            let run = async move { (owner, timed(planned.run, stats, queued).await) };
             // These futures share one concrete type. No per-row future box is
             // needed on workers; FuturesUnordered pins its own typed nodes.
             let (batch, queue) = if writer {
@@ -80,31 +88,57 @@ where
             };
             batch.push(run);
             if batch.len() == size {
+                batches += 1;
                 queue.push_batch(std::mem::take(batch));
             }
         }
 
         if !readers.is_empty() {
+            batches += 1;
             admission.readers.push_batch(readers);
         }
         if !writers.is_empty() {
+            batches += 1;
             admission.writers.push_batch(writers);
         }
+        metrics::add(AlreadyRunning, duplicates);
+        metrics::add(ConflictDeferrals, conflicts);
+        metrics::add(AdmittedRows, admitted);
+        metrics::add(WorkerBatches, batches);
     }
 }
 
 /// Stack pinning keeps a concrete, potentially !Unpin future without adding
 /// a box. Measure poll time only, excluding time suspended between polls.
-async fn timed<F: Future>(run: F, stats: Arc<SystemStats>) -> F::Output {
+async fn timed<F: Future>(
+    run: F,
+    stats: Arc<SystemStats>,
+    mut queued: Option<std::time::Instant>,
+) -> F::Output {
+    let trace = queued.is_some();
+    let mut polls = 0;
     let mut run = std::pin::pin!(run);
     std::future::poll_fn(|cx| {
         let start = std::time::Instant::now();
+        if let Some(queued) = queued.take() {
+            crate::metrics::add(
+                crate::metrics::Counter::FirstPollNs,
+                queued.elapsed().as_nanos() as u64,
+            );
+            crate::metrics::add(crate::metrics::Counter::StartedRows, 1);
+        }
+        if trace {
+            polls += 1;
+        }
         let result = run.as_mut().poll(cx);
         stats.run_nanos.fetch_add(
             start.elapsed().as_nanos() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
         if result.is_ready() {
+            if trace {
+                crate::metrics::add(crate::metrics::Counter::RowPolls, polls);
+            }
             stats
                 .runs
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

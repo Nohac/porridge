@@ -541,3 +541,7 @@ dependencies and documented differences in execution and bookkeeping.
 [Execution profiling](spec/execution-profiling.md) isolates typed/boxed worker
 dispatch and profiles complete purchases, with a proposed schema-driven driver
 preparation plan and reproducible benchmark controls.
+
+[Hardware profiling](spec/hardware-profiling.md) records fixed-work PMU counts,
+engine operations, allocator traffic and sampled cycles. Build the workspace in
+the bench profile, then run `uv run tools/profile-engine --help` for controls.

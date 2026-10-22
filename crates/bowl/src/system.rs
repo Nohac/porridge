@@ -113,7 +113,17 @@ impl SystemRun {
 
 impl MemoEntry {
     pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
-        self.deps.iter().all(|dep| dep.is_current(snapshot))
+        if !crate::metrics::enabled() {
+            return self.deps.iter().all(|dep| dep.is_current(snapshot));
+        }
+
+        let mut checks = 0;
+        let current = self.deps.iter().all(|dep| {
+            checks += 1;
+            dep.is_current(snapshot)
+        });
+        crate::metrics::add(crate::metrics::Counter::RevisionChecks, checks);
+        current
     }
 
     /// Refreshes deps for rows this invocation wrote itself, absorbing the
@@ -1389,6 +1399,9 @@ fn plan_prepared<Params: SystemParam>(
         Some(hint) => Params::states_hinted(snapshot, hint),
         None => Params::states(snapshot),
     };
+    let trace = crate::metrics::enabled();
+    let candidates = states.len();
+    let (mut hits, mut dependencies, mut accesses) = (0, 0, 0);
     let completed = !states.is_empty();
     let invocations = states
         .into_iter()
@@ -1399,11 +1412,20 @@ fn plan_prepared<Params: SystemParam>(
             };
             let mut deps = Vec::new();
             prepared.deps(snapshot, &state, &mut deps);
+            if trace {
+                dependencies += deps.len() as u64;
+            }
             if !Params::always_run() && memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+                if trace {
+                    hits += 1;
+                }
                 return None;
             }
 
             let access = Params::access(snapshot, &state);
+            if trace {
+                accesses += access.len() as u64;
+            }
             Some(PlannedInvocation {
                 state,
                 owner,
@@ -1412,6 +1434,15 @@ fn plan_prepared<Params: SystemParam>(
             })
         })
         .collect();
+
+    if trace {
+        use crate::metrics::{add, Counter::*};
+        add(PlanCalls, 1);
+        add(CandidateRows, candidates as u64);
+        add(MemoHits, hits);
+        add(DependencyRecords, dependencies);
+        add(AccessRecords, accesses);
+    }
 
     PlannedRun {
         completed,

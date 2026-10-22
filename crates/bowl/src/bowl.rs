@@ -109,6 +109,9 @@ struct Inner {
     commit_limit: StdMutex<CommitLimit>,
     /// Maximum rows per worker task, captured once per evaluator phase.
     dispatch_batch_size: atomic::AtomicUsize,
+    /// Derived from the sealed registry at construction: only non-Settle
+    /// systems with ambient view dependencies can require healing.
+    ambient_healing_enabled: atomic::AtomicBool,
     /// Bound entity handles cannot `await` in `Drop`, so dropped handles enqueue
     /// their entity here. The next bowl operation drains this queue after
     /// evaluation has had a chance to materialize request outputs.
@@ -1145,6 +1148,7 @@ impl Bowl {
                     startup_ran: false,
                 }),
                 completed_generation: std::sync::atomic::AtomicU64::new(0),
+                ambient_healing_enabled: atomic::AtomicBool::new(false),
                 settled_read: std::sync::RwLock::new(None),
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
@@ -1327,6 +1331,11 @@ impl Bowl {
         let system = system.into_system(id);
         if cfg!(debug_assertions) {
             warn_same_phase_conflicts(&state, &system);
+        }
+        if system.phase != Phase::Settle && !system.view_freshness.is_empty() {
+            self.inner
+                .ambient_healing_enabled
+                .store(true, atomic::Ordering::Relaxed);
         }
         state.systems.push(system);
         if state.pending_generation.is_none() {
@@ -1865,7 +1874,17 @@ impl Bowl {
     /// from another era's views — the same posture as the memo purge on
     /// entity removal.
     async fn heal_stale_ambient(&self, heal_attempts: &mut HashMap<SystemInvocation, u32>) -> bool {
+        if !self
+            .inner
+            .ambient_healing_enabled
+            .load(atomic::Ordering::Relaxed)
+        {
+            return false;
+        }
+
         let mut state = lock_state(&self.inner.state).await;
+        let _timer = crate::metrics::Timer::new(crate::metrics::Counter::HealingNs);
+        crate::metrics::add(crate::metrics::Counter::HealingMemoEntries, state.memo.len() as u64);
         let epoch = state.settle_epoch;
         let mut victims: Vec<SystemInvocation> = Vec::new();
         for (owner, entry) in &state.memo {
@@ -1887,6 +1906,7 @@ impl Bowl {
             }
         }
 
+        crate::metrics::add(crate::metrics::Counter::HealingVictims, victims.len() as u64);
         if victims.is_empty() {
             return false;
         }
@@ -3113,6 +3133,9 @@ async fn commit_system_run(
     let writes = run.writes;
 
     let mut state = lock_state(state).await;
+    let _timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationNs);
+    crate::metrics::add(crate::metrics::Counter::PublicationCalls, 1);
+    crate::metrics::add(crate::metrics::Counter::ReconciledWrites, writes.len() as u64);
     let before_revision = state.world.revision_raw();
     let before_mutations = state.world.mutations_raw();
 
@@ -3120,6 +3143,7 @@ async fn commit_system_run(
         .iter()
         .all(|(_owner, entry)| entry.is_current(&state.world))
     {
+        crate::metrics::add(crate::metrics::Counter::StalePublications, 1);
         // The commands are discarded, but in-place `MutRef` writes already
         // happened and are not revocable: reconcile their revisions so
         // downstream consumers still observe the change.
@@ -3141,7 +3165,9 @@ async fn commit_system_run(
     // still runs against what applied immediately, so a settle system that
     // re-defers the same output each settle sees it removed at settle and
     // reinstated when the next run starts — emergent ephemerality.
+    crate::metrics::add(crate::metrics::Counter::AcceptedOutputs, outputs.len() as u64);
     for output in outputs {
+        crate::metrics::add(crate::metrics::Counter::BufferedCommands, output.commands.len() as u64);
         let writer = output.owner.system;
         let previous = state.world.take_derived_outputs(&output.owner);
         let mut deferred: Vec<(SystemInvocation, Box<dyn CommandOp>)> = Vec::new();
@@ -3360,11 +3386,13 @@ fn cleanup_bound_entity(state: &mut State, entity: Entity) {
 /// Retire a result batch together: sweep memo dependencies once per transitive
 /// frontier, rather than repeating the same whole-map scan for each root.
 fn cleanup_bound_entities(state: &mut State, entities: impl IntoIterator<Item = Entity>) {
+    let _timer = crate::metrics::Timer::new(crate::metrics::Counter::CleanupNs);
     let roots: HashSet<Entity> = entities.into_iter().collect();
     if roots.is_empty() {
         return;
     }
 
+    crate::metrics::add(crate::metrics::Counter::CleanupRoots, roots.len() as u64);
     let mut frontier = roots.clone();
     let mut removed_entities = HashSet::new();
 
@@ -4198,6 +4226,28 @@ mod tests {
             let rows = result.collect();
             assert_eq!(rows.len(), 0);
         });
+    }
+
+    #[test]
+    fn unused_ambient_healing_does_not_acquire_world_state() {
+        use futures::FutureExt;
+
+        for bowl in [
+            Bowl::builder().build(),
+            Bowl::builder().system(revisit_probe).build(),
+            Bowl::builder().system(count_bs.run_during(Phase::Settle)).build(),
+        ] {
+            // Holding state makes an accidental lock acquisition observable
+            // without blocking the test or consulting process-global counters.
+            let _state = bowl.inner.state.try_lock().unwrap();
+            let mut attempts = std::collections::HashMap::new();
+            assert_eq!(bowl.heal_stale_ambient(&mut attempts).now_or_never(), Some(false));
+        }
+
+        let bowl = Bowl::builder().system(count_bs).build();
+        let _state = bowl.inner.state.try_lock().unwrap();
+        let mut attempts = std::collections::HashMap::new();
+        assert!(bowl.heal_stale_ambient(&mut attempts).now_or_never().is_none());
     }
 
     #[test]
