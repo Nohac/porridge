@@ -1,0 +1,3522 @@
+{
+  "date": "2026-10-22",
+  "notes": [
+    "Isolated queue push + apply timings, not end-to-end engine throughput. Same command fixture and CPU for all variants; fixed registration order; three processes per measurement set.",
+    "Safety tests passed under Miri before being moved from the shared module to the example target. Test relocation changed only test wiring; single-command measurements use the final source layout.",
+    "bump-scope is a dev dependency only. Engine storage is unchanged."
+  ],
+  "measurements": {
+    "comparison": {
+      "summary": {
+        "commands/mixed/fresh//boxed/1024": {
+          "median_ns_per_command": 27.600572680995477,
+          "process_medians_ns_per_command": [
+            27.54681795406965,
+            27.600572680995477,
+            28.741478093019005
+          ]
+        },
+        "commands/mixed/fresh//boxed/2": {
+          "median_ns_per_command": 14.432736491155335,
+          "process_medians_ns_per_command": [
+            14.32254688884149,
+            14.519213537809147,
+            14.432736491155335
+          ]
+        },
+        "commands/mixed/fresh//boxed/32": {
+          "median_ns_per_command": 15.645910562284074,
+          "process_medians_ns_per_command": [
+            15.645910562284074,
+            15.009772085599991,
+            15.955938906074241
+          ]
+        },
+        "commands/mixed/fresh//bump-scope/1024": {
+          "median_ns_per_command": 4.380314422638154,
+          "process_medians_ns_per_command": [
+            4.399665960496472,
+            4.12955814250748,
+            4.380314422638154
+          ]
+        },
+        "commands/mixed/fresh//bump-scope/2": {
+          "median_ns_per_command": 16.944717532750772,
+          "process_medians_ns_per_command": [
+            17.110766604912858,
+            16.899815794420483,
+            16.944717532750772
+          ]
+        },
+        "commands/mixed/fresh//bump-scope/32": {
+          "median_ns_per_command": 9.154036202265988,
+          "process_medians_ns_per_command": [
+            9.07859487864441,
+            9.154036202265988,
+            9.896282660791588
+          ]
+        },
+        "commands/mixed/fresh//packed/1024": {
+          "median_ns_per_command": 4.775167857166828,
+          "process_medians_ns_per_command": [
+            4.796549412120854,
+            4.7716449635743725,
+            4.775167857166828
+          ]
+        },
+        "commands/mixed/fresh//packed/2": {
+          "median_ns_per_command": 31.82627375004249,
+          "process_medians_ns_per_command": [
+            31.82627375004249,
+            31.78142128388442,
+            32.11856551941745
+          ]
+        },
+        "commands/mixed/fresh//packed/32": {
+          "median_ns_per_command": 8.185798201515361,
+          "process_medians_ns_per_command": [
+            8.185798201515361,
+            8.08497634213606,
+            8.36247143723186
+          ]
+        },
+        "commands/mixed/reuse//boxed/1024": {
+          "median_ns_per_command": 27.59879448986891,
+          "process_medians_ns_per_command": [
+            27.60864462972689,
+            27.242308690637046,
+            27.59879448986891
+          ]
+        },
+        "commands/mixed/reuse//boxed/2": {
+          "median_ns_per_command": 11.42305043536421,
+          "process_medians_ns_per_command": [
+            11.42305043536421,
+            11.442449872636628,
+            10.677686967172093
+          ]
+        },
+        "commands/mixed/reuse//boxed/32": {
+          "median_ns_per_command": 12.001484969214053,
+          "process_medians_ns_per_command": [
+            11.99210987423109,
+            12.001484969214053,
+            12.089864002244205
+          ]
+        },
+        "commands/mixed/reuse//bump-scope/1024": {
+          "median_ns_per_command": 3.6355474728010435,
+          "process_medians_ns_per_command": [
+            3.647600496229474,
+            3.632383214510404,
+            3.6355474728010435
+          ]
+        },
+        "commands/mixed/reuse//bump-scope/2": {
+          "median_ns_per_command": 8.182398733641914,
+          "process_medians_ns_per_command": [
+            8.084064773370375,
+            8.35805389455583,
+            8.182398733641914
+          ]
+        },
+        "commands/mixed/reuse//bump-scope/32": {
+          "median_ns_per_command": 3.2794269126180593,
+          "process_medians_ns_per_command": [
+            3.2782851191344076,
+            3.3003042939318954,
+            3.2794269126180593
+          ]
+        },
+        "commands/mixed/reuse//packed/1024": {
+          "median_ns_per_command": 3.877462831067417,
+          "process_medians_ns_per_command": [
+            3.8984274490022024,
+            3.877462831067417,
+            3.860373609663781
+          ]
+        },
+        "commands/mixed/reuse//packed/2": {
+          "median_ns_per_command": 9.942492782281736,
+          "process_medians_ns_per_command": [
+            10.548748653375048,
+            9.906510144050978,
+            9.942492782281736
+          ]
+        },
+        "commands/mixed/reuse//packed/32": {
+          "median_ns_per_command": 3.4814169680354645,
+          "process_medians_ns_per_command": [
+            3.4814169680354645,
+            3.5455224617359242,
+            3.4516180996078343
+          ]
+        },
+        "commands/scalar/fresh//boxed/1024": {
+          "median_ns_per_command": 13.866055697366612,
+          "process_medians_ns_per_command": [
+            14.025784480652307,
+            13.850450617303167,
+            13.866055697366612
+          ]
+        },
+        "commands/scalar/fresh//boxed/2": {
+          "median_ns_per_command": 10.362566934864978,
+          "process_medians_ns_per_command": [
+            10.362566934864978,
+            10.216400415727238,
+            10.424516300771472
+          ]
+        },
+        "commands/scalar/fresh//boxed/32": {
+          "median_ns_per_command": 14.98870612023649,
+          "process_medians_ns_per_command": [
+            15.109264696410168,
+            14.934683074518095,
+            14.98870612023649
+          ]
+        },
+        "commands/scalar/fresh//bump-scope/1024": {
+          "median_ns_per_command": 3.0973980498923055,
+          "process_medians_ns_per_command": [
+            3.113038710789809,
+            3.0973980498923055,
+            3.095586732012732
+          ]
+        },
+        "commands/scalar/fresh//bump-scope/2": {
+          "median_ns_per_command": 8.998374980812525,
+          "process_medians_ns_per_command": [
+            8.998374980812525,
+            8.95994248693209,
+            9.13917124749961
+          ]
+        },
+        "commands/scalar/fresh//bump-scope/32": {
+          "median_ns_per_command": 5.862275397570196,
+          "process_medians_ns_per_command": [
+            5.886948575447443,
+            5.858646910966877,
+            5.862275397570196
+          ]
+        },
+        "commands/scalar/fresh//packed/1024": {
+          "median_ns_per_command": 2.52981449317541,
+          "process_medians_ns_per_command": [
+            2.52981449317541,
+            2.5102460783896703,
+            2.5308388972627944
+          ]
+        },
+        "commands/scalar/fresh//packed/2": {
+          "median_ns_per_command": 22.46615014719416,
+          "process_medians_ns_per_command": [
+            22.59257884267503,
+            22.185313858215316,
+            22.46615014719416
+          ]
+        },
+        "commands/scalar/fresh//packed/32": {
+          "median_ns_per_command": 7.23449898067962,
+          "process_medians_ns_per_command": [
+            7.23449898067962,
+            7.257738532484492,
+            6.99339149895216
+          ]
+        },
+        "commands/scalar/reuse//boxed/1024": {
+          "median_ns_per_command": 13.666794473865934,
+          "process_medians_ns_per_command": [
+            13.855202048525165,
+            13.410385028326024,
+            13.666794473865934
+          ]
+        },
+        "commands/scalar/reuse//boxed/2": {
+          "median_ns_per_command": 6.098120801983338,
+          "process_medians_ns_per_command": [
+            5.672206922180866,
+            6.098120801983338,
+            6.111168408215697
+          ]
+        },
+        "commands/scalar/reuse//boxed/32": {
+          "median_ns_per_command": 12.17839547456228,
+          "process_medians_ns_per_command": [
+            12.294382022471911,
+            12.008945540935672,
+            12.17839547456228
+          ]
+        },
+        "commands/scalar/reuse//bump-scope/1024": {
+          "median_ns_per_command": 2.599950064242675,
+          "process_medians_ns_per_command": [
+            2.599950064242675,
+            2.5684104253151907,
+            2.609185018734056
+          ]
+        },
+        "commands/scalar/reuse//bump-scope/2": {
+          "median_ns_per_command": 3.167326747133048,
+          "process_medians_ns_per_command": [
+            3.1774981893344743,
+            3.166194445307794,
+            3.167326747133048
+          ]
+        },
+        "commands/scalar/reuse//bump-scope/32": {
+          "median_ns_per_command": 2.521928760202925,
+          "process_medians_ns_per_command": [
+            2.6146836871527976,
+            2.5128462605979314,
+            2.521928760202925
+          ]
+        },
+        "commands/scalar/reuse//packed/1024": {
+          "median_ns_per_command": 2.1400506372696313,
+          "process_medians_ns_per_command": [
+            2.1472576141016915,
+            2.1010716001812053,
+            2.1400506372696313
+          ]
+        },
+        "commands/scalar/reuse//packed/2": {
+          "median_ns_per_command": 2.4011716476812865,
+          "process_medians_ns_per_command": [
+            2.4375006578545197,
+            2.38954585521265,
+            2.4011716476812865
+          ]
+        },
+        "commands/scalar/reuse//packed/32": {
+          "median_ns_per_command": 2.1704318330169605,
+          "process_medians_ns_per_command": [
+            2.1704318330169605,
+            2.0990849053110043,
+            2.807305485098917
+          ]
+        }
+      },
+      "allocations": [
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 1600,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 1600,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 300,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 8000,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 300,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 8000,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 56000,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 56000,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 4800,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 100,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 2400,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 4800,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 58400,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 58400,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 300,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 64800,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 300,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 64800,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 300,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 156800,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 300,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 156800,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 61600,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 100,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 2400,
+          "operations": 200
+        },
+        {
+          "queue": "packed",
+          "commands": 2,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 61600,
+          "operations": 200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 3200,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 25600,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 3200,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 25600,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 3300,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 32000,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 3300,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 76800,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 300,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 44800,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 89600,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 56000,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 100800,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 300,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 44800,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 89600,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 76800,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 500,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 74400,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 148800,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 3200,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 252800,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 3200,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 252800,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 3300,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 259200,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 3300,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 304000,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 300,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 44800,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 89600,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 400,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 360000,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 400,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 404800,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 300,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 44800,
+          "operations": 3200
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 89600,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 492800,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 400,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 433600,
+          "operations": 3200
+        },
+        {
+          "queue": "packed",
+          "commands": 32,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 924000,
+          "operations": 3200
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 102400,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 819200,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 102400,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 819200,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 102500,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 825600,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 102500,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 2457600,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 800,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 1632000,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 3264000,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 600,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 1585600,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 600,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 3217600,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 800,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 1632000,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 3264000,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 2457600,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 1000,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 2455200,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 4910400,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 102400,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 8089600,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 102400,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 8089600,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 102500,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 8096000,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 102500,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 9728000,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 800,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 1632000,
+          "operations": 102400
+        },
+        {
+          "queue": "boxed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 3264000,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 900,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 13049600,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 900,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 14681600,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 800,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 1632000,
+          "operations": 102400
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 3264000,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 15769600,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 900,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 15710400,
+          "operations": 102400
+        },
+        {
+          "queue": "packed",
+          "commands": 1024,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 31477600,
+          "operations": 102400
+        }
+      ],
+      "provenance": {
+        "build_command": [
+          "cargo",
+          "build",
+          "--workspace",
+          "--all-targets",
+          "--profile",
+          "bench",
+          "-j",
+          "20",
+          "--message-format=json"
+        ],
+        "base_commit": "f85b745bcab6bac2108692ecd8cb23639803720f",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "kernel": [
+          "Linux",
+          "graphite",
+          "7.2.8",
+          "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+          "x86_64"
+        ],
+        "cpu": 0,
+        "counts": "2,32,1024",
+        "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+        "binaries": {
+          "example": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/examples/command_buffers",
+            "sha256": "7ef8e62b7e940338aa32f56f56038478c4f1a0445039f8a310e89d218a945c64"
+          },
+          "bench": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/deps/command_buffers-52538294f7cff343",
+            "sha256": "5a025323dffd62840170fd54a2d29ddda85e3b7dc1e5e61b8bdd96f2c69ee86f"
+          }
+        },
+        "sources": {
+          "Cargo.lock": "86a4af757987edf93556abf3eb1d432e9336f84714a42f1139e6b3dc24f6e4b6",
+          "crates/benches/examples/command_buffers.rs": "2f22547e516f694ba82a6c7638979fe8fc370e5015ff3762a53e803653090359",
+          "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+          "crates/benches/examples/command_storage/mod.rs": "701cc4e295a7ccad1226c9a3cc56b8d42d8e52cb1b124a9dd65383aa6715c7b1",
+          "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+          "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+          "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+          "crates/benches/examples/command_storage/tests.rs": "3b53f39effa5831818d1984fa9084c055844fd69a2888121b7dd55544ad9e068"
+        }
+      },
+      "raw_report_sha256": "b72742a70cfc16d366491c10530711ad9ce7355dc526ff3f7308a5176f625504"
+    },
+    "single-command": {
+      "summary": {
+        "commands/mixed/fresh//boxed/1": {
+          "median_ns_per_command": 13.328700877963572,
+          "process_medians_ns_per_command": [
+            13.275965745974926,
+            14.164610325248148,
+            13.328700877963572
+          ]
+        },
+        "commands/mixed/fresh//bump-scope/1": {
+          "median_ns_per_command": 15.806174598153259,
+          "process_medians_ns_per_command": [
+            15.868923983397051,
+            15.615531167482244,
+            15.806174598153259
+          ]
+        },
+        "commands/mixed/fresh//packed/1": {
+          "median_ns_per_command": 9.90360826543117,
+          "process_medians_ns_per_command": [
+            9.90360826543117,
+            9.865754757171258,
+            10.027579261954262
+          ]
+        },
+        "commands/mixed/reuse//boxed/1": {
+          "median_ns_per_command": 6.417070583836282,
+          "process_medians_ns_per_command": [
+            6.417070583836282,
+            6.288415000267211,
+            6.501400292773261
+          ]
+        },
+        "commands/mixed/reuse//bump-scope/1": {
+          "median_ns_per_command": 4.197505605876017,
+          "process_medians_ns_per_command": [
+            4.197505605876017,
+            4.193916636849329,
+            4.258769507479607
+          ]
+        },
+        "commands/mixed/reuse//packed/1": {
+          "median_ns_per_command": 3.296759080543376,
+          "process_medians_ns_per_command": [
+            3.285984171559867,
+            3.296759080543376,
+            3.3235098931573166
+          ]
+        },
+        "commands/scalar/fresh//boxed/1": {
+          "median_ns_per_command": 13.184498647832594,
+          "process_medians_ns_per_command": [
+            13.02045765185228,
+            13.184498647832594,
+            13.38982025334463
+          ]
+        },
+        "commands/scalar/fresh//bump-scope/1": {
+          "median_ns_per_command": 15.629957510723521,
+          "process_medians_ns_per_command": [
+            15.629957510723521,
+            15.607614739473792,
+            15.771972417490414
+          ]
+        },
+        "commands/scalar/fresh//packed/1": {
+          "median_ns_per_command": 9.93377854106746,
+          "process_medians_ns_per_command": [
+            9.930559670484518,
+            9.93377854106746,
+            10.000233382977607
+          ]
+        },
+        "commands/scalar/reuse//boxed/1": {
+          "median_ns_per_command": 6.264358089649937,
+          "process_medians_ns_per_command": [
+            6.158638041403321,
+            6.264358089649937,
+            6.451720638255733
+          ]
+        },
+        "commands/scalar/reuse//bump-scope/1": {
+          "median_ns_per_command": 4.168572655864962,
+          "process_medians_ns_per_command": [
+            4.111195823849119,
+            4.168572655864962,
+            4.312509690871822
+          ]
+        },
+        "commands/scalar/reuse//packed/1": {
+          "median_ns_per_command": 3.279617993566957,
+          "process_medians_ns_per_command": [
+            3.2406912211589303,
+            3.279617993566957,
+            3.679416807885741
+          ]
+        }
+      },
+      "allocations": [
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 800,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 800,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 7200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 7200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 56000,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 56000,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 2400,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": false,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 800,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 800,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "alloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "dealloc_requested_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": true,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 7200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 7200,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "boxed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 56000,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 200,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 56000,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "bump-scope",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "alloc_requested_bytes",
+          "count": 2400,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_calls",
+          "count": 100,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "dealloc_requested_bytes",
+          "count": 2400,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_calls",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_old_bytes",
+          "count": 0,
+          "operations": 100
+        },
+        {
+          "queue": "packed",
+          "commands": 1,
+          "mixed": true,
+          "reuse": false,
+          "metric": "realloc_new_bytes",
+          "count": 0,
+          "operations": 100
+        }
+      ],
+      "provenance": {
+        "build_command": [
+          "cargo",
+          "build",
+          "--workspace",
+          "--all-targets",
+          "--profile",
+          "bench",
+          "-j",
+          "20",
+          "--message-format=json"
+        ],
+        "base_commit": "f85b745bcab6bac2108692ecd8cb23639803720f",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "kernel": [
+          "Linux",
+          "graphite",
+          "7.2.8",
+          "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+          "x86_64"
+        ],
+        "cpu": 0,
+        "counts": "1",
+        "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+        "binaries": {
+          "example": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/examples/command_buffers",
+            "sha256": "fe6d2b82f261c8471e530e28046bdd671035b0a3f3cb400e36917c6d0973037f"
+          },
+          "bench": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/deps/command_buffers-52538294f7cff343",
+            "sha256": "202cb550f2621d38392546012dcbcc31fe966ed28e912913f209712dae5fe706"
+          }
+        },
+        "sources": {
+          "Cargo.lock": "86a4af757987edf93556abf3eb1d432e9336f84714a42f1139e6b3dc24f6e4b6",
+          "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+          "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+          "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+          "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+          "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+          "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+          "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+        }
+      },
+      "raw_report_sha256": "37fedfd2fe2aa5d3394331a119a284adc9ec7a87250488cf01e56e3fba43a31c"
+    }
+  }
+}

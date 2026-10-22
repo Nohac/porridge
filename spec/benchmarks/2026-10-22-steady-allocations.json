@@ -1,0 +1,1867 @@
+{
+  "date": "2026-10-22",
+  "notes": [
+    "Fixed entity IDs and one warmed world across all rounds. Purchases include submission, evaluation, and ordinary outcome materialization; read operations count returned components.",
+    "Three alternating before/after process repetitions, ten rounds/process for purchase/read comparisons. Counters and wall time use separate processes. Identical workspace features and per-thread CPU pinning.",
+    "Baseline source hashes come from the initial baseline manifest. Candidate hashes come from their own measurement manifests. The allocating probe was corrected after the baseline to exclude Tokio yield scheduling from user-kernel attribution; that probe is excluded from all before/after comparisons. Purchase/read fixture code was unchanged.",
+    "Inline experiment removed more calls but increased future-frame/allocation bytes. Compact Vec of erased cell guards is retained.",
+    "Busy workstation; timing differences of a few percent are not evidence of a stable speedup. Scheduling interleavings can alter engine allocation counts, especially with one worker.",
+    "Raw TSV and reports remain under target/steady-allocations; this tracked file retains summaries, original source provenance, and report hashes."
+  ],
+  "summary": {
+    "inline": {
+      "purchases/1/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 717.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 83051.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 717.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 88891.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 60.5,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 9320.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 15408.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 67.9985,
+        "process_median_wall_us": [
+          68.995,
+          66.4105,
+          67.9985
+        ],
+        "process_median_range_us": [
+          66.4105,
+          68.995
+        ]
+      },
+      "purchases/1/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 686.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 76731.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 686.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 82507.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 59.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 8544.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 14320.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 69.807,
+        "process_median_wall_us": [
+          71.02449999999999,
+          71.02950000000001,
+          69.481
+        ],
+        "process_median_range_us": [
+          69.481,
+          71.02950000000001
+        ]
+      },
+      "purchases/1/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 276.8915,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 27120.811,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 276.8895,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 38637.134999999995,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 25.154,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 10975.315999999999,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 22381.544,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 28.521865,
+        "process_median_wall_us": [
+          28.157432,
+          28.444081999999998,
+          28.5742535
+        ],
+        "process_median_range_us": [
+          28.157432,
+          28.5742535
+        ]
+      },
+      "purchases/1/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 244.901,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 28806.691,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 244.909,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 43815.665,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 24.458,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 14474.304,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 29380.008,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 29.435071,
+        "process_median_wall_us": [
+          26.780196,
+          29.268586,
+          30.7308455
+        ],
+        "process_median_range_us": [
+          26.780196,
+          30.7308455
+        ]
+      },
+      "purchases/8/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 717.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 83051.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 717.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 88891.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 60.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 8608.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 14448.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 101.9025,
+        "process_median_wall_us": [
+          105.489,
+          85.86699999999999,
+          96.3425
+        ],
+        "process_median_range_us": [
+          85.86699999999999,
+          105.489
+        ]
+      },
+      "purchases/8/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 686.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 76731.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 686.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 82507.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 59.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 8544.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 14320.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 100.119,
+        "process_median_wall_us": [
+          98.2705,
+          101.8275,
+          99.889
+        ],
+        "process_median_range_us": [
+          98.2705,
+          101.8275
+        ]
+      },
+      "purchases/8/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 263.622,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 25443.019,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 263.622,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 36279.683,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 24.133,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 10422.056,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 21258.72,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 37.393666499999995,
+        "process_median_wall_us": [
+          36.2717345,
+          37.884682500000004,
+          37.707893
+        ],
+        "process_median_range_us": [
+          36.2717345,
+          37.884682500000004
+        ]
+      },
+      "purchases/8/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 233.622,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 27581.339,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 233.622,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 41892.875,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 23.637,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 13896.928,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 28208.464,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 37.414374499999994,
+        "process_median_wall_us": [
+          37.286459,
+          37.712519,
+          37.2893215
+        ],
+        "process_median_range_us": [
+          37.286459,
+          37.712519
+        ]
+      },
+      "read/1/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.421,
+        "process_median_wall_us": [
+          0.421,
+          0.421,
+          0.401
+        ],
+        "process_median_range_us": [
+          0.401,
+          0.421
+        ]
+      },
+      "read/1/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 3.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1680.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 3.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1680.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.3905,
+        "process_median_wall_us": [
+          0.391,
+          0.3855,
+          0.3855
+        ],
+        "process_median_range_us": [
+          0.3855,
+          0.391
+        ]
+      },
+      "read/1/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 25.728,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.048,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 16.32,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 32.64,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.1263985,
+        "process_median_wall_us": [
+          0.12665900000000002,
+          0.125988,
+          0.126805
+        ],
+        "process_median_range_us": [
+          0.125988,
+          0.126805
+        ]
+      },
+      "read/1/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 17.76,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.24,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 24.48,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 48.96,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.09744900000000001,
+        "process_median_wall_us": [
+          0.0975845,
+          0.098466,
+          0.09656200000000001
+        ],
+        "process_median_range_us": [
+          0.09656200000000001,
+          0.098466
+        ]
+      },
+      "read/8/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.42,
+        "process_median_wall_us": [
+          0.4155,
+          0.411,
+          0.421
+        ],
+        "process_median_range_us": [
+          0.411,
+          0.421
+        ]
+      },
+      "read/8/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 3.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1680.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 3.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1680.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.40549999999999997,
+        "process_median_wall_us": [
+          0.381,
+          0.4105,
+          0.421
+        ],
+        "process_median_range_us": [
+          0.381,
+          0.421
+        ]
+      },
+      "read/8/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 25.728,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.048,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 16.32,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 32.64,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.1249355,
+        "process_median_wall_us": [
+          0.12844250000000001,
+          0.125106,
+          0.122326
+        ],
+        "process_median_range_us": [
+          0.122326,
+          0.12844250000000001
+        ]
+      },
+      "read/8/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 17.76,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.24,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 24.48,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 48.96,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.0987415,
+        "process_median_wall_us": [
+          0.098386,
+          0.1031545,
+          0.0971185
+        ],
+        "process_median_range_us": [
+          0.0971185,
+          0.1031545
+        ]
+      }
+    },
+    "compact": {
+      "purchases/1/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 829.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 90531.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 829.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 96867.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 71.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 10032.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 16368.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 70.1765,
+        "process_median_wall_us": [
+          68.2435,
+          68.8595,
+          71.61
+        ],
+        "process_median_range_us": [
+          68.2435,
+          71.61
+        ]
+      },
+      "purchases/1/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 692.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 83043.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 692.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 88915.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 60.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 8640.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 14512.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 68.143,
+        "process_median_wall_us": [
+          66.4645,
+          67.85300000000001,
+          86.979
+        ],
+        "process_median_range_us": [
+          66.4645,
+          86.979
+        ]
+      },
+      "purchases/1/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 272.22799999999995,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 26586.765,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 272.226,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 37959.83500000001,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 24.859499999999997,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 10939.544,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 22298.612,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 28.299385,
+        "process_median_wall_us": [
+          28.449016999999998,
+          28.330037500000003,
+          28.0106915
+        ],
+        "process_median_range_us": [
+          28.0106915,
+          28.449016999999998
+        ]
+      },
+      "purchases/1/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 246.00150000000002,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 26525.917,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 245.9995,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 37848.481,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 24.5735,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 10947.752,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 22311.9,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 27.965012,
+        "process_median_wall_us": [
+          27.030927499999997,
+          28.218728499999997,
+          27.156316
+        ],
+        "process_median_range_us": [
+          27.030927499999997,
+          28.218728499999997
+        ]
+      },
+      "purchases/8/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 717.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 83051.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 717.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 88891.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 60.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 8608.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 14448.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 102.267,
+        "process_median_wall_us": [
+          104.4165,
+          100.163,
+          100.4685
+        ],
+        "process_median_range_us": [
+          100.163,
+          104.4165
+        ]
+      },
+      "purchases/8/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 692.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 83043.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 692.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 88915.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 60.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 8640.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 14512.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 99.11099999999999,
+        "process_median_wall_us": [
+          121.2675,
+          98.58,
+          94.87299999999999
+        ],
+        "process_median_range_us": [
+          94.87299999999999,
+          121.2675
+        ]
+      },
+      "purchases/8/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 263.622,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 25443.019,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 263.622,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 36279.683,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 24.133,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 10422.056,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 21258.72,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 38.688058500000004,
+        "process_median_wall_us": [
+          40.321959,
+          37.397192,
+          38.5798985
+        ],
+        "process_median_range_us": [
+          37.397192,
+          40.321959
+        ]
+      },
+      "purchases/8/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 238.622,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 25403.051,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 238.622,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 36279.875,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 24.133,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 10462.216,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 21339.04,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 39.203041,
+        "process_median_wall_us": [
+          39.589833,
+          38.3017775,
+          39.140301
+        ],
+        "process_median_range_us": [
+          38.3017775,
+          39.589833
+        ]
+      },
+      "read/1/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.381,
+        "process_median_wall_us": [
+          0.3905,
+          0.361,
+          0.391
+        ],
+        "process_median_range_us": [
+          0.361,
+          0.391
+        ]
+      },
+      "read/1/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 4.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1776.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 4.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1776.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.40549999999999997,
+        "process_median_wall_us": [
+          0.4105,
+          0.40549999999999997,
+          0.4005
+        ],
+        "process_median_range_us": [
+          0.4005,
+          0.4105
+        ]
+      },
+      "read/1/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 25.728,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.048,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 16.32,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 32.64,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.1282565,
+        "process_median_wall_us": [
+          0.12735000000000002,
+          0.12726949999999998,
+          0.1290775
+        ],
+        "process_median_range_us": [
+          0.12726949999999998,
+          0.1290775
+        ]
+      },
+      "read/1/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 17.76,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.24,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 24.48,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 48.96,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.099522,
+        "process_median_wall_us": [
+          0.100088,
+          0.0986205,
+          0.0996775
+        ],
+        "process_median_range_us": [
+          0.0986205,
+          0.100088
+        ]
+      },
+      "read/8/1/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 5.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1752.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.381,
+        "process_median_wall_us": [
+          0.381,
+          0.375,
+          0.386
+        ],
+        "process_median_range_us": [
+          0.375,
+          0.386
+        ]
+      },
+      "read/8/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 4.0,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 1776.0,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 4.0,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 1776.0,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 0.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.4,
+        "process_median_wall_us": [
+          0.4,
+          0.4005,
+          0.381
+        ],
+        "process_median_range_us": [
+          0.381,
+          0.4005
+        ]
+      },
+      "read/8/1000/before": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 25.728,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 1.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.048,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 16.32,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 32.64,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.12461449999999999,
+        "process_median_wall_us": [
+          0.1244695,
+          0.1252605,
+          0.1249295
+        ],
+        "process_median_range_us": [
+          0.1244695,
+          0.1252605
+        ]
+      },
+      "read/8/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 17.76,
+            "kernel": 0.0
+          },
+          "dealloc_calls": {
+            "engine": 0.004,
+            "kernel": 0.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 42.24,
+            "kernel": 0.0
+          },
+          "realloc_calls": {
+            "engine": 0.008,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 24.48,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 48.96,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 0.0992865,
+        "process_median_wall_us": [
+          0.09909100000000001,
+          0.10135050000000001,
+          0.0980995
+        ],
+        "process_median_range_us": [
+          0.0980995,
+          0.10135050000000001
+        ]
+      }
+    },
+    "control": {
+      "probe/1/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 66.0,
+            "kernel": 2.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 11981.0,
+            "kernel": 128.0
+          },
+          "dealloc_calls": {
+            "engine": 66.0,
+            "kernel": 2.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 11741.0,
+            "kernel": 128.0
+          },
+          "realloc_calls": {
+            "engine": 1.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 320.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 80.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 12.122,
+        "process_median_wall_us": [
+          12.122
+        ],
+        "process_median_range_us": [
+          12.122,
+          12.122
+        ]
+      },
+      "probe/1/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 22.876,
+            "kernel": 2.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 4458.261,
+            "kernel": 128.0
+          },
+          "dealloc_calls": {
+            "engine": 22.876,
+            "kernel": 2.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 6545.653,
+            "kernel": 128.0
+          },
+          "realloc_calls": {
+            "engine": 0.316,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 2112.192,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 4224.272,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 2.715958,
+        "process_median_wall_us": [
+          2.715958
+        ],
+        "process_median_range_us": [
+          2.715958,
+          2.715958
+        ]
+      },
+      "probe/8/1/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 66.0,
+            "kernel": 2.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 11981.0,
+            "kernel": 128.0
+          },
+          "dealloc_calls": {
+            "engine": 66.0,
+            "kernel": 2.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 11741.0,
+            "kernel": 128.0
+          },
+          "realloc_calls": {
+            "engine": 1.0,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 320.0,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 80.0,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 27.201,
+        "process_median_wall_us": [
+          27.201
+        ],
+        "process_median_range_us": [
+          27.201,
+          27.201
+        ]
+      },
+      "probe/8/1000/after": {
+        "metrics_per_operation": {
+          "alloc_calls": {
+            "engine": 22.874,
+            "kernel": 2.0
+          },
+          "alloc_requested_bytes": {
+            "engine": 4458.037,
+            "kernel": 128.0
+          },
+          "dealloc_calls": {
+            "engine": 22.874,
+            "kernel": 2.0
+          },
+          "dealloc_requested_bytes": {
+            "engine": 6488.309,
+            "kernel": 128.0
+          },
+          "realloc_calls": {
+            "engine": 0.302,
+            "kernel": 0.0
+          },
+          "realloc_old_bytes": {
+            "engine": 2055.184,
+            "kernel": 0.0
+          },
+          "realloc_new_bytes": {
+            "engine": 4110.032,
+            "kernel": 0.0
+          }
+        },
+        "wall_us_per_operation": 5.050511,
+        "process_median_wall_us": [
+          5.050511
+        ],
+        "process_median_range_us": [
+          5.050511,
+          5.050511
+        ]
+      }
+    }
+  },
+  "provenance": {
+    "baseline": {
+      "base_commit": "f85b745bcab6bac2108692ecd8cb23639803720f",
+      "binaries": {
+        "after": {
+          "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+          "sha256": "716b877d27de05f4d969f00bac4d58922e44c31f41982f5bc624b75d0681aea9"
+        }
+      },
+      "source_sha256": {
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "df8682a2396ba5eceb8822e64d0c0bffd9bce5da0b9d1c6b9465ac51def44d30",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "7f12a141729cadae81697b8b46e9f59d079c733e0017dba338ec7b0e8825dd2f",
+        "crates/bowl/src/system.rs": "a30c498976c69a981b0332d9fabd0c76198e27d179c44815d9c74e731c455dc2",
+        "crates/bowl/src/world.rs": "b5042d34cea5f6c18138deaaedb9b29012fe872aee73cb6b3c5df04625b8f14c",
+        "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+        "crates/bowl/src/bowl.rs": "87d459e32f7c53f86128d2db5dfbaeba7d708fa3b53d56ea8aae3c0a01f10bc3",
+        "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+        "crates/bowl/src/lib.rs": "d6040e7e20087943aa796e5d8c7540b1bf62a20b67446cff41c612ff9ff1f067",
+        "crates/bowl/src/prepared.rs": "617d4583e29486b15aa19ca29f833ee47c7e8289935f0cd1173fa2b59d6f2733",
+        "crates/bowl/src/metrics.rs": "87a73f57e44ac0ab6278bc285f46c03664f3bc74bc8caa4d73f56c99effcf58e",
+        "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+        "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+        "crates/bowl/src/system/planning_tests.rs": "c5d5e733d3b375c94095df006cf8d5e9618209fe66454a1bee79975995683265",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+        "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+        "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+        "crates/benches/examples/steady_allocations.rs": "47ac19d0b1fee856ff1a2905b8ad70a3394e16d75344bfbfb0f30d7ae1d31180",
+        "crates/benches/examples/support/allocations.rs": "d8272352677555ded5c51dffcaee1564e3fc49b5510a9299108b09d8d0fed611"
+      },
+      "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+      "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "kernel": [
+        "Linux",
+        "graphite",
+        "7.2.8",
+        "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+        "x86_64"
+      ],
+      "driver_cpu": 0,
+      "worker_cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19
+      ],
+      "configuration": {
+        "binary": "target/release/examples/steady_allocations",
+        "before": null,
+        "out": "target/steady-allocations/baseline",
+        "cases": "purchases,read,probe",
+        "workers": "1,8",
+        "slots": "1,1000",
+        "rounds": 5,
+        "warmup": 3,
+        "repetitions": 1
+      },
+      "report_sha256": "ac1db8dbec658e69b6d419bc1d61036c86f634c635e07ddc0614924acfb108ff"
+    },
+    "inline": {
+      "base_commit": "f85b745bcab6bac2108692ecd8cb23639803720f",
+      "binaries": {
+        "after": {
+          "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+          "sha256": "6d20f91433df5410e932f960faab521e699310ad5fe62a98dd78c7829adc43a7"
+        },
+        "before": {
+          "path": "/home/jonas/Development/Rust/porridge/target/steady-allocations/before-steady_allocations",
+          "sha256": "716b877d27de05f4d969f00bac4d58922e44c31f41982f5bc624b75d0681aea9"
+        }
+      },
+      "source_sha256": {
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "df8682a2396ba5eceb8822e64d0c0bffd9bce5da0b9d1c6b9465ac51def44d30",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "24fa2d5872aeefadc20b0c00d4a23ba6264f966607bb492c7ea3750218bb9b18",
+        "crates/bowl/src/system.rs": "a30c498976c69a981b0332d9fabd0c76198e27d179c44815d9c74e731c455dc2",
+        "crates/bowl/src/world.rs": "0b640e6dace9097fd77f83b5cd4381bac034b6d7646213e651c2abe62b827244",
+        "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+        "crates/bowl/src/bowl.rs": "87d459e32f7c53f86128d2db5dfbaeba7d708fa3b53d56ea8aae3c0a01f10bc3",
+        "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+        "crates/bowl/src/lib.rs": "d6040e7e20087943aa796e5d8c7540b1bf62a20b67446cff41c612ff9ff1f067",
+        "crates/bowl/src/prepared.rs": "617d4583e29486b15aa19ca29f833ee47c7e8289935f0cd1173fa2b59d6f2733",
+        "crates/bowl/src/metrics.rs": "87a73f57e44ac0ab6278bc285f46c03664f3bc74bc8caa4d73f56c99effcf58e",
+        "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+        "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+        "crates/bowl/src/system/planning_tests.rs": "c5d5e733d3b375c94095df006cf8d5e9618209fe66454a1bee79975995683265",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/bowl/src/query/guards.rs": "238ac7494c50da469070d598e33ba20e51ff536ef2b1d088849f56265f8a5939",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+        "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+        "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+        "crates/benches/examples/steady_allocations.rs": "52d53f3bb75f2153ecf02b85b6d90a9810f77378075fe6f04ff7645f3f2b034b",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710"
+      },
+      "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+      "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "kernel": [
+        "Linux",
+        "graphite",
+        "7.2.8",
+        "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+        "x86_64"
+      ],
+      "driver_cpu": 0,
+      "worker_cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19
+      ],
+      "configuration": {
+        "binary": "target/release/examples/steady_allocations",
+        "before": "target/steady-allocations/before-steady_allocations",
+        "out": "target/steady-allocations/comparison",
+        "cases": "purchases,read",
+        "workers": "1,8",
+        "slots": "1,1000",
+        "rounds": 10,
+        "warmup": 3,
+        "repetitions": 3
+      },
+      "report_sha256": "4a6405d12fc2c753354ec3426d8e3aee69e7b2c3009ddc88bda5914b5ae5273b"
+    },
+    "compact": {
+      "base_commit": "f85b745bcab6bac2108692ecd8cb23639803720f",
+      "binaries": {
+        "after": {
+          "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+          "sha256": "ed68b5e53254920217b04f2201698a61609ab21e2550efd63d20b30c5ac3f775"
+        },
+        "before": {
+          "path": "/home/jonas/Development/Rust/porridge/target/steady-allocations/before-steady_allocations",
+          "sha256": "716b877d27de05f4d969f00bac4d58922e44c31f41982f5bc624b75d0681aea9"
+        }
+      },
+      "source_sha256": {
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "df8682a2396ba5eceb8822e64d0c0bffd9bce5da0b9d1c6b9465ac51def44d30",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "24fa2d5872aeefadc20b0c00d4a23ba6264f966607bb492c7ea3750218bb9b18",
+        "crates/bowl/src/system.rs": "a30c498976c69a981b0332d9fabd0c76198e27d179c44815d9c74e731c455dc2",
+        "crates/bowl/src/world.rs": "0b640e6dace9097fd77f83b5cd4381bac034b6d7646213e651c2abe62b827244",
+        "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+        "crates/bowl/src/bowl.rs": "87d459e32f7c53f86128d2db5dfbaeba7d708fa3b53d56ea8aae3c0a01f10bc3",
+        "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+        "crates/bowl/src/lib.rs": "d6040e7e20087943aa796e5d8c7540b1bf62a20b67446cff41c612ff9ff1f067",
+        "crates/bowl/src/prepared.rs": "617d4583e29486b15aa19ca29f833ee47c7e8289935f0cd1173fa2b59d6f2733",
+        "crates/bowl/src/metrics.rs": "87a73f57e44ac0ab6278bc285f46c03664f3bc74bc8caa4d73f56c99effcf58e",
+        "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+        "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+        "crates/bowl/src/system/planning_tests.rs": "c5d5e733d3b375c94095df006cf8d5e9618209fe66454a1bee79975995683265",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+        "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+        "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+        "crates/benches/examples/steady_allocations.rs": "52d53f3bb75f2153ecf02b85b6d90a9810f77378075fe6f04ff7645f3f2b034b",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710"
+      },
+      "source_scope": "current workspace; supplied baseline binary needs its original build manifest",
+      "runner_sha256": "613368f8fee956f9a2cc33a2bda921b044505448007b217d6845ad19c9fd0929",
+      "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+      "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "kernel": [
+        "Linux",
+        "graphite",
+        "7.2.8",
+        "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+        "x86_64"
+      ],
+      "driver_cpu": 0,
+      "worker_cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19
+      ],
+      "configuration": {
+        "binary": "target/release/examples/steady_allocations",
+        "before": "target/steady-allocations/before-steady_allocations",
+        "out": "target/steady-allocations/compact-comparison",
+        "cases": "purchases,read",
+        "workers": "1,8",
+        "slots": "1,1000",
+        "rounds": 10,
+        "warmup": 3,
+        "repetitions": 3
+      },
+      "report_sha256": "63e095e8969c8d5bda3152f88208b37a3facfd3f5ae89178ec7644d70e335ca4"
+    },
+    "control": {
+      "base_commit": "f85b745bcab6bac2108692ecd8cb23639803720f",
+      "binaries": {
+        "after": {
+          "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+          "sha256": "ed68b5e53254920217b04f2201698a61609ab21e2550efd63d20b30c5ac3f775"
+        }
+      },
+      "source_sha256": {
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "df8682a2396ba5eceb8822e64d0c0bffd9bce5da0b9d1c6b9465ac51def44d30",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "24fa2d5872aeefadc20b0c00d4a23ba6264f966607bb492c7ea3750218bb9b18",
+        "crates/bowl/src/system.rs": "a30c498976c69a981b0332d9fabd0c76198e27d179c44815d9c74e731c455dc2",
+        "crates/bowl/src/world.rs": "0b640e6dace9097fd77f83b5cd4381bac034b6d7646213e651c2abe62b827244",
+        "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+        "crates/bowl/src/bowl.rs": "87d459e32f7c53f86128d2db5dfbaeba7d708fa3b53d56ea8aae3c0a01f10bc3",
+        "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+        "crates/bowl/src/lib.rs": "d6040e7e20087943aa796e5d8c7540b1bf62a20b67446cff41c612ff9ff1f067",
+        "crates/bowl/src/prepared.rs": "617d4583e29486b15aa19ca29f833ee47c7e8289935f0cd1173fa2b59d6f2733",
+        "crates/bowl/src/metrics.rs": "87a73f57e44ac0ab6278bc285f46c03664f3bc74bc8caa4d73f56c99effcf58e",
+        "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+        "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+        "crates/bowl/src/system/planning_tests.rs": "c5d5e733d3b375c94095df006cf8d5e9618209fe66454a1bee79975995683265",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+        "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+        "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+        "crates/benches/examples/steady_allocations.rs": "52d53f3bb75f2153ecf02b85b6d90a9810f77378075fe6f04ff7645f3f2b034b",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710"
+      },
+      "source_scope": "current workspace; supplied baseline binary needs its original build manifest",
+      "runner_sha256": "613368f8fee956f9a2cc33a2bda921b044505448007b217d6845ad19c9fd0929",
+      "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+      "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "kernel": [
+        "Linux",
+        "graphite",
+        "7.2.8",
+        "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+        "x86_64"
+      ],
+      "driver_cpu": 0,
+      "worker_cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19
+      ],
+      "configuration": {
+        "binary": "target/release/examples/steady_allocations",
+        "before": null,
+        "out": "target/steady-allocations/compact-control",
+        "cases": "probe",
+        "workers": "1,8",
+        "slots": "1,1000",
+        "rounds": 5,
+        "warmup": 3,
+        "repetitions": 1
+      },
+      "report_sha256": "cce250d4667097aadfb09440aa6b1169c65a9430aa39dc946cb379e8454d767e"
+    }
+  }
+}

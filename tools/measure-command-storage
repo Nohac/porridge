@@ -1,0 +1,77 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Build with workspace features, then count allocations and time command queues."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import statistics
+import subprocess
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--counts", default="2,32,1024")
+    parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--cpu", type=int, default=min(os.sched_getaffinity(0)))
+    args = parser.parse_args()
+    if args.repetitions < 1 or args.cpu not in os.sched_getaffinity(0):
+        parser.error("positive repetitions and an allowed CPU are required")
+    if args.out.exists() and any(args.out.iterdir()):
+        parser.error("output directory must be new or empty")
+    args.out.mkdir(parents=True, exist_ok=True)
+    root = args.out.resolve()
+    command = ["cargo", "build", "--workspace", "--all-targets", "--profile", "bench", "-j", "20", "--message-format=json"]
+    with (root / "build.jsonl").open("w") as out:
+        subprocess.run(command, stdout=out, check=True)
+    binaries = {}
+    for line in (root / "build.jsonl").read_text().splitlines():
+        value = json.loads(line)
+        if value.get("reason") == "compiler-artifact" and value["target"]["name"] == "command_buffers":
+            binaries[value["target"]["kind"][0]] = value["executable"]
+    report = dict(build_command=command, base_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        rustc=subprocess.check_output(["rustc", "--version"], text=True).strip(),
+        kernel=list(os.uname()), cpu=args.cpu, counts=args.counts,
+        features=subprocess.check_output(["cargo", "tree", "--workspace", "-e", "features", "-i", "tokio"], text=True),
+        binaries={kind: dict(path=path, sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest()) for kind, path in binaries.items()},
+        sources={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in [Path("Cargo.lock"), Path("crates/benches/examples/command_buffers.rs"), Path("crates/benches/benches/command_buffers.rs"), *Path("crates/benches/examples/command_storage").glob("*.rs")]},
+        allocation_rows=[], runs=[])
+    env = os.environ | {"COMMAND_COUNTS": args.counts}
+    def pin():
+        os.sched_setaffinity(0, {args.cpu})
+    with (root / "allocations.tsv").open("w") as out:
+        subprocess.run([binaries["example"]], stdout=out, env=env, preexec_fn=pin, check=True)
+    for line in (root / "allocations.tsv").read_text().splitlines()[1:]:
+        queue, commands, mixed, reuse, metric, count, operations = line.split("\t")
+        report["allocation_rows"].append(dict(queue=queue, commands=int(commands), mixed=mixed=="true", reuse=reuse=="true", metric=metric, count=int(count), operations=int(operations)))
+    for repeat in range(args.repetitions):
+        directory = root / f"criterion-{repeat}"
+        with (root / f"timing-{repeat}.log").open("w") as out:
+            subprocess.run([binaries["bench"], "--bench", "--noplot"], stdout=out, stderr=subprocess.STDOUT,
+                env=env | {"CRITERION_HOME": str(directory)}, preexec_fn=pin, check=True)
+        estimates = []
+        for path in sorted(directory.rglob("new/estimates.json")):
+            metadata = json.loads(path.with_name("benchmark.json").read_text())
+            estimates.append(dict(benchmark=metadata, estimates=json.loads(path.read_text())))
+        if not estimates:
+            raise RuntimeError("Criterion emitted no estimates")
+        report["runs"].append(dict(repeat=repeat, estimates=estimates))
+        (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(f"repetition {repeat + 1}: {len(estimates)} measured cases", flush=True)
+    groups = {}
+    for run in report["runs"]:
+        for entry in run["estimates"]:
+            data = entry["benchmark"]
+            count = int(data["value_str"])
+            groups.setdefault(data["full_id"], []).append(entry["estimates"]["median"]["point_estimate"] / count)
+    for case, values in sorted(groups.items()):
+        print(f"{case}: {statistics.median(values):.2f} ns/command (process medians {min(values):.2f}–{max(values):.2f})")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,3 +1,5 @@
+pub(crate) mod guards;
+
 use std::{
     any::{Any, TypeId, type_name},
     cell::RefCell,
@@ -14,7 +16,7 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub type GuardStore = Vec<Box<dyn Any + Send>>;
+pub use guards::GuardStore;
 
 /// A tracked system input.
 ///
@@ -61,20 +63,14 @@ pub(crate) fn store_read_guard<'a, T: Component>(
 ) -> &'a T {
     let value = &*guard as *const T;
 
-    // SAFETY: the returned reference points into the component protected by
-    // `guard`. We erase the guard lifetime before storing it in the owning
-    // guard store (the running invocation for system queries, the result value
-    // for external queries) so the lock remains held at least as long as the
-    // returned query item can be used. The guard store is dropped only after
-    // the system function returns / the result is dropped, releasing the read
-    // lock. The pointer does not point into the guard object itself, so moving
-    // the boxed guard does not invalidate the reference.
-    let guard =
-        unsafe { std::mem::transmute::<ComponentRef<'a, T>, ComponentRef<'static, T>>(guard) };
-    guards.push(Box::new(guard));
+    // The erased guard owns the same Arc and reader slot. The pointer targets
+    // the stable component cell, not the movable guard storage. No lifetime
+    // transmute is needed: the Arc owns T independently of the snapshot borrow.
+    guards.hold(guard.into_held());
 
-    // SAFETY: the read guard stored above keeps this component immutably locked
-    // for the lifetime of the query item.
+    // SAFETY: the invocation/result owns this store and drops its guards only
+    // after returned query items can no longer be used. The stored read token
+    // therefore keeps the component immutably locked for the item's lifetime.
     unsafe { &*value }
 }
 
@@ -84,17 +80,12 @@ pub(crate) fn store_write_guard<'a, T: Component>(
 ) -> &'a mut T {
     let value = &mut *guard as *mut T;
 
-    // SAFETY: mirrors `store_read_guard`, but for the exclusive writer slot.
-    // The write guard is stored in the invocation guard store, so the cell
-    // stays exclusively locked until the system function returns; exactly one
-    // `&mut T` is handed out per guard, and the planner never runs another
-    // invocation touching this row concurrently.
-    let guard =
-        unsafe { std::mem::transmute::<ComponentMut<'a, T>, ComponentMut<'static, T>>(guard) };
-    guards.push(Box::new(guard));
+    // Transfer the unique writer slot into the invocation's guard store.
+    guards.hold(guard.into_held());
 
-    // SAFETY: the write guard stored above keeps this component exclusively
-    // locked for the lifetime of the query item.
+    // SAFETY: the invocation holds the store until the system returns, after
+    // all query items are dead. This token keeps the cell exclusively locked;
+    // exactly one mutable reference is returned for the acquired writer slot.
     unsafe { &mut *value }
 }
 
@@ -621,7 +612,7 @@ where
             bowl,
             snapshot,
             rows: filtered_rows::<T, F>(snapshot),
-            guards: RefCell::new(Vec::new()),
+            guards: RefCell::new(GuardStore::new()),
             _marker: PhantomData,
         }
     }
@@ -677,7 +668,7 @@ where
             bowl,
             snapshot,
             rows,
-            guards: RefCell::new(Vec::new()),
+            guards: RefCell::new(GuardStore::new()),
             _marker: PhantomData,
         }
     }

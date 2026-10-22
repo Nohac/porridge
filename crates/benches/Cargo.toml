@@ -11,6 +11,7 @@ futures = "0.3"
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
 criterion = "0.5"
+bump-scope = "2.4.1"
 
 [[bench]]
 name = "engine"
@@ -22,4 +23,8 @@ harness = false
 
 [[bench]]
 name = "dispatch"
+harness = false
+
+[[bench]]
+name = "command_buffers"
 harness = false

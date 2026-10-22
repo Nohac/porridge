@@ -2,6 +2,7 @@
 
 pub mod churn;
 pub mod purchases;
+pub mod steady;
 
 #[cfg(test)]
 mod tests;

@@ -1,4 +1,9 @@
 mod stores;
+
+#[cfg(test)]
+mod guard_tests;
+
+use crate::query::guards::{GuardCell, HeldGuard};
 use stores::Stores;
 
 use std::{
@@ -106,7 +111,7 @@ impl<T> ComponentCell<T> {
         drop(state);
 
         ComponentReadGuard {
-            cell: Arc::clone(self),
+            cell: Some(Arc::clone(self)),
         }
     }
 
@@ -119,7 +124,7 @@ impl<T> ComponentCell<T> {
         drop(state);
 
         ComponentWriteGuard {
-            cell: Arc::clone(self),
+            cell: Some(Arc::clone(self)),
         }
     }
 
@@ -137,12 +142,37 @@ impl<T> ComponentCell<T> {
         drop(state);
 
         Some(ComponentWriteGuard {
-            cell: Arc::clone(self),
+            cell: Some(Arc::clone(self)),
         })
+    }
+
+    fn release_read(&self) {
+        let mut state = self.state.lock().expect("component lock poisoned");
+        state.readers -= 1;
+        if state.readers == 0 {
+            self.available.notify_all();
+        }
+    }
+
+    fn release_write(&self) {
+        let mut state = self.state.lock().expect("component lock poisoned");
+        state.writer = false;
+        self.available.notify_all();
     }
 
     fn into_inner(self) -> T {
         self.value.into_inner()
+    }
+}
+
+// Unsizing the existing Arc erases T without allocating another guard box.
+impl<T: Send + Sync> GuardCell for ComponentCell<T> {
+    fn release_read(&self) {
+        self.release_read();
+    }
+
+    fn release_write(&self) {
+        self.release_write();
     }
 }
 
@@ -154,7 +184,7 @@ unsafe impl<T: Send> Send for ComponentCell<T> {}
 unsafe impl<T: Send + Sync> Sync for ComponentCell<T> {}
 
 struct ComponentReadGuard<T> {
-    cell: Arc<ComponentCell<T>>,
+    cell: Option<Arc<ComponentCell<T>>>,
 }
 
 impl<T> Deref for ComponentReadGuard<T> {
@@ -164,16 +194,14 @@ impl<T> Deref for ComponentReadGuard<T> {
         // SAFETY: the guard increments the reader count while no writer is
         // active. Writers wait for the reader count to reach zero before
         // obtaining `&mut T`.
-        unsafe { &*self.cell.value.get() }
+        unsafe { &*self.cell.as_ref().expect("guard already transferred").value.get() }
     }
 }
 
 impl<T> Drop for ComponentReadGuard<T> {
     fn drop(&mut self) {
-        let mut state = self.cell.state.lock().expect("component lock poisoned");
-        state.readers -= 1;
-        if state.readers == 0 {
-            self.cell.available.notify_all();
+        if let Some(cell) = &self.cell {
+            cell.release_read();
         }
     }
 }
@@ -184,7 +212,7 @@ unsafe impl<T: Send + Sync> Send for ComponentReadGuard<T> {}
 unsafe impl<T: Sync> Sync for ComponentReadGuard<T> {}
 
 struct ComponentWriteGuard<T> {
-    cell: Arc<ComponentCell<T>>,
+    cell: Option<Arc<ComponentCell<T>>>,
 }
 
 impl<T> Deref for ComponentWriteGuard<T> {
@@ -193,7 +221,7 @@ impl<T> Deref for ComponentWriteGuard<T> {
     fn deref(&self) -> &Self::Target {
         // SAFETY: the guard owns the exclusive writer slot, so no mutable alias
         // or active writer can exist. Shared references are allowed from `&mut`.
-        unsafe { &*self.cell.value.get() }
+        unsafe { &*self.cell.as_ref().expect("guard already transferred").value.get() }
     }
 }
 
@@ -201,15 +229,15 @@ impl<T> DerefMut for ComponentWriteGuard<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: the guard owns the exclusive writer slot and all readers are
         // excluded until it drops.
-        unsafe { &mut *self.cell.value.get() }
+        unsafe { &mut *self.cell.as_ref().expect("guard already transferred").value.get() }
     }
 }
 
 impl<T> Drop for ComponentWriteGuard<T> {
     fn drop(&mut self) {
-        let mut state = self.cell.state.lock().expect("component lock poisoned");
-        state.writer = false;
-        self.cell.available.notify_all();
+        if let Some(cell) = &self.cell {
+            cell.release_write();
+        }
     }
 }
 
@@ -229,6 +257,14 @@ pub struct ComponentRef<'a, T> {
     _marker: std::marker::PhantomData<&'a T>,
 }
 
+impl<T: Component> ComponentRef<'_, T> {
+    pub(crate) fn into_held(mut self) -> HeldGuard {
+        // Transfer sole responsibility for releasing the acquired reader slot.
+        // The typed guard's Drop sees None; HeldGuard keeps the original Arc.
+        HeldGuard::Read(self.guard.cell.take().expect("guard already transferred"))
+    }
+}
+
 impl<T> Deref for ComponentRef<'_, T> {
     type Target = T;
 
@@ -246,6 +282,12 @@ impl<T> Deref for ComponentRef<'_, T> {
 pub struct ComponentMut<'a, T> {
     guard: ComponentWriteGuard<T>,
     _marker: std::marker::PhantomData<&'a mut T>,
+}
+
+impl<T: Component> ComponentMut<'_, T> {
+    pub(crate) fn into_held(mut self) -> HeldGuard {
+        HeldGuard::Write(self.guard.cell.take().expect("guard already transferred"))
+    }
 }
 
 impl<T> Deref for ComponentMut<'_, T> {

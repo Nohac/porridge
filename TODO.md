@@ -852,6 +852,10 @@ Remaining work:
   entries examined/update (`spec/hardware-profiling.md`). For active views, use
   declared component interests and current-settle invocation candidates to narrow
   healing instead of scanning unrelated memo entries.
+- Steady-state allocation target and fixed-world measurements are tracked in
+  `spec/steady-state-allocations.md`. Ordinary query guards now hold erased cell
+  Arcs instead of boxing each fetched guard. Planner, command, snapshot, and
+  result allocations remain; zero-allocation steady state is not achieved.
 - Per-system admission and commit policies remain proposals. The implemented
   `set_dispatch_batch_size` is a maximum rows-per-task setting only.
 
