@@ -520,7 +520,7 @@ with a blocking public API.
 | Baseline | Complete | `35247bc`; command + planning arena integration |
 | O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
 | O1 | Measured slices kept | [O1a/O1b](join-candidate-storage.md): 156,815 → 100,857 alloc/iteration; cross-pass layouts deferred to shared O5 registry, remaining row work tracked |
-| O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 55,857 alloc/iteration at [guard/access slice](guard-buffer-reuse.md); [dependency buffer reuse next](dependency-buffer-reuse.md), output/memo work remains |
+| O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 55,857 alloc/iteration at [guard/access slice](guard-buffer-reuse.md); [LIFO dependency pool measured/deferred](dependency-buffer-reuse.md), output/memo work remains |
 | O3 | In progress | [Unique producer reuse kept](producer-reuse.md): 50,857 alloc/iteration; [completion retention measured/deferred](completion-storage.md) |
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |

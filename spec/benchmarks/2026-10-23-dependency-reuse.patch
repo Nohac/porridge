@@ -1,0 +1,250 @@
+diff --git a/crates/bowl/src/bowl.rs b/crates/bowl/src/bowl.rs
+index 62b60fc..93dfc2a 100644
+--- a/crates/bowl/src/bowl.rs
++++ b/crates/bowl/src/bowl.rs
+@@ -3140,6 +3140,7 @@ async fn commit_system_run(
+     phase: Option<Phase>,
+ ) -> CommitProgress {
+     let defer_inserts = phase == Some(Phase::Settle);
++    let recycle_dependencies = run.recycle_dependencies;
+     let outputs = run.outputs;
+     let memo_updates = run.memo_updates;
+     let writes = run.writes;
+@@ -3281,7 +3282,12 @@ async fn commit_system_run(
+     for (owner, mut entry) in memo_updates {
+         entry.refresh_written(&state.world, &writes);
+         entry.settle_epoch = state.settle_epoch;
+-        memo.insert(owner, entry);
++        if let Some(previous) = memo.insert(owner, entry)
++            && recycle_dependencies
++            && let Some(storage) = state.planning_storage.as_mut()
++        {
++            storage.scratch.dependencies.recycle(previous.into_dependencies());
++        }
+     }
+ 
+     // Pair-bound invocation identity includes every provider/member entity.
+@@ -4052,6 +4058,37 @@ mod tests {
+         commands.entity(entity).insert(Note);
+     }
+ 
++    #[test]
++    fn only_pooled_plans_recycle_replaced_memo_dependencies() {
++        async fn observe(_input: Query<&A>) {}
++        block_on(async {
++            for mode in 0..3 {
++                let bowl = match mode {
++                    0 => Bowl::builder().system(observe).build(),
++                    1 => Bowl::builder().system(observe.on_start(|_: Commands<()>| {})).build(),
++                    _ => Bowl::builder().system(observe.run_during(Phase::Settle)).build(),
++                };
++                let entity = bowl.insert((A(0),)).await.entity();
++                let mut retained = Vec::new();
++                for value in 1..=5 {
++                    bowl.entity(entity).insert((A(value),)).await;
++                    let result = bowl.scoop::<Query<&A>>().await;
++                    assert_eq!(result.collect()[0].0, value);
++                    drop(result);
++                    let state = super::lock_state(&bowl.inner.state).await;
++                    retained.push(state.planning_storage.as_ref().unwrap()
++                        .scratch.dependencies.retained_buffers());
++                }
++                if mode == 0 {
++                    assert!(retained[4] > 0);
++                    assert_eq!(retained[3], retained[4], "bounded work should reuse its buffers");
++                } else {
++                    assert_eq!(retained, [0; 5], "unpooled fallback must not accumulate unused buffers");
++                }
++            }
++        });
++    }
++
+     #[test]
+     fn system_mut_applies_non_idempotent_mutation_exactly_once() {
+         block_on(async {
+diff --git a/crates/bowl/src/dispatch.rs b/crates/bowl/src/dispatch.rs
+index ef92407..70a7f4c 100644
+--- a/crates/bowl/src/dispatch.rs
++++ b/crates/bowl/src/dispatch.rs
+@@ -97,6 +97,7 @@ mod tests {
+             },
+             SystemRun {
+                 completed: true,
++                recycle_dependencies: false,
+                 outputs: Vec::new(),
+                 memo_updates: Vec::new(),
+                 writes: Vec::new(),
+diff --git a/crates/bowl/src/planning.rs b/crates/bowl/src/planning.rs
+index 6b30c8c..286dfc6 100644
+--- a/crates/bowl/src/planning.rs
++++ b/crates/bowl/src/planning.rs
+@@ -3,6 +3,7 @@ use bump_scope::Bump;
+ 
+ use crate::{
+     commands::Pool,
++    query::Dep,
+     world::{SystemId, SystemInvocation},
+ };
+ 
+@@ -15,12 +16,14 @@ pub(crate) struct Storage {
+ pub(crate) struct Scratch {
+     pub(crate) arena: Bump,
+     pub(crate) owner: SystemInvocation,
++    pub(crate) dependencies: DependencyBuffers,
+ }
+ 
+ impl Default for Scratch {
+     fn default() -> Self {
+         Self {
+             arena: Bump::new(),
++            dependencies: DependencyBuffers::default(),
+             owner: SystemInvocation {
+                 system: SystemId(0),
+                 keys: Default::default(),
+@@ -28,3 +31,33 @@ impl Default for Scratch {
+         }
+     }
+ }
++
++/// Empty owned buffers retired by memo replacement. Live invocation/memo data
++/// never remains in this free list, so checkout transfers exclusive ownership.
++#[derive(Default)]
++pub(crate) struct DependencyBuffers {
++    free: Vec<Vec<Dep>>,
++}
++
++impl DependencyBuffers {
++    pub(crate) fn copy_from(&mut self, observed: &[Dep]) -> Vec<Dep> {
++        if observed.is_empty() {
++            return Vec::new();
++        }
++        let mut buffer = self.free.pop().unwrap_or_default();
++        buffer.extend_from_slice(observed);
++        buffer
++    }
++
++    pub(crate) fn recycle(&mut self, mut retired: Vec<Dep>) {
++        if retired.capacity() != 0 {
++            retired.clear();
++            self.free.push(retired);
++        }
++    }
++
++    #[cfg(test)]
++    pub(crate) fn retained_buffers(&self) -> usize {
++        self.free.len()
++    }
++}
+diff --git a/crates/bowl/src/system.rs b/crates/bowl/src/system.rs
+index 269a8d0..3d5c6b6 100644
+--- a/crates/bowl/src/system.rs
++++ b/crates/bowl/src/system.rs
+@@ -77,20 +77,23 @@ pub(crate) struct MemoEntry {
+ 
+ /// Buffered output from one system invocation.
+ ///
+-/// The runner uses `owner` to remove old derived facts for that invocation
+-/// before applying `commands`.
++/// The runner applies commands for `owner`, then retracts previous outputs
++/// that the invocation did not re-emit.
+ pub(crate) struct SystemOutput {
+     pub(crate) owner: SystemInvocation,
+     pub(crate) commands: CommandQueue,
+ }
+ 
+-/// Outputs and memo writes produced by one system for one generation.
++/// Outputs and memo updates from one invocation, or a grouped hook fallback.
+ ///
+-/// Systems read the previous memo table immutably while they run. Each system
+-/// returns the memo entries it wants to publish, and the bowl merges them after
+-/// all concurrent system futures complete.
++/// Each completion owns its observed dependencies until live revision checking
++/// and publication. Independently ready invocations can publish while siblings
++/// remain in flight.
+ pub(crate) struct SystemRun {
+     pub(crate) completed: bool,
++    /// Only pooled planners consume recycled deps; other paths must not fill
++    /// the free list on every memo replacement without ever checking it out.
++    pub(crate) recycle_dependencies: bool,
+     pub(crate) outputs: Vec<SystemOutput>,
+     pub(crate) memo_updates: Vec<(SystemInvocation, MemoEntry)>,
+     /// Rows the invocations mutated in place through `MutRef` access.
+@@ -105,6 +108,7 @@ impl SystemRun {
+     fn empty() -> Self {
+         Self {
+             completed: false,
++            recycle_dependencies: false,
+             outputs: Vec::new(),
+             memo_updates: Vec::new(),
+             writes: Vec::new(),
+@@ -113,6 +117,10 @@ impl SystemRun {
+ }
+ 
+ impl MemoEntry {
++    pub(crate) fn into_dependencies(self) -> Vec<Dep> {
++        self.deps
++    }
++
+     pub(crate) fn is_current(&self, snapshot: &Snapshot) -> bool {
+         if !crate::metrics::enabled() {
+             return self.deps.iter().all(|dep| dep.is_current(snapshot));
+@@ -1464,7 +1472,7 @@ fn plan_prepared_with_scratch<Params: SystemParam>(
+     let candidates = states.len();
+     let (mut hits, mut dependencies, mut accesses) = (0, 0, 0);
+     let completed = !states.is_empty();
+-    let Scratch { arena, owner } = scratch;
++    let Scratch { arena, owner, dependencies: dependency_buffers } = scratch;
+     owner.system = system;
+     let before_chunks = trace.then(|| arena.stats().count());
+     let before_keys = owner.keys.capacity();
+@@ -1503,7 +1511,7 @@ fn plan_prepared_with_scratch<Params: SystemParam>(
+                 commands: CommandQueue::default(),
+                 state,
+                 owner: owner.clone(),
+-                deps: deps.to_vec(),
++                deps: dependency_buffers.copy_from(&deps),
+                 access: access.to_vec(),
+             });
+         }
+@@ -2291,6 +2299,7 @@ where
+ 
+             SystemRun {
+                 completed: true,
++                recycle_dependencies: false,
+                 outputs: vec![SystemOutput {
+                     owner,
+                     commands: commands.take(),
+@@ -2591,6 +2600,7 @@ where
+     + 'static {
+         let function = Arc::clone(&self.function);
+         let prepared = F::Param::prepare(&snapshot);
++        let recycle_dependencies = buffers.is_some();
+         let planned = if let Some(buffers) = buffers {
+             let mut planned = plan_prepared_with_scratch::<F::Param>(
+                 self.id, &snapshot, memo, hint, &prepared, &mut buffers.scratch,
+@@ -2604,7 +2614,7 @@ where
+         };
+         // Immutable plan context needs one shared handle per row. Keep the
+         // Bowl and callee here too, avoiding their per-row reference counts.
+-        let context = Arc::new((bowl, snapshot, prepared, function));
++        let context = Arc::new((bowl, snapshot, prepared, function, recycle_dependencies));
+         planned
+             .invocations
+             .into_iter()
+@@ -2616,7 +2626,7 @@ where
+                 let writes = written_rows(&access);
+                 let context = Arc::clone(&context);
+                 let run = async move {
+-                    let (bowl, snapshot, prepared, function) = context.as_ref();
++                    let (bowl, snapshot, prepared, function, _) = context.as_ref();
+                     let mut guards = invocation.commands.take_guards();
+                     let commands = Commands::with_queue(
+                         snapshot.spawn_slots(&invocation.owner),
+@@ -2641,6 +2651,7 @@ where
+ 
+                     SystemRun {
+                         completed: true,
++                        recycle_dependencies: context.4,
+                         outputs: vec![output],
+                         memo_updates: vec![memo_update],
+                         writes,
