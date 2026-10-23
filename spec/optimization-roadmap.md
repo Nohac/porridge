@@ -469,6 +469,12 @@ Do not rerun existing measurements whose exact candidate hashes already match.
    experiments retain a short result note; the main path does not accumulate
    unused complexity.
 
+Prioritize multi-worker throughput and scaling. Per the user's 2026-10-23
+clarification, a modest single-worker slowdown is acceptable when multi-worker
+benefits justify it. Keep single-worker measurements as a regression diagnostic;
+they are not an automatic veto or a requirement that every configuration improve.
+Record the tradeoff and distinguish measured improvements from overlapping noise.
+
 Fast checks cover representative sizes each commit; the complete matrix runs at
 major milestones. A shared VPS is not automatically quieter than this workstation.
 Use an existing quiet host if available; provisioning infrastructure is outside
@@ -515,7 +521,7 @@ with a blocking public API.
 | O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
 | O1 | Measured slices kept | [O1a/O1b](join-candidate-storage.md): 156,815 → 100,857 alloc/iteration; cross-pass layouts deferred to shared O5 registry, remaining row work tracked |
 | O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 55,857 alloc/iteration after [guard reuse/access moves](guard-buffer-reuse.md); output/memo buffers remain |
-| O3 | Next experiment planned | [Unique producer reuse](producer-reuse.md); publication/cleanup remain |
+| O3 | In progress | [Unique producer reuse kept](producer-reuse.md): 50,857 alloc/iteration; [completion storage next](completion-storage.md) |
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |
 | O6 | Planned | Native synchronous kernels |

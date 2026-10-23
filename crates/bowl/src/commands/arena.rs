@@ -2,7 +2,7 @@
 use bump_scope::{Bump, BumpBox};
 use std::{
     ptr::NonNull,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{Arc, Mutex, mpsc::{self, Receiver, Sender}},
 };
 
 use super::{BaseCommandOp, CommandOp};
@@ -57,10 +57,13 @@ struct Storage {
     cursor: usize,
     // Empty capacity only; invocation lock tokens never enter the pool.
     guards: GuardStore,
+    // Its buffer owns a default queue, never this storage (no reference cycle).
+    producer: Option<Arc<Mutex<super::CommandBuffer>>>,
 }
 
 // SAFETY: only Send operations enter; allocations are owned and no references
-// escape. Ownership of a storage box moves with its queue or return message.
+// escape. Retired producers own empty queues; guards contain no live tokens.
+// Ownership of a storage box moves with its queue or return message.
 unsafe impl Send for Storage {}
 
 impl Storage {
@@ -112,6 +115,17 @@ impl CommandQueue {
             crate::metrics::add(crate::metrics::Counter::CommandStorageCreated, 1);
             Box::default()
         })
+    }
+
+    pub(crate) fn take_producer(&mut self) -> Option<Arc<Mutex<super::CommandBuffer>>> {
+        self.storage.as_mut().and_then(|storage| storage.producer.take())
+    }
+
+    /// Only a uniquely owned producer with its queue drained may be retained.
+    pub(crate) fn recycle_producer(&mut self, producer: Arc<Mutex<super::CommandBuffer>>) {
+        if self.returns.is_some() {
+            self.storage().producer = Some(producer);
+        }
     }
 
     pub(crate) fn take_guards(&mut self) -> GuardStore {

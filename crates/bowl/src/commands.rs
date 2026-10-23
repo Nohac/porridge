@@ -73,17 +73,29 @@ impl Commands<Anything> {
     pub(crate) fn with_queue(
         spawn_slots: Vec<Entity>,
         allocator: Arc<AtomicU64>,
-        ops: CommandQueue,
+        mut ops: CommandQueue,
     ) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(CommandBuffer {
+        // Remove the retired producer before placing this queue into its buffer.
+        // Recycling accepts only unique handles whose previous queue was drained.
+        let inner = if let Some(mut inner) = ops.take_producer() {
+            let buffer = Arc::get_mut(&mut inner)
+                .expect("pooled command producer must be unique")
+                .get_mut()
+                .expect("command buffer lock poisoned");
+            buffer.ops = ops;
+            buffer.spawn_slots = spawn_slots;
+            buffer.spawn_cursor = 0;
+            buffer.allocator = allocator;
+            inner
+        } else {
+            Arc::new(Mutex::new(CommandBuffer {
                 ops,
                 spawn_slots,
                 spawn_cursor: 0,
                 allocator,
-            })),
-            _declares: PhantomData,
-        }
+            }))
+        };
+        Self { inner, _declares: PhantomData }
     }
 }
 
@@ -155,7 +167,18 @@ impl<S> Commands<S> {
 
     /// Drains buffered command operations after the system invocation returns.
     pub(crate) fn take(self) -> CommandQueue {
-        std::mem::take(&mut self.inner.lock().expect("command buffer lock poisoned").ops)
+        let mut inner = self.inner;
+        if let Some(buffer) = Arc::get_mut(&mut inner) {
+            let mut ops = std::mem::take(
+                &mut buffer.get_mut().expect("command buffer lock poisoned").ops,
+            );
+            // The producer now owns a default queue, so retention cannot cycle.
+            ops.recycle_producer(inner);
+            ops
+        } else {
+            // Retained strong or weak handles must never see a later invocation.
+            std::mem::take(&mut inner.lock().expect("command buffer lock poisoned").ops)
+        }
     }
 }
 

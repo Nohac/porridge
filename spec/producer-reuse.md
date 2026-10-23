@@ -1,6 +1,6 @@
 # Reuse uniquely owned command producers
 
-Status: planned O3 experiment after access-list ownership measurement.
+Status: O3a kept after testing and measurement.
 
 ## Remaining allocation
 
@@ -48,3 +48,28 @@ heap through growth. Retaining producer allocations will increase the pool's liv
 heap; report that cost. Include pure read/MutRef kernels and custom/retained-handle
 paths. If retained handles are common, reuse may not help; do not count cold-path
 or fallback allocations as eliminated.
+
+## Result: keep
+
+At 1,000 requests/eight workers, allocations fall **55,857→50,857**, with 1,124
+reallocations unchanged. The producer-handle allocation category disappears from
+the diagnostic profile (about five events/request removed); the measured profile
+is 51.989 events/request versus the stable count's 51.981. No new command storage
+or arena growth is observed after warmup.
+
+Eight-worker process medians improve 29.82–33.92→28.12–30.19 µs/request with some
+overlap. An initial one-worker slowdown around 11% did not repeat at that size:
+five-process recheck 22.10→22.66 µs/request (+2.53%) has overlapping ranges. A
+modest one-worker cost remains possible. No-command gating improves across process
+medians; settled reads remain flat. No universal speedup is claimed.
+
+Retained producer capacity adds roughly 193 KB at 1,000 slots and 387–449 KB at
+2,000 (about 3.6–4.2%). Plateau variation reflects scheduling/pool buckets.
+Measured peaks are about 1.1% higher at 1,000 and flat at 2,000. Keep for warmed
+allocation reduction and favorable multi-worker evidence, accepting this bounded
+retained-capacity cost.
+
+Validation: 168 engine tests, workspace build and playground, all four optimized
+smoke suites and eight idle/read budgets pass. Coverage includes retained strong
+and weak handles, reset spawn contexts, cancellation, cross-thread return and
+reference-cycle teardown. [Results and provenance](benchmarks/2026-10-23-producer-reuse.json).

@@ -342,3 +342,57 @@ fn panic_and_cancellation_drop_live_guards_before_queue_reuse() {
     assert_eq!(drops.load(SeqCst), 3);
     assert!(pool.take().take_guards().capacity() > 0);
 }
+
+#[test]
+fn unique_producer_reuse_resets_spawn_context_and_tears_down_without_cycles() {
+    use std::sync::atomic::AtomicU64;
+    let mut pool = Pool::default();
+    let mut first = Commands::<Anything>::with_queue(
+        vec![crate::Entity::from_raw(100)], Arc::new(AtomicU64::new(500)), pool.take(),
+    );
+    let pointer = Arc::as_ptr(&first.inner);
+    assert_eq!(first.insert((Value(1),)).raw(), 100);
+    assert_eq!(first.insert((Value(2),)).raw(), 500);
+    let output = first.take();
+    assert_eq!(Arc::as_ptr(output.storage.as_ref().unwrap().producer.as_ref().unwrap()), pointer);
+    std::thread::spawn(move || drop(output)).join().unwrap();
+
+    let mut next = Commands::<Anything>::with_queue(
+        vec![crate::Entity::from_raw(200)], Arc::new(AtomicU64::new(900)), pool.take(),
+    );
+    assert_eq!(Arc::as_ptr(&next.inner), pointer);
+    assert_eq!(next.insert((Value(3),)).raw(), 200, "cursor and reservations reset");
+    assert_eq!(next.insert((Value(4),)).raw(), 900, "allocator resets");
+    let output = next.take();
+    let weak = Arc::downgrade(output.storage.as_ref().unwrap().producer.as_ref().unwrap());
+    drop(output);
+    drop(pool);
+    assert!(weak.upgrade().is_none(), "retired producer must not own its enclosing queue");
+}
+
+#[test]
+fn weak_handles_and_abandoned_invocations_do_not_recycle_producers() {
+    use std::sync::atomic::AtomicU64;
+    let mut pool = Pool::default();
+    let first = Commands::<Anything>::with_queue(Vec::new(), Arc::new(AtomicU64::new(0)), pool.take());
+    let weak = Arc::downgrade(&first.inner);
+    let output = first.take();
+    assert!(output.storage.as_ref().is_none_or(|storage| storage.producer.is_none()));
+    assert!(weak.upgrade().is_none());
+    drop(output);
+
+    // Even a no-command invocation can return a producer for later reuse.
+    let first = Commands::<Anything>::with_queue(Vec::new(), Arc::new(AtomicU64::new(0)), pool.take());
+    let output = first.take();
+    assert!(output.is_empty());
+    assert!(output.storage.as_ref().unwrap().producer.is_some());
+    drop(output);
+    let next = Commands::<Anything>::with_queue(Vec::new(), Arc::new(AtomicU64::new(0)), pool.take());
+    let weak = Arc::downgrade(&next.inner);
+    // No finish/take: cancellation discards the queue normally.
+    drop(next);
+    assert!(weak.upgrade().is_none(), "active producer must not contain itself");
+    let recycled = pool.take();
+    assert!(recycled.storage.is_some());
+    assert!(recycled.storage.as_ref().unwrap().producer.is_none());
+}
