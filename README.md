@@ -444,7 +444,9 @@ Important constraints and open directions:
   **Add Better Non-Settling And Cycle Diagnostics** and **Add Dependency Graph
   Introspection**).
 - Worker execution is available, while planning and publication remain on one
-  evaluator. Typed execution batches and distributed planning remain future work.
+  evaluator. Typed execution batches are implemented; reusable execution storage,
+  synchronous kernels and distributed planning are covered by the
+  [optimization roadmap](spec/optimization-roadmap.md).
 - Long-running daemon/client operation, persistence boundaries, tombstones,
   and replication streams remain exploratory (TODO: **Explore Long-Running
   Daemon Runtime** and **Explore Replication / Change Streams**).
@@ -519,6 +521,8 @@ the code and [`TODO.md`](TODO.md) when implementation status matters.
   long-running service direction.
 - [Schema-guided execution and partitions](spec/ideas/schema-execution-and-partitions.md)
   — exploratory construction-time planning, worker affinity and future clustering.
+- [Allocation and execution optimization roadmap](spec/optimization-roadmap.md)
+  — active phased plan, budgets, experiments and validation criteria.
 - [`performance-plan.md`](spec/performance-plan.md) and
   [`bench-reports.md`](spec/bench-reports.md) — measurement strategy and
   recorded investigations.

@@ -6,6 +6,12 @@ important.
 
 ## 0. Major Direction Notes
 
+- Active optimization campaign: [allocation and execution roadmap](spec/optimization-roadmap.md).
+  It reconciles completed work with the remaining ideas, defines complete-iteration
+  allocation budgets, and orders experiments from reuse through schema routing,
+  synchronous kernels, dispatch, storage and local distributed scheduling.
+  Historical items below may describe intermediate states; verify against code.
+
 - Indexed access reservations and concrete kernel futures are committed.
   Batched retirement is implemented and validated; precise performance
   acceptance remains open. See `spec/stateful-performance-plan.md` for the baseline,
