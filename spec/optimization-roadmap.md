@@ -525,7 +525,7 @@ with a blocking public API.
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |
 | O6 | Planned | Native synchronous kernels |
-| O7 | Next focused experiment | [Worker completion channel](worker-completion-channel.md), then reusable dispatch and per-system policies |
+| O7 | In progress | [Readiness-preserving completion channel kept](worker-completion-channel.md): 45,227 alloc/iteration; [shared context next](invocation-context.md), [future storage candidate](batch-future-storage.md) |
 | O8 | Planned | Wait/wakeup and idle overhead |
 | O9 | Conditional | Layout/SIMD/revision experiments after profiling |
 | O10 | Conditional | Worker-distributed scheduling after local bottlenecks |

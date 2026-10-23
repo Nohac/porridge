@@ -52,16 +52,16 @@ where
     if !runs.is_empty() {
         // One sender and at most one result per row: bounded storage even if
         // every row finishes before the evaluator polls this stream again.
-        let (sender, receiver) = futures::channel::mpsc::channel(runs.len());
+        let (sender, receiver) = tokio::sync::mpsc::channel(runs.len());
         let handle = S::spawn(runtime, async move {
-            let mut sender = sender;
             let mut pending: FuturesUnordered<_> = runs.into_iter().collect();
             while let Some(row) = pending.next().await {
-                if let Err(error) = sender.try_send(row) {
-                    if error.is_disconnected() {
-                        return;
+                match sender.try_send(row) {
+                    Ok(()) => {}
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        panic!("completion capacity covers every admitted row");
                     }
-                    panic!("completion capacity covers every admitted row");
                 }
             }
         });
@@ -94,7 +94,7 @@ impl<T> Drop for SpawnedRun<T> {
 }
 
 struct SpawnedBatch<T> {
-    receiver: futures::channel::mpsc::Receiver<T>,
+    receiver: tokio::sync::mpsc::Receiver<T>,
     handle: tokio::task::JoinHandle<()>,
 }
 
@@ -106,7 +106,15 @@ impl<T> futures::Stream for SpawnedBatch<T> {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<T>> {
         use std::{future::Future, task::Poll};
-        match self.receiver.poll_next_unpin(cx) {
+        // The driver drains ready results before publishing/replanning. A
+        // channel budget must not hide buffered completions at that boundary.
+        // Only receiving bypasses the budget; worker futures and handle polls
+        // keep their normal scheduling/cancellation behavior.
+        let received = {
+            let receive = std::future::poll_fn(|cx| self.receiver.poll_recv(cx));
+            std::pin::pin!(tokio::task::unconstrained(receive)).poll(cx)
+        };
+        match received {
             Poll::Ready(None) => std::pin::Pin::new(&mut self.handle).poll(cx).map(|result| {
                 result.expect("system batch panicked or was aborted");
                 None

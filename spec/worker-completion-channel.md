@@ -1,6 +1,6 @@
 # Batch worker completion channel experiment
 
-Status: planned O7a experiment after completion-scratch measurement.
+Status: O7a readiness-preserving variant kept; initial budgeted variant rejected.
 
 ## Why this before native synchronous kernels
 
@@ -44,3 +44,74 @@ scaling is primary; single-worker results diagnose tradeoffs. Check tiny batches
 large immediate batches and genuinely suspended/skewed batches. Include heap
 plateaus through population growth and attribution showing which channel costs
 remain. No zero-allocation or throughput claim solely from implementation choice.
+
+## First candidate: reject, isolate readiness budgeting
+
+The direct `poll_recv` substitution regressed full-engine eight/sixteen-worker
+time by about 40–53%, despite favorable isolated dispatch microbenchmarks.
+A three-round/eight-worker diagnostic comparison completed the same 15,000 rows,
+but plan calls rose **36→498**, dispatch batches **945→4,269**, and already-running
+candidate skips **0→1,897**. More partial ready sets cause repeated planning and
+small dispatches. Functional tests/budgets still pass; this is a scheduling-cost
+regression, not evidence that final answers are wrong.
+
+Pinned Tokio source shows `chan::recv` checks its cooperative task budget before
+reading a queued value. An exhausted budget may therefore return Pending while
+completed rows are buffered. Our driver treats that boundary as the end of its
+ready set, then publishes/replans. The old futures channel did not consume Tokio's
+receive budget. This is an interaction with our driver, not a Tokio defect.
+
+Next variant: add a >128-row regression proving buffered results remain visible
+through a single ready drain, then wrap **only receiver polling** in a stack-pinned
+`tokio::task::unconstrained(poll_fn(...))`. Keep worker-future polling, JoinHandle
+polling, cancellation and the driver's existing preemption/fairness logic intact.
+Do not use `try_recv` as a shortcut: the pinned implementation parks the thread
+when a producer has reserved but not yet published a slot (`TryPopResult::Busy`).
+
+Use the same frozen sync-enabled control and feature graph. Require passing tests
+and measure the whole pipeline again; a faster channel microbenchmark is not an
+acceptance criterion by itself. Candidate lifetime profiling was stopped after
+the clear regression, so there is no matched-memory conclusion for this rejected
+variant. [Results and provenance](benchmarks/2026-10-23-completion-channel-budgeted.json).
+
+## Readiness-preserving variant: keep
+
+The regression fails on the first candidate at exactly 128/130 buffered rows and
+passes after constraining only the receive-budget bypass. All 169 engine tests,
+workspace build/playground, four optimized smokes and eight idle/read budgets pass.
+
+At 1,000 requests/eight workers, allocations fall **50,857→45,227** with 1,124
+reallocations unchanged: events **51,981→46,351 (-10.83%)** per whole iteration.
+The targeted three-round diagnostic has 945 dispatch batches in both variants,
+15,000 admitted/started rows in both, plan calls36→42 and only25 already-running
+skips in the candidate. The first candidate's replan explosion is resolved.
+
+Paired steady timings, µs/request (three processes, shared workstation):
+
+| Workers | Control | Candidate |
+| --- | ---: | ---: |
+| 1 | 22.54 | 21.48 |
+| 4 | 21.60 | 21.48 |
+| 8 | 26.61 | 25.69 |
+| 16 | 27.74 | 26.43 |
+
+All three eight-worker process pairs improve, with overlapping ranges; two of
+three sixteen-worker pairs improve. Isolated ready/suspended width16/32/64
+comparisons generally favor the candidate, with noisy outliers. Tiny eight-worker
+cases show a small noisy slowdown; no universal speedup or linear scaling claim.
+
+Retained heap is effectively unchanged through 1,000→2,000 slot growth. Measured
+transient peaks rise **7.70–8.73%**, and requested allocation bytes rise about
+**612,120 per iteration**. Block capacity is32 slots on this target while the
+steady fixture uses maximum grain16: fewer allocator events do not imply fewer
+allocated bytes. Keep for favorable multi-worker evidence and allocator reduction,
+with that cost explicit. Grain tuning remains a separate experiment.
+
+The diagnostic allocator profile has47.967 events/request and357 batches instead
+of the stable count's315; retain that work-count distinction. Feature-matched
+source/binary manifests and all results are in the
+[measurement report](benchmarks/2026-10-23-completion-channel-ready.json).
+
+Next: [share immutable invocation context](invocation-context.md), then consider
+[batch future storage](batch-future-storage.md) against remaining profile costs.
+Native synchronous kernels and the rest of the campaign remain open.

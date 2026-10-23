@@ -143,6 +143,42 @@ mod tests {
             });
     }
 
+    #[test]
+    #[cfg(feature = "parallel")]
+    fn a_full_batch_completes_before_the_receiver_is_polled() {
+        use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+            const COUNT: usize = 130;
+            let (finished, waiting) = oneshot::channel();
+            let signal = Arc::new(Mutex::new(Some(finished)));
+            let remaining = Arc::new(AtomicUsize::new(COUNT));
+            let runs = (0..COUNT).map(|id| {
+                let signal = Arc::clone(&signal);
+                let remaining = Arc::clone(&remaining);
+                async move {
+                    if remaining.fetch_sub(1, Ordering::SeqCst) == 1 {
+                        signal.lock().unwrap().take().unwrap().send(()).unwrap();
+                    }
+                    row(id as u64)
+                }
+            }).collect();
+            drop(signal);
+            let values = batch(runs);
+            // On this single-thread runtime, the last synchronous try_send
+            // follows the signal before the producer yields back to us.
+            waiting.await.unwrap();
+            assert_eq!(remaining.load(Ordering::SeqCst), 0);
+            let mut values = values;
+            let mut ids = Vec::new();
+            while let Some(Some((owner, _))) = values.next().now_or_never() {
+                ids.push(owner.keys[0].raw());
+            }
+            assert_eq!(ids.len(), COUNT, "ready completions must remain visible to the driver drain");
+            ids.sort_unstable();
+            assert_eq!(ids, (0..COUNT as u64).collect::<Vec<_>>());
+        });
+    }
+
     struct Dropped(Option<oneshot::Sender<()>>);
 
     impl Drop for Dropped {
