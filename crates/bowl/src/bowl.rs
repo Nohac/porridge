@@ -1718,6 +1718,7 @@ impl Bowl {
         // let that caller's `settle()` exit through the revision fast path.
         if was_settled {
             publish_settled_revision(&mut state);
+            refresh_settled_snapshot(&self.inner, &mut state);
         }
     }
 
@@ -5638,6 +5639,21 @@ mod tests {
                     .await
                     .is_empty()
             );
+        });
+    }
+
+    #[test]
+    fn deferred_cleanup_refreshes_the_published_settled_snapshot() {
+        block_on(async {
+            let bowl = Bowl::builder().build();
+            let bound = bowl.insert((A(7),)).await.bind();
+            let retained = bowl.scoop::<Query<&A>>().await;
+            assert_eq!(retained.collect()[0].0, 7);
+            drop(bound);
+
+            assert!(bowl.scoop::<Query<&A>>().await.is_empty());
+            assert!(bowl.scoop::<Query<&A>>().last_settled().await.is_empty());
+            assert_eq!(retained.collect()[0].0, 7, "existing readers retain their old snapshot");
         });
     }
 
