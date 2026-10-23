@@ -1,0 +1,543 @@
+{
+  "date": "2026-10-23",
+  "conclusion": "keep for allocation reduction; timing remains inconclusive",
+  "validation_report_origin": "target/optimization-o1/final-validation/report.json",
+  "validation": {
+    "recommendation": "keep for allocation reduction; no timing speedup claim",
+    "provenance": "Frozen timing, counting and DHAT binaries and current source hashes exactly match existing reports.",
+    "correctness": {
+      "root_checks": [
+        "cargo build --workspace",
+        "cargo test --workspace",
+        "cargo clippy --workspace",
+        "playground"
+      ],
+      "optimized_smokes": [
+        "engine",
+        "stateful",
+        "dispatch",
+        "command_buffers"
+      ],
+      "budget_failures": []
+    },
+    "purchases": [
+      {
+        "workers": 1,
+        "slots": 1,
+        "before": {
+          "alloc_median": 594.5,
+          "alloc_range": [
+            594,
+            784
+          ],
+          "realloc_median": 38.0,
+          "timing_median_us": 68.31200000000001,
+          "process_medians_us": [
+            74.8595,
+            68.342,
+            60.527
+          ],
+          "round_range_us": [
+            59.691,
+            189.933
+          ]
+        },
+        "after": {
+          "alloc_median": 592.0,
+          "alloc_range": [
+            592,
+            690
+          ],
+          "realloc_median": 38.0,
+          "timing_median_us": 63.413,
+          "process_medians_us": [
+            64.9005,
+            63.543499999999995,
+            63.403000000000006
+          ],
+          "round_range_us": [
+            59.801,
+            77.013
+          ]
+        }
+      },
+      {
+        "workers": 1,
+        "slots": 1000,
+        "before": {
+          "alloc_median": 156406.5,
+          "alloc_range": [
+            150857,
+            220927
+          ],
+          "realloc_median": 2429.0,
+          "timing_median_us": 24.4635165,
+          "process_medians_us": [
+            24.322835,
+            25.4671715,
+            23.4644555
+          ],
+          "round_range_us": [
+            22.547647,
+            29.375293000000003
+          ]
+        },
+        "after": {
+          "alloc_median": 110689.0,
+          "alloc_range": [
+            105399,
+            197908
+          ],
+          "realloc_median": 2456.5,
+          "timing_median_us": 24.813156499999998,
+          "process_medians_us": [
+            25.0254915,
+            25.1555575,
+            24.088385
+          ],
+          "round_range_us": [
+            22.732561,
+            31.378536
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1,
+        "before": {
+          "alloc_median": 594.0,
+          "alloc_range": [
+            594,
+            690
+          ],
+          "realloc_median": 38.0,
+          "timing_median_us": 104.15899999999999,
+          "process_medians_us": [
+            135.35649999999998,
+            100.9075,
+            97.94200000000001
+          ],
+          "round_range_us": [
+            93.944,
+            2586.135
+          ]
+        },
+        "after": {
+          "alloc_median": 592.0,
+          "alloc_range": [
+            592,
+            786
+          ],
+          "realloc_median": 38.0,
+          "timing_median_us": 97.5815,
+          "process_medians_us": [
+            96.9805,
+            95.77250000000001,
+            99.66499999999999
+          ],
+          "round_range_us": [
+            91.43,
+            113.291
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1000,
+        "before": {
+          "alloc_median": 144815.0,
+          "alloc_range": [
+            144810,
+            149835
+          ],
+          "realloc_median": 2124.0,
+          "timing_median_us": 37.953571999999994,
+          "process_medians_us": [
+            37.580754999999996,
+            38.594788,
+            35.794711
+          ],
+          "round_range_us": [
+            34.166776,
+            43.425911
+          ]
+        },
+        "after": {
+          "alloc_median": 100857.0,
+          "alloc_range": [
+            100856,
+            103699
+          ],
+          "realloc_median": 2124.0,
+          "timing_median_us": 38.462488,
+          "process_medians_us": [
+            38.388355000000004,
+            39.26856,
+            37.69399
+          ],
+          "round_range_us": [
+            33.604782,
+            45.125809000000004
+          ]
+        }
+      }
+    ],
+    "compiler_process_medians_us": {
+      "planner_gating/512": {
+        "before": [
+          29.078588093709886,
+          30.083092465985242,
+          29.827202166600713
+        ],
+        "after": [
+          29.756818379790943,
+          32.08748804604486,
+          29.564128600823047
+        ]
+      },
+      "in_join_planning/16x64": {
+        "before": [
+          599.1787199074074,
+          645.0081666666666,
+          597.7902592592593
+        ],
+        "after": [
+          593.0845902777778,
+          637.7393009259258,
+          601.2553370370372
+        ]
+      },
+      "in_join_planning/32x128": {
+        "before": [
+          3371.266166666667,
+          3284.079166666667,
+          3002.4503333333337
+        ],
+        "after": [
+          2959.904666666667,
+          3854.793166666667,
+          2968.5105
+        ]
+      },
+      "incremental_settle/128": {
+        "before": [
+          88.35690659340659,
+          92.71785790598291,
+          88.88776041666667
+        ],
+        "after": [
+          89.2880782051282,
+          89.85209294871794,
+          93.93287615740742
+        ]
+      },
+      "cold_settle/128": {
+        "before": [
+          623.9879681818182,
+          626.3316904761905,
+          635.8729857142857
+        ],
+        "after": [
+          613.4704345238094,
+          633.9793333333332,
+          652.7150285714287
+        ]
+      }
+    },
+    "memory": {
+      "1000": {
+        "live_range": [
+          4987324,
+          4987828
+        ],
+        "peak": 9814592
+      },
+      "2000": {
+        "live_range": [
+          9954828,
+          9955332
+        ],
+        "peak": 19589760
+      }
+    },
+    "limitations": [
+      "Three alternating process repetitions; timing ranges overlap.",
+      "Allocation maxima include scheduling variance; full iterations are primary unit.",
+      "No timing claim from DHAT."
+    ],
+    "reports": [
+      "../pair-reuse/report.json",
+      "../compiler-comparison/report.json",
+      "../pair-reuse-profile/report.json",
+      "../pair-reuse-memory/report.json"
+    ]
+  },
+  "manifest": {
+    "base_commit": "77617d32c985dce69e87eb76174a16c3b8c08a99",
+    "binaries": {
+      "command_buffers-bench": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/command_buffers-fa18a6964d745dfc",
+        "frozen": "/home/jonas/Development/Rust/porridge/target/optimization-o1/final-validation/command_buffers-bench",
+        "sha256": "87057a88485e2c7b2266265b4e835771a2a6d47916434f59422cf580e9b4a9c3",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      },
+      "dispatch-bench": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/dispatch-1f00cd11b01ec256",
+        "frozen": "/home/jonas/Development/Rust/porridge/target/optimization-o1/final-validation/dispatch-bench",
+        "sha256": "db4889dda52b1267e9f3daea5d5649d7a316bc0e226ecf27f950a12554f95b79",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      },
+      "steady_allocations-example": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+        "frozen": "/home/jonas/Development/Rust/porridge/target/optimization-o1/final-validation/steady_allocations-example",
+        "sha256": "8bfc11395131de12e9ca0804ae52dcb9d206311d3a52fa9a28cef61386d84480",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        }
+      },
+      "stateful-bench": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/stateful-6c53a14702258173",
+        "frozen": "/home/jonas/Development/Rust/porridge/target/optimization-o1/final-validation/stateful-bench",
+        "sha256": "a582e41c94e240749831f7ddbe928b3a944daab6f8f2dd017784b6dbe0ddf36f",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      },
+      "profile_purchases-example": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/examples/profile_purchases",
+        "frozen": "/home/jonas/Development/Rust/porridge/target/optimization-o1/final-validation/profile_purchases-example",
+        "sha256": "bd0fe06b9dd955cfde2973f99ce59f95c51ab568328b4fc59528cb01f9c1374a",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        }
+      },
+      "engine-bench": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/engine-d3ae286d37c180db",
+        "frozen": "/home/jonas/Development/Rust/porridge/target/optimization-o1/final-validation/engine-bench",
+        "sha256": "d39ad23fd44a34b86393086c0365fd6b6f58f3e6cf1393615b538500a1caf736",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      },
+      "profile_allocations-example": {
+        "original": "target/release/examples/profile_allocations",
+        "sha256": "915709f4e93a0a3999d7fe2503aadaf8b68249d8900062fe2c248864b8a0e159"
+      }
+    },
+    "source_sha256": {
+      "crates/playground/build.rs": "a7d22b5d2df3e8f2d219b91493849efcf9e141b481105c516d6c62927c4bbbdf",
+      "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+      "crates/benches/benches/engine.rs": "19224f5df3ca5ba68008cc7bbaf63109ea78b038d2dd2f3c70f64e032cfa7c8e",
+      "crates/benches/benches/stateful.rs": "18574c42216a6daf6232d808533d29a971d62d04b10424783e54194ed06da9ee",
+      "crates/benches/benches/dispatch.rs": "f9a8af00901aa0d9f95fb320600bc26dc983ddcc1a706dd54430e9947f53468d",
+      "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+      "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+      "crates/benches/examples/steady_allocations.rs": "9f4bcdf271c07b9223ae72e79a0e8ecaaca1757c7f17ff01364d7947276561bc",
+      "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+      "crates/benches/examples/profile_allocations.rs": "ab5b84d6581e173460174c7a63f7b0cdd80b39fd5dde90ad6f7a7f338e0af47f",
+      "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+      "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+      "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+      "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+      "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+      "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968",
+      "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+      "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+      "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+      "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+      "crates/benches/src/stateful/steady.rs": "ecbf59f5edbec00c0b17879fb67e2a03fddb2eb12157ffe09eb3c0ceb0710ac6",
+      "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+      "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+      "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+      "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+      "crates/bowl/src/query.rs": "0cbf5558e0605284c2cf7730f8cdae76091a99effdfb4825f909e0f22db2c20e",
+      "crates/bowl/src/system.rs": "8ca6f87671e413ce5e399c44e0d8147a386959a5ba7572eaacd8a301b3a8debb",
+      "crates/bowl/src/world.rs": "730c9878a48dadd310b6f3561b9ae68bdf77a79dba6e8658fc42f028a9c8705e",
+      "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+      "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+      "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+      "crates/bowl/src/lib.rs": "7fca629e439b6b6744d22b553f81f29ef6e9531ea88e91521ee92e8f0adbc046",
+      "crates/bowl/src/prepared.rs": "ed5cc01ee3b8a2d8a868d4bf98ae8a4519dc0ee4449c1ac447b94a24734f2bdf",
+      "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+      "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+      "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+      "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+      "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+      "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+      "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+      "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+      "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+      "crates/bowl/src/prepared/rows.rs": "ce8bf61a784bc71b6b65e0b0f5957eeb7992df3e2bbaa9397c323ccdd0b5dd88",
+      "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+      "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+      "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+      "crates/bowl/src/prepared/rows/tests.rs": "0cd239913332adb1309564c3dc313e4bf2bfa0d784cc457e8562c80f645e12fe",
+      "crates/macros/src/lib.rs": "66165412874d1211652f8d562bd67cca8bdbd0b3c6b9ec465ce45a492f3018bf",
+      "crates/playground/src/tests.rs": "63f7d0898fefb25e8b456a2a6cb9d91bed13aa1bfa6fae48bc54d2ac7ad80e25",
+      "crates/playground/src/replication.rs": "7fa007b5166bab6b9973fa30bbf58336958b263a3f8a662168eb8010b5c484e5",
+      "crates/playground/src/main.rs": "60074f02a266fdb207daaa1a6326e14c57d282ea7330e9ab23f0a95496c26989",
+      "crates/playground/src/lang/entity.rs": "47ab9803de29a7ee03b0ac970771358b0b72b07c1b575c4618dddec5b207f815",
+      "crates/playground/src/lang/facts.rs": "d6eb0d5cf739663efb83309b3f805e5489a1497b1004d19c462933f6bcb2ff66",
+      "crates/playground/src/lang/schema.rs": "8bd0737550286defbc0aced238de7ba4f2c4a3c7a86df2b22d4b275106ccde2c",
+      "crates/playground/src/lang/mod.rs": "219477327d483515936c11a5b39725cf04ed11941e117b87b2d1b9d24f2fa56b",
+      "crates/playground/src/lang/grammar/parser.rs": "48b084de2b108fc63013a778a489f27f922bc0e9cd6305f5fffa32ca9ed1d1f3",
+      "crates/playground/src/lang/grammar/mod.rs": "197151ddbccbe728832111ddae440928405b807713164fe54567f3da8fbcad75",
+      "crates/playground/src/lang/grammar/lexer.rs": "f6593474990ee511ac3c1896ac6644eb9555f2d48879562fbba5407aeeb77db4",
+      "crates/playground/src/lang/service/mod.rs": "163249bd48834fc9810c99225d464bb7e376135d9b80e3cfe35af4472dc5d996",
+      "crates/playground/src/lang/service/hover.rs": "e6d17b7c62d08c1920123e141cf2ff0b22d40d9aece714a7aedc5a1d72280c8a",
+      "crates/playground/src/lang/entities/mod.rs": "115c05a95635d74d5605d12e5d382a511bf19f73dc4a022bb4e403c92cd5aa9f",
+      "crates/playground/src/lang/entities/document.rs": "9851e0a7233aa3df12b46327780c4c5a232f7f8b5183b709cc599eb6a3aea55c",
+      "crates/playground/src/lang/entities/namespace.rs": "ad8289b7039a3ea37f543e9a63b1310028f6e61836eb42e4d5330abc183b3b1e",
+      "crates/playground/src/lang/entities/import.rs": "c92dfaa2e5309f17ddca103f9f1a7860a55cd363e021e683d8c0bfa93b4faa3c",
+      "crates/playground/src/lang/entities/definition.rs": "cce8d5d8948b600a63425948207fdafe19cc0493a0deb4b911f66813fc0736f7"
+    },
+    "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "raw_reports": {
+    "pair-reuse": "989a8998c60cc0c8cc9d2066630326f282392c0afc19f1bf225f359693ac4c9f",
+    "compiler-comparison": "dc4341898bb9499078d79dd9ee5ce1cca31025a1d54bc956f976f82a80ab5c4e",
+    "pair-reuse-profile": "c84cccb6bda1feb02bb0988d1698bd830b4d2367fd7bc9b0a2b33e021924bd2e",
+    "pair-reuse-memory": "91ad9985e96f9745cf4d7ac003d420e4ada86c0bdccc2cc6247d9edcb23a87d5"
+  },
+  "allocation_profile": [
+    {
+      "workers": 8,
+      "requests": 1000,
+      "calls": 102981,
+      "calls_per_request": 102.981,
+      "metrics": {
+        "plan_calls": 12,
+        "candidate_rows": 10000,
+        "memo_hits": 5000,
+        "dependency_records": 58000,
+        "access_records": 29000,
+        "admission_ns": 263942196,
+        "admission_candidates": 5000,
+        "already_running": 0,
+        "conflict_deferrals": 0,
+        "admitted_rows": 5000,
+        "dispatch_batches": 315,
+        "enqueue_to_first_poll_ns": 5165183499,
+        "started_rows": 5000,
+        "completed_row_polls": 5000,
+        "publication_ns": 49250569,
+        "publication_calls": 5003,
+        "stale_publications": 0,
+        "accepted_output_groups": 5000,
+        "buffered_commands": 2000,
+        "planning_arena_chunk_growth": 0,
+        "planning_key_growth": 0,
+        "command_storage_created": 0,
+        "command_storage_reused": 6000,
+        "command_arena_chunk_growth": 0,
+        "command_metadata_growth": 0,
+        "revision_checks": 29000,
+        "reconciled_writes": 4000,
+        "bound_cleanup_ns": 0,
+        "bound_cleanup_roots": 0,
+        "ambient_healing_ns": 0,
+        "ambient_healing_memo_entries": 0,
+        "ambient_healing_victims": 0
+      },
+      "memory": [],
+      "origins": [
+        {
+          "origin": "dispatch and completion",
+          "calls": 33136,
+          "calls_per_request": 33.136,
+          "percent": 32.176809314339536
+        },
+        {
+          "origin": "row construction/execution",
+          "calls": 21027,
+          "calls_per_request": 21.027,
+          "percent": 20.41832959477962
+        },
+        {
+          "origin": "planning: other",
+          "calls": 15428,
+          "calls_per_request": 15.428,
+          "percent": 14.981404336722308
+        },
+        {
+          "origin": "command application/storage",
+          "calls": 11579,
+          "calls_per_request": 11.579,
+          "percent": 11.243821675843117
+        },
+        {
+          "origin": "guard buffers",
+          "calls": 6009,
+          "calls_per_request": 6.009,
+          "percent": 5.835056952253328
+        },
+        {
+          "origin": "outputs and memo updates",
+          "calls": 5000,
+          "calls_per_request": 5.0,
+          "percent": 4.855264563366058
+        },
+        {
+          "origin": "command producer handles",
+          "calls": 5000,
+          "calls_per_request": 5.0,
+          "percent": 4.855264563366058
+        },
+        {
+          "origin": "publication",
+          "calls": 2589,
+          "calls_per_request": 2.589,
+          "percent": 2.514055990910945
+        },
+        {
+          "origin": "structural cloning",
+          "calls": 2040,
+          "calls_per_request": 2.04,
+          "percent": 1.9809479418533515
+        },
+        {
+          "origin": "unclassified",
+          "calls": 1173,
+          "calls_per_request": 1.173,
+          "percent": 1.139045066565677
+        }
+      ],
+      "profile_sha256": "236a0e925b8f57f0237e85e8805752aa5ad326e2e0e9761624ad41eca3b33bd8"
+    }
+  ]
+}

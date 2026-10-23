@@ -42,3 +42,63 @@ in the iteration-budget report. Raw runs are in target/optimization-o1/.
 Validation passes: workspace build/tests (157 engine tests), clippy, playground,
 all four benchmark smoke suites, and the idle/read allocation budget matrix.
 No feature changes or formatting pass were used.
+
+## O1b plan: prepare and reuse pair-row collection
+
+- Prepare a typed candidate collector and static Eq/In binding metadata once
+  per parameter/planning pass, not once per provider row.
+- Feed borrowed equality buckets directly into it; reuse each bound parameter's
+  row Vec while expanding providers. Snapshot-local scalar handles and tuple
+  presence masks avoid repeated lookup/metadata construction.
+- Keep the existing Vec-returning custom parameter path as a compatibility
+  fallback. Preserve provider ordering, empty buckets, compound pruning,
+  optional/opaque parts, and snapshot ownership.
+- Scope the row buffers and collectors to synchronous planning; no borrowed
+  bucket or buffer escapes into worker execution.
+- Compare against O1a, including memory behavior and small/compiler cases.
+  This does not yet recycle row buffers across planning passes.
+
+## O1b result: keep
+
+Prepared candidate collectors and cached binding descriptions now fill per-pass
+pair buffers directly. Scalar queries resolve their store once; tuple queries
+prepare their presence mask once. Buffers clear between providers and retain
+capacity within the pass. Custom queries/params use the old owned fallback;
+opaque parts still run their predicates. Snapshot-specific collectors do not
+escape planning into worker futures.
+
+At 1,000 requests/eight workers, allocations fall **144,815 → 100,857 per
+iteration** (about 30.4% fewer); reallocations stay 2,124. The DHAT profile reports
+102.981 combined allocation/reallocation events per request. Candidate-bucket
+allocation sites disappear; remaining planning is 15.429 events/request, mostly
+owned admitted-row metadata. Scratch/command growth remains zero after warmup.
+
+Timing remains inconclusive: eight-worker purchases 37.95 → 38.46 µs/request;
+one-worker purchases 24.46 → 24.81. Compiler/sparse cases overlap. The large
+relationship join improved in two of three runs but has a wide candidate range
+(2.960–3.855 ms versus 3.002–3.371 ms). No speedup is claimed.
+
+Live memory matches the O0 eight-worker growth baseline exactly in these runs:
+4,987,324–4,987,828 bytes at 1,000 slots and 9,954,828–9,955,332 at 2,000;
+peaks 9,814,592 and 19,589,760 bytes. These are finite DHAT observations.
+
+Validation: 160 engine tests, workspace build/tests, clippy and playground pass.
+Two test-only needless-lifetime clippy suggestions are deferred to the requested
+final cleanup. The benchmark subagent verified frozen source/binary hashes,
+all four optimized smoke suites, and three repetitions of the idle/read budget
+matrix. Existing timing runs were reused because the hashes matched.
+
+[Results and provenance](benchmarks/2026-10-23-pair-reuse.json).
+
+### Remaining O1 work and next priority
+
+Collectors and row Vecs still allocate once per planning pass; membership
+providers still clone their member Vec before filling a reusable destination.
+Whole product state lists remain materialized. Static layout reuse across passes,
+broader projections/filters and historical facet scans remain candidates.
+
+The profile now places most remaining allocator events in per-row identity,
+execution, guards and publication. Move to O2's owned metadata experiments next;
+coalesce cross-pass query layout caching with the schema/consumer registry in O5
+rather than introduce a competing cache. This is a measured ordering change,
+not a claim that every O1 proposal is complete.

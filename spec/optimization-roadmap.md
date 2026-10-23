@@ -441,6 +441,13 @@ not user input limits. No artificial workload caps.
 
 For each implementation batch:
 
+After root tests pass, delegate benchmarking to the persistent gpt-6.1-sol
+subagent with low reasoning effort (the tool exposes no separate fast switch).
+The agent freezes binaries/source manifests and owns benchmark artifacts only;
+root retains implementation/commit ownership and plans the next change. Coordinate
+TESTS_GREEN / BENCH_RUNNING / BENCH_DONE so compilation never overlaps timed runs.
+Do not rerun existing measurements whose exact candidate hashes already match.
+
 1. Preserve the baseline binary/source manifest; change one mechanism.
 2. Run meaningful contract tests, then relevant allocation/benchmark smokes.
 3. Measure allocations, DHAT attribution, wall time, and hardware counters in
@@ -504,7 +511,7 @@ with a blocking public API.
 | --- | --- | --- |
 | Baseline | Complete | `35247bc`; command + planning arena integration |
 | O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
-| O1 | In progress | [O1a kept](join-candidate-storage.md): 12 fewer allocations/request; pair-row storage remains |
+| O1 | Measured slices kept | [O1a/O1b](join-candidate-storage.md): 156,815 → 100,857 alloc/iteration; cross-pass layouts deferred to shared O5 registry, remaining row work tracked |
 | O2 | Planned | Owned metadata/guards/memo reuse |
 | O3 | Planned | Producers/publication/cleanup |
 | O4 | Planned | Snapshot/COW/cell reuse |

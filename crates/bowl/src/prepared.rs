@@ -1,4 +1,5 @@
 //! Snapshot-local prepared query execution. No row borrows or locks are cached.
+pub(crate) mod rows;
 use std::marker::PhantomData;
 use variadics_please::all_tuples;
 

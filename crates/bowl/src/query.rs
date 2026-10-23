@@ -894,6 +894,15 @@ impl Dep {
 /// `fetch` is safe because row states are produced from the same structural
 /// snapshot and read guards are kept alive by the owning query/result.
 pub trait QueryParam {
+    /// Prepares candidate matching for this snapshot without acquiring guards.
+    /// Custom queries keep their existing rows_hinted implementation by default.
+    fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedRows<Self> + use<Self>
+    where Self: Sized {
+        let _ = snapshot;
+        crate::prepared::rows::Fallback::<Self>::new()
+    }
+
+
     /// Resolves snapshot-local lookup state once, without acquiring row guards.
     /// The default preserves custom parameter behavior.
     fn prepare(
@@ -1169,6 +1178,10 @@ impl<H: FacetKind> QueryParam for Entity<H> {
 impl<H: FacetKind> ExternalReadQueryParam for Entity<H> {}
 
 impl<'q, T: Component> QueryParam for &'q T {
+    fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedRows<Self> + use<'q, T> {
+        crate::prepared::rows::Scalar(snapshot.resolve_store::<T>())
+    }
+
     fn prepare(
         snapshot: &Snapshot,
     ) -> impl crate::prepared::PreparedQuery<Self> + 'static + use<'q, T>
@@ -1272,6 +1285,10 @@ impl<'q, T: Component> QueryParam for &'q T {
 impl<T: Component> ExternalReadQueryParam for &T {}
 
 impl<'q, T: Component> QueryParam for (MutRef<'q, T>,) {
+    fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedRows<Self> + use<'q, T> {
+        crate::prepared::rows::Scalar(snapshot.resolve_store::<T>())
+    }
+
     fn prepare(
         snapshot: &Snapshot,
     ) -> impl crate::prepared::PreparedQuery<Self> + 'static + use<'q, T>
@@ -1828,6 +1845,11 @@ macro_rules! impl_entity_query_param {
         {
             type State = Entity;
             type Item<'a> = (Entity<FH>, $(<$P as QueryPart>::Item<'a>,)*);
+
+            fn prepare_rows(snapshot: &Snapshot)
+                -> impl crate::prepared::rows::PreparedRows<Self> + use<FH, $($P),*> {
+                crate::prepared::rows::EntityRows::<FH, ($($P,)*)>::new(snapshot)
+            }
 
             fn prepare(snapshot: &Snapshot) -> impl crate::prepared::PreparedQuery<Self> + 'static + use<FH, $($P),*>
             where Self: 'static {

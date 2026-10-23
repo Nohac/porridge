@@ -205,6 +205,14 @@ pub enum DeltaShape {
 }
 
 pub trait SystemParam {
+    /// Snapshot-local pair matching; custom params keep their owned fallback.
+    fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedStates<Self> + use<Self>
+    where Self: Sized {
+        let _ = snapshot;
+        crate::prepared::rows::Fallback::<Self>::new()
+    }
+
+
     /// Resolves snapshot-local lookup state. Custom params use the existing API.
     fn prepare(snapshot: &Snapshot) -> impl PreparedParam<Self> + 'static + use<Self>
     where
@@ -406,6 +414,10 @@ where
 {
     type State = Q::State;
     type Item<'a> = Query<Q::Item<'a>, Filter>;
+
+    fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedStates<Self> + use<Q, Filter> {
+        crate::prepared::rows::Filtered::<Q, Filter, _>::new(Q::prepare_rows(snapshot))
+    }
 
     fn prepare(snapshot: &Snapshot) -> impl PreparedParam<Self> + 'static + use<Q, Filter>
     where
@@ -1053,6 +1065,7 @@ macro_rules! impl_system_param_tuple {
                 )*
 
                 let mut states = Vec::new();
+                $(let mut $P = crate::prepared::rows::buffer::<$P>(snapshot, $P);)*
                 for_each_state!(snapshot, states, []; $($P),*);
                 states
             }
@@ -1071,6 +1084,7 @@ macro_rules! impl_system_param_tuple {
                     };
                 )*
 
+                $(let mut $P = crate::prepared::rows::buffer::<$P>(snapshot, $P);)*
                 for_each_state!(snapshot, states, []; $($P),*);
 
                 // Pair-expanded params are key-equal by construction (their
@@ -1347,64 +1361,46 @@ macro_rules! for_each_state {
         $out.push(($($picked.clone(),)*));
     };
     ($snapshot:ident, $out:ident, [$(($PickedTy:ident, $picked:expr)),*]; $head:ident $(, $tail:ident)*) => {
-        // Pair-driven expansion: a single-key bound join enumerates its
-        // rows from the already-picked provider's pair list — the member
-        // list for `In`, the fingerprint index bucket for `Eq` — instead
-        // of the full product.
-        let __pair_rows = if $head::pair_expandable() {
-            let mut __rows: ::std::option::Option<::std::vec::Vec<_>> =
-                ::std::option::Option::None;
-            if let ::std::option::Option::Some((__key, _)) =
-                $head::in_key_types().into_iter().next()
-            {
-                $(
-                    if __rows.is_none() {
-                        if let ::std::option::Option::Some(__members) =
-                            $PickedTy::provided_members($snapshot, $picked, __key)
-                        {
-                            __rows = ::std::option::Option::Some(
-                                $head::states_from_candidates($snapshot, __members),
-                            );
-                        }
-                    }
-                )*
-            } else if let ::std::option::Option::Some((__key, __name)) =
-                $head::bound_key_types().into_iter().next()
-            {
-                $(
-                    if __rows.is_none() {
-                        if let ::std::option::Option::Some(__provided) =
-                            $PickedTy::provided_key($snapshot, $picked, __key)
-                        {
-                            let ::std::option::Option::Some(__fingerprint) = __provided else {
-                                panic!(
-                                    "bound `Where<Eq<{__name}>>` provider component must be \
-                                     `#[component(hash)]` so rows can join on fingerprints"
+        use crate::prepared::rows::Binding;
+        if !matches!($head.binding, Binding::Unbound) {
+            $head.rows.clear();
+            let mut __found = false;
+            match $head.binding {
+                Binding::Membership(__key) => {
+                    $(
+                        if !__found {
+                            if let Some(__members) = $PickedTy::provided_members($snapshot, $picked, __key) {
+                                __found = true;
+                                crate::prepared::rows::PreparedStates::<$head>::extend(
+                                    $head.prepared.as_ref().expect("bound collector"),
+                                    $snapshot, __members.into_iter(), &mut $head.rows,
                                 );
-                            };
-                            __rows = ::std::option::Option::Some(
-                                $head::states_from_candidates(
-                                    $snapshot,
-                                    $snapshot.fingerprint_candidates(__key, __fingerprint),
-                                ),
-                            );
+                            }
                         }
-                    }
-                )*
+                    )*
+                }
+                Binding::Equality(__key, __name) => {
+                    $(
+                        if !__found {
+                            if let Some(__provided) = $PickedTy::provided_key($snapshot, $picked, __key) {
+                                let Some(__fingerprint) = __provided else {
+                                    panic!("bound `Where<Eq<{__name}>>` provider component must be `#[component(hash)]` so rows can join on fingerprints");
+                                };
+                                __found = true;
+                                crate::prepared::rows::PreparedStates::<$head>::extend(
+                                    $head.prepared.as_ref().expect("bound collector"), $snapshot,
+                                    $snapshot.fingerprint_candidates_iter(__key, __fingerprint), &mut $head.rows,
+                                );
+                            }
+                        }
+                    )*
+                }
+                Binding::Invalid => {}
+                Binding::Unbound => unreachable!(),
             }
-            match __rows {
-                ::std::option::Option::Some(rows) => rows,
-                ::std::option::Option::None => panic!(
-                    "bound join provider must precede the joined query in the \
-                     system's parameter list (pair-driven planning reads the \
-                     provider's pair list while building the product)"
-                ),
-            }
-        } else {
-            ::std::vec::Vec::new()
-        };
-        let __iter = if $head::pair_expandable() { &__pair_rows } else { &$head };
-        for state in __iter {
+            assert!(__found, "bound join provider must precede the joined query in the system's parameter list (pair-driven planning reads the provider's pair list while building the product)");
+        }
+        for state in &$head.rows {
             for_each_state!(
                 $snapshot, $out,
                 [$(($PickedTy, $picked),)* ($head, state)];

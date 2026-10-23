@@ -381,6 +381,10 @@ pub(crate) struct ResolvedStore<T> {
 }
 
 impl<T: Component> ResolvedStore<T> {
+    pub(crate) fn contains(&self, entity: Entity) -> bool {
+        self.entries.as_ref().is_some_and(|entries| entries.contains_key(&entity))
+    }
+
     pub(crate) fn dependency(&self, entity: Entity, optional: bool) -> Option<crate::query::Dep> {
         if !T::tracked() {
             return None;
@@ -1807,12 +1811,6 @@ impl World {
     /// Upper bound used for simple entity scans.
     pub(crate) fn next_entity_raw(&self) -> u64 {
         self.next_entity.load(Ordering::Relaxed)
-    }
-
-    /// Pair candidates for an index-driven `Eq` join: entities whose stored
-    /// fingerprint for `type_id` equals `fingerprint`.
-    pub(crate) fn fingerprint_candidates(&self, type_id: TypeId, fingerprint: u64) -> Vec<Entity> {
-        self.fingerprint_candidates_iter(type_id, fingerprint).collect()
     }
 
     /// Borrow the snapshot's sorted index bucket. Exact size preserves the
