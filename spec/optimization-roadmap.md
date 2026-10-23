@@ -504,7 +504,7 @@ with a blocking public API.
 | --- | --- | --- |
 | Baseline | Complete | `35247bc`; command + planning arena integration |
 | O0 | In progress | [Iteration budgets](iteration-budgets.md): kept; lifetime/growth measurements and broader audit remain |
-| O1 | Planned | Candidate/query-plan reuse |
+| O1 | In progress | [O1a kept](join-candidate-storage.md): 12 fewer allocations/request; pair-row storage remains |
 | O2 | Planned | Owned metadata/guards/memo reuse |
 | O3 | Planned | Producers/publication/cleanup |
 | O4 | Planned | Snapshot/COW/cell reuse |

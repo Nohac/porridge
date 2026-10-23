@@ -326,7 +326,7 @@ trait StoreDyn: Send + Sync {
     fn bump_watermark(&mut self, revision: u64);
     /// Entities whose stored fingerprint equals `fingerprint`, ascending —
     /// the pair candidates for index-driven `Eq` join planning.
-    fn fingerprint_entities(&self, fingerprint: u64) -> Vec<Entity>;
+    fn fingerprint_bucket(&self, fingerprint: u64) -> Option<&BTreeSet<Entity>>;
     /// Relationship maintenance info for `entity`'s stored value, read
     /// before a removal path drops the entry: the edge it carries (if it is
     /// a relationship source) and the retractions it implies (if it is a
@@ -500,11 +500,8 @@ impl<T: Component> StoreDyn for Store<T> {
         self.watermark = self.watermark.max(revision);
     }
 
-    fn fingerprint_entities(&self, fingerprint: u64) -> Vec<Entity> {
-        self.by_fingerprint
-            .get(&fingerprint)
-            .map(|entities| entities.iter().copied().collect())
-            .unwrap_or_default()
+    fn fingerprint_bucket(&self, fingerprint: u64) -> Option<&BTreeSet<Entity>> {
+        self.by_fingerprint.get(&fingerprint)
     }
 
     fn relationship_ops(
@@ -1815,10 +1812,19 @@ impl World {
     /// Pair candidates for an index-driven `Eq` join: entities whose stored
     /// fingerprint for `type_id` equals `fingerprint`.
     pub(crate) fn fingerprint_candidates(&self, type_id: TypeId, fingerprint: u64) -> Vec<Entity> {
-        self.stores
-            .get(&type_id)
-            .map(|store| store.fingerprint_entities(fingerprint))
+        self.fingerprint_candidates_iter(type_id, fingerprint).collect()
+    }
+
+    /// Borrow the snapshot's sorted index bucket. Exact size preserves the
+    /// destination's reserve behavior without an intermediate candidate Vec.
+    pub(crate) fn fingerprint_candidates_iter(
+        &self, type_id: TypeId, fingerprint: u64,
+    ) -> impl ExactSizeIterator<Item = Entity> + '_ {
+        self.stores.get(&type_id)
+            .and_then(|store| store.fingerprint_bucket(fingerprint))
+            .map(|bucket| bucket.iter())
             .unwrap_or_default()
+            .copied()
     }
 
     /// Highest revision at which the store for `type_id` changed; zero when
@@ -1895,3 +1901,7 @@ impl World {
 fn bump(revision: &mut Revision) {
     revision.0 += 1;
 }
+
+#[cfg(test)]
+#[path = "world/candidates_tests.rs"]
+mod candidates_tests;

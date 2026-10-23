@@ -2424,7 +2424,7 @@ where
         let mut providers = Vec::new();
         for member in hint {
             if let Some(fingerprint) = snapshot.fingerprint::<T>(*member) {
-                providers.extend(snapshot.fingerprint_candidates(TypeId::of::<T>(), fingerprint));
+                providers.extend(snapshot.fingerprint_candidates_iter(TypeId::of::<T>(), fingerprint));
             }
         }
         providers

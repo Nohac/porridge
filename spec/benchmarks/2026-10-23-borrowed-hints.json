@@ -1,0 +1,725 @@
+{
+  "date": "2026-10-23",
+  "notes": [
+    "Only dirty-provider hints use borrowed buckets; pair-row construction remains owned.",
+    "Allocation reduction is supported by counters and DHAT call sites; no timing speedup is claimed.",
+    "Comparisons alternate baseline/candidate processes with unchanged features; this is an active workstation."
+  ],
+  "measurements": {
+    "borrowed-hints": {
+      "raw_report_sha256": "2fa4a561427306d7a9da27165dc369efce06707df1ac982ac9d47dd458d91c98",
+      "provenance": {
+        "base_commit": "e5a7056a5fd84ba05d6004a717de80c2bc357c14",
+        "binaries": {
+          "after": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+            "sha256": "d0e24cf164d89e7d579b4c554c3fc896f0c3ee15c2cd7321755e23891b0bfb8b"
+          },
+          "before": {
+            "path": "/home/jonas/Development/Rust/porridge/target/optimization-o1/before-steady_allocations",
+            "sha256": "7d2a0aeed93a7af3cde73e5a53e72dfb74a740fcb4b8580072f7f0d41b080218"
+          }
+        },
+        "source_sha256": {
+          "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+          "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+          "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+          "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+          "crates/bowl/src/query.rs": "0f50e446e9376f7badf82adcf2c57abc99b863c3eaaac3ee9b5ffe994c918966",
+          "crates/bowl/src/system.rs": "7a0bbb6e5d03db219c6a002b581ae0c6012c606272d43b06f34a842bc0910316",
+          "crates/bowl/src/world.rs": "4e4cb3e7d6953cea2e6b55de72453d2fe79c2e9a7903aa48f319311094e0758d",
+          "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+          "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+          "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+          "crates/bowl/src/lib.rs": "4bd531c49d3a7264f3365e2e1964aca5f70805cf91a91c5f75338bb404850019",
+          "crates/bowl/src/prepared.rs": "8baab8adbce158fc7d4506bb5251935abcddeca91aa7eb2a49a810e6be228961",
+          "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+          "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+          "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+          "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+          "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+          "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+          "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+          "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+          "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+          "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+          "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+          "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+          "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+          "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+          "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+          "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+          "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+          "crates/benches/src/stateful/steady.rs": "d6ab4a8c97b2c50dc4a50891165ee9a92babf0d50cd4b8a81e2194b237a69db2",
+          "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+          "crates/benches/examples/steady_allocations.rs": "9f4bcdf271c07b9223ae72e79a0e8ecaaca1757c7f17ff01364d7947276561bc",
+          "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+          "crates/benches/examples/profile_allocations.rs": "d1452e82e000a9b4ac785ce491ce895235fe9f9115ff2e5703e5504b83cc822f",
+          "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+          "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+          "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+          "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+          "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+          "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+        },
+        "source_scope": "current workspace; supplied baseline binary needs its original build manifest",
+        "runner_sha256": "b873a2b4b24c3b5069a538f8c607a8506abc7a16c0c91c0355c253c19b46df4b",
+        "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+        "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "kernel": [
+          "Linux",
+          "graphite",
+          "7.2.8",
+          "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+          "x86_64"
+        ],
+        "driver_cpu": 0,
+        "worker_cpus": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          3,
+          5,
+          7,
+          9,
+          11,
+          13,
+          15,
+          17,
+          19
+        ],
+        "configuration": {
+          "binary": "target/release/examples/steady_allocations",
+          "before": "target/optimization-o1/before-steady_allocations",
+          "out": "target/optimization-o1/borrowed-hints",
+          "cases": "purchases,read",
+          "workers": "1,8",
+          "slots": "1,1000",
+          "budgets": null,
+          "metrics": false,
+          "rounds": 10,
+          "warmup": 8,
+          "repetitions": 3
+        },
+        "budget_failures": []
+      },
+      "summary": [
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_allocs_per_iteration": 594.5,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 836,
+          "median_us_per_operation": 67.5015,
+          "process_median_us": [
+            62.361000000000004,
+            67.5015,
+            71.709
+          ]
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1000,
+          "median_allocs_per_iteration": 158466.5,
+          "median_reallocs_per_iteration": 2405.0,
+          "maximum_events_per_iteration": 229963,
+          "median_us_per_operation": 25.5596515,
+          "process_median_us": [
+            26.785803,
+            25.736994000000003,
+            24.393173500000003
+          ]
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_allocs_per_iteration": 594.0,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 735,
+          "median_us_per_operation": 108.8335,
+          "process_median_us": [
+            107.2055,
+            116.9085,
+            99.33099999999999
+          ]
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1000,
+          "median_allocs_per_iteration": 144815.0,
+          "median_reallocs_per_iteration": 2124.0,
+          "maximum_events_per_iteration": 146943,
+          "median_us_per_operation": 37.64368,
+          "process_median_us": [
+            36.623410500000006,
+            37.713775999999996,
+            39.0258815
+          ]
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 1,
+          "slots": 1,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 0.0,
+          "maximum_events_per_iteration": 4,
+          "median_us_per_operation": 0.3955,
+          "process_median_us": [
+            0.391,
+            0.391,
+            0.411
+          ]
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 1,
+          "slots": 1000,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 8.0,
+          "maximum_events_per_iteration": 12,
+          "median_us_per_operation": 0.0970015,
+          "process_median_us": [
+            0.097518,
+            0.0973925,
+            0.09654
+          ]
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 8,
+          "slots": 1,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 0.0,
+          "maximum_events_per_iteration": 4,
+          "median_us_per_operation": 0.401,
+          "process_median_us": [
+            0.401,
+            0.406,
+            0.401
+          ]
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 8,
+          "slots": 1000,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 8.0,
+          "maximum_events_per_iteration": 12,
+          "median_us_per_operation": 0.097918,
+          "process_median_us": [
+            0.096901,
+            0.098439,
+            0.09891
+          ]
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_allocs_per_iteration": 609.0,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 857,
+          "median_us_per_operation": 62.492000000000004,
+          "process_median_us": [
+            61.751000000000005,
+            63.3535,
+            62.421499999999995
+          ]
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1000,
+          "median_allocs_per_iteration": 170475.0,
+          "median_reallocs_per_iteration": 2420.5,
+          "maximum_events_per_iteration": 281088,
+          "median_us_per_operation": 25.648099000000002,
+          "process_median_us": [
+            26.230234000000003,
+            26.670139,
+            23.673603
+          ]
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_allocs_per_iteration": 609.0,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 858,
+          "median_us_per_operation": 107.6915,
+          "process_median_us": [
+            90.17349999999999,
+            112.22999999999999,
+            112.50550000000001
+          ]
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1000,
+          "median_allocs_per_iteration": 156815.0,
+          "median_reallocs_per_iteration": 2124.0,
+          "maximum_events_per_iteration": 158939,
+          "median_us_per_operation": 36.955691,
+          "process_median_us": [
+            35.4767335,
+            38.626486,
+            36.9247765
+          ]
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 1,
+          "slots": 1,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 0.0,
+          "maximum_events_per_iteration": 4,
+          "median_us_per_operation": 0.381,
+          "process_median_us": [
+            0.3655,
+            0.381,
+            0.3905
+          ]
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 1,
+          "slots": 1000,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 8.0,
+          "maximum_events_per_iteration": 12,
+          "median_us_per_operation": 0.09812799999999999,
+          "process_median_us": [
+            0.10148,
+            0.0986445,
+            0.096696
+          ]
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 8,
+          "slots": 1,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 0.0,
+          "maximum_events_per_iteration": 4,
+          "median_us_per_operation": 0.39,
+          "process_median_us": [
+            0.3905,
+            0.3855,
+            0.381
+          ]
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 8,
+          "slots": 1000,
+          "median_allocs_per_iteration": 4.0,
+          "median_reallocs_per_iteration": 8.0,
+          "maximum_events_per_iteration": 12,
+          "median_us_per_operation": 0.0976475,
+          "process_median_us": [
+            0.10049749999999999,
+            0.09722700000000001,
+            0.0974525
+          ]
+        }
+      ]
+    },
+    "small-recheck": {
+      "raw_report_sha256": "883acb5ced9bca7070ba3da3324549ffdf5f66af3b03f898f6d857cc1832a494",
+      "provenance": {
+        "base_commit": "e5a7056a5fd84ba05d6004a717de80c2bc357c14",
+        "binaries": {
+          "after": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+            "sha256": "d0e24cf164d89e7d579b4c554c3fc896f0c3ee15c2cd7321755e23891b0bfb8b"
+          },
+          "before": {
+            "path": "/home/jonas/Development/Rust/porridge/target/optimization-o1/before-steady_allocations",
+            "sha256": "7d2a0aeed93a7af3cde73e5a53e72dfb74a740fcb4b8580072f7f0d41b080218"
+          }
+        },
+        "source_sha256": {
+          "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+          "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+          "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+          "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+          "crates/bowl/src/query.rs": "0f50e446e9376f7badf82adcf2c57abc99b863c3eaaac3ee9b5ffe994c918966",
+          "crates/bowl/src/system.rs": "7a0bbb6e5d03db219c6a002b581ae0c6012c606272d43b06f34a842bc0910316",
+          "crates/bowl/src/world.rs": "4e4cb3e7d6953cea2e6b55de72453d2fe79c2e9a7903aa48f319311094e0758d",
+          "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+          "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+          "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+          "crates/bowl/src/lib.rs": "4bd531c49d3a7264f3365e2e1964aca5f70805cf91a91c5f75338bb404850019",
+          "crates/bowl/src/prepared.rs": "8baab8adbce158fc7d4506bb5251935abcddeca91aa7eb2a49a810e6be228961",
+          "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+          "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+          "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+          "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+          "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+          "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+          "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+          "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+          "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+          "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+          "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+          "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+          "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+          "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+          "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+          "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+          "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+          "crates/benches/src/stateful/steady.rs": "d6ab4a8c97b2c50dc4a50891165ee9a92babf0d50cd4b8a81e2194b237a69db2",
+          "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+          "crates/benches/examples/steady_allocations.rs": "9f4bcdf271c07b9223ae72e79a0e8ecaaca1757c7f17ff01364d7947276561bc",
+          "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+          "crates/benches/examples/profile_allocations.rs": "d1452e82e000a9b4ac785ce491ce895235fe9f9115ff2e5703e5504b83cc822f",
+          "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+          "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+          "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+          "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+          "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+          "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+        },
+        "source_scope": "current workspace; supplied baseline binary needs its original build manifest",
+        "runner_sha256": "b873a2b4b24c3b5069a538f8c607a8506abc7a16c0c91c0355c253c19b46df4b",
+        "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+        "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "kernel": [
+          "Linux",
+          "graphite",
+          "7.2.8",
+          "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+          "x86_64"
+        ],
+        "driver_cpu": 0,
+        "worker_cpus": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          3,
+          5,
+          7,
+          9,
+          11,
+          13,
+          15,
+          17,
+          19
+        ],
+        "configuration": {
+          "binary": "target/release/examples/steady_allocations",
+          "before": "target/optimization-o1/before-steady_allocations",
+          "out": "target/optimization-o1/small-recheck",
+          "cases": "purchases",
+          "workers": "1,8",
+          "slots": "1",
+          "budgets": null,
+          "metrics": false,
+          "rounds": 100,
+          "warmup": 20,
+          "repetitions": 5
+        },
+        "budget_failures": []
+      },
+      "summary": [
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_allocs_per_iteration": 594.0,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 837,
+          "median_us_per_operation": 60.882999999999996,
+          "process_median_us": [
+            64.11449999999999,
+            62.091,
+            61.926,
+            63.48350000000001,
+            49.1015
+          ]
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_allocs_per_iteration": 594.0,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 837,
+          "median_us_per_operation": 99.7515,
+          "process_median_us": [
+            100.17699999999999,
+            106.19300000000001,
+            97.617,
+            99.856,
+            98.26849999999999
+          ]
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_allocs_per_iteration": 609.0,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 857,
+          "median_us_per_operation": 60.2475,
+          "process_median_us": [
+            65.312,
+            64.4205,
+            62.492000000000004,
+            54.176,
+            51.295500000000004
+          ]
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_allocs_per_iteration": 609.0,
+          "median_reallocs_per_iteration": 38.0,
+          "maximum_events_per_iteration": 857,
+          "median_us_per_operation": 97.9625,
+          "process_median_us": [
+            97.402,
+            100.01150000000001,
+            98.419,
+            96.876,
+            97.562
+          ]
+        }
+      ]
+    }
+  },
+  "profile": {
+    "raw_report_sha256": "5da5f9dcf3c3d865f86a8d4d3aa5dfb0f4f92886af8ee036aa4fcbc632cad234",
+    "provenance": {
+      "base_commit": "e5a7056a5fd84ba05d6004a717de80c2bc357c14",
+      "binary_sha256": "8777e0f9f2b7cda74554696b230b7f8a2c282690627ed11f75750790e8ee5f2b",
+      "driver_cpu": 0,
+      "worker_cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19
+      ],
+      "source_sha256": {
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "0f50e446e9376f7badf82adcf2c57abc99b863c3eaaac3ee9b5ffe994c918966",
+        "crates/bowl/src/system.rs": "7a0bbb6e5d03db219c6a002b581ae0c6012c606272d43b06f34a842bc0910316",
+        "crates/bowl/src/world.rs": "4e4cb3e7d6953cea2e6b55de72453d2fe79c2e9a7903aa48f319311094e0758d",
+        "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+        "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+        "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+        "crates/bowl/src/lib.rs": "4bd531c49d3a7264f3365e2e1964aca5f70805cf91a91c5f75338bb404850019",
+        "crates/bowl/src/prepared.rs": "8baab8adbce158fc7d4506bb5251935abcddeca91aa7eb2a49a810e6be228961",
+        "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+        "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+        "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+        "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+        "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+        "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+        "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+        "crates/benches/src/stateful/steady.rs": "d6ab4a8c97b2c50dc4a50891165ee9a92babf0d50cd4b8a81e2194b237a69db2",
+        "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+        "crates/benches/examples/steady_allocations.rs": "9f4bcdf271c07b9223ae72e79a0e8ecaaca1757c7f17ff01364d7947276561bc",
+        "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+        "crates/benches/examples/profile_allocations.rs": "d1452e82e000a9b4ac785ce491ce895235fe9f9115ff2e5703e5504b83cc822f",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+        "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+        "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+        "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+        "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+        "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+      },
+      "counts_include_reallocations": true,
+      "reallocations_attributed_to_original_allocation": true,
+      "configuration": {
+        "workers": [
+          8
+        ],
+        "slots": 1000,
+        "rounds": 1,
+        "warmup": 8
+      },
+      "runner_sha256": "f2872d45374c00b26e70a0d88bba36d6858e1569d8f10bd07ca4ceaf7fed5d38"
+    },
+    "records": [
+      {
+        "workers": 8,
+        "requests": 1000,
+        "calls": 146939,
+        "calls_per_request": 146.939,
+        "metrics": {
+          "plan_calls": 12,
+          "candidate_rows": 10000,
+          "memo_hits": 5000,
+          "dependency_records": 58000,
+          "access_records": 29000,
+          "admission_ns": 321482301,
+          "admission_candidates": 5000,
+          "already_running": 0,
+          "conflict_deferrals": 0,
+          "admitted_rows": 5000,
+          "dispatch_batches": 315,
+          "enqueue_to_first_poll_ns": 6220226147,
+          "started_rows": 5000,
+          "completed_row_polls": 5000,
+          "publication_ns": 44896978,
+          "publication_calls": 5003,
+          "stale_publications": 0,
+          "accepted_output_groups": 5000,
+          "buffered_commands": 2000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 6000,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 29000,
+          "reconciled_writes": 4000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        },
+        "origins": [
+          {
+            "origin": "planning: other",
+            "calls": 49386,
+            "calls_per_request": 49.386,
+            "percent": 33.60986531826132
+          },
+          {
+            "origin": "dispatch and completion",
+            "calls": 33136,
+            "calls_per_request": 33.136,
+            "percent": 22.550854436194612
+          },
+          {
+            "origin": "row construction/execution",
+            "calls": 21027,
+            "calls_per_request": 21.027,
+            "percent": 14.31001980413641
+          },
+          {
+            "origin": "command application/storage",
+            "calls": 11579,
+            "calls_per_request": 11.579,
+            "percent": 7.880140738673871
+          },
+          {
+            "origin": "planning: join candidates",
+            "calls": 10000,
+            "calls_per_request": 10.0,
+            "percent": 6.805545158194898
+          },
+          {
+            "origin": "guard buffers",
+            "calls": 6009,
+            "calls_per_request": 6.009,
+            "percent": 4.089452085559314
+          },
+          {
+            "origin": "outputs and memo updates",
+            "calls": 5000,
+            "calls_per_request": 5.0,
+            "percent": 3.402772579097449
+          },
+          {
+            "origin": "command producer handles",
+            "calls": 5000,
+            "calls_per_request": 5.0,
+            "percent": 3.402772579097449
+          },
+          {
+            "origin": "publication",
+            "calls": 2589,
+            "calls_per_request": 2.589,
+            "percent": 1.7619556414566588
+          },
+          {
+            "origin": "structural cloning",
+            "calls": 2040,
+            "calls_per_request": 2.04,
+            "percent": 1.388331212271759
+          },
+          {
+            "origin": "unclassified",
+            "calls": 1173,
+            "calls_per_request": 1.173,
+            "percent": 0.7982904470562614
+          }
+        ],
+        "profile_sha256": "772c11ccbf42b1fe582dfec07b3dabb87ed91a8c3da1a2046f1be8e745bb4a00"
+      }
+    ]
+  },
+  "baseline_manifest": "spec/benchmarks/2026-10-23-iteration-budgets.json"
+}
