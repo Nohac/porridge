@@ -514,8 +514,8 @@ with a blocking public API.
 | Baseline | Complete | `35247bc`; command + planning arena integration |
 | O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
 | O1 | Measured slices kept | [O1a/O1b](join-candidate-storage.md): 156,815 → 100,857 alloc/iteration; cross-pass layouts deferred to shared O5 registry, remaining row work tracked |
-| O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 60,857 alloc/iteration after [guard reuse](guard-buffer-reuse.md); access copies and output/memo buffers remain |
-| O3 | Planned | Producers/publication/cleanup |
+| O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 55,857 alloc/iteration after [guard reuse/access moves](guard-buffer-reuse.md); output/memo buffers remain |
+| O3 | Next experiment planned | [Unique producer reuse](producer-reuse.md); publication/cleanup remain |
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |
 | O6 | Planned | Native synchronous kernels |

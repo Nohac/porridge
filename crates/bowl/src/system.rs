@@ -2610,13 +2610,15 @@ where
             .into_iter()
             .map(move |mut invocation| {
                 let owner = invocation.owner.clone();
-                let access = invocation.access.clone();
+                // Reservations own access metadata; execution only needs the
+                // rows whose revisions must be reconciled after MutRef writes.
+                let access = invocation.access;
+                let writes = written_rows(&access);
                 let bowl = bowl.clone();
                 let function = Arc::clone(&function);
                 let context = Arc::clone(&context);
                 let run = async move {
                     let (snapshot, prepared) = context.as_ref();
-                    let writes = written_rows(&invocation.access);
                     let mut guards = invocation.commands.take_guards();
                     let commands = Commands::with_queue(
                         snapshot.spawn_slots(&invocation.owner),

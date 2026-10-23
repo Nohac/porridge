@@ -96,3 +96,24 @@ calls as proof of higher throughput.
 Validation: 166 engine tests, workspace build, playground, clippy (existing
 warnings), four optimized benchmark smokes, and eight idle/read budgets pass.
 [Measured results and provenance](benchmarks/2026-10-23-guard-reuse.json).
+
+## O2d result: keep moved access metadata
+
+The scheduler now owns the original access Vec; the future retains only its
+written-row list. At 1,000 requests/eight workers, allocations fall
+**60,857→55,857**, with 1,124 reallocations unchanged. Total events fall
+61,981→56,981 (8.07%). No new storage pool or reference counting was added.
+
+Eight-worker independent process medians improve 31.14–33.89→27.93–29.99
+µs/request. Contended cold cases (four requests/owner) improve across all three
+runs at 100 and 1,000 requests; the latter is 80.47–86.31→70.98–75.09 ms/batch.
+One-worker results mostly overlap. This covers the earlier write-list
+construction on rejected candidates as well as independent admission.
+
+Retained heap is about 31–35 KB lower at 1,000 slots and 63–66 KB lower at 2,000.
+Measured transient peaks rise 3.89% and 2.25%; no peak-memory reduction is claimed.
+The diagnostic allocator profile observes more work than the stable count run,
+so its 59.041 events/request is recorded separately from the 56.981 stable value.
+
+166 engine tests, workspace build/playground, four optimized smoke suites and
+eight idle/read budgets pass. [Results and provenance](benchmarks/2026-10-23-access-move.json).
