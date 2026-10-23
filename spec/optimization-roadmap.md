@@ -521,11 +521,11 @@ with a blocking public API.
 | O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
 | O1 | Measured slices kept | [O1a/O1b](join-candidate-storage.md): 156,815 → 100,857 alloc/iteration; cross-pass layouts deferred to shared O5 registry, remaining row work tracked |
 | O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 55,857 alloc/iteration after [guard reuse/access moves](guard-buffer-reuse.md); output/memo buffers remain |
-| O3 | In progress | [Unique producer reuse kept](producer-reuse.md): 50,857 alloc/iteration; [completion storage next](completion-storage.md) |
+| O3 | In progress | [Unique producer reuse kept](producer-reuse.md): 50,857 alloc/iteration; [completion retention measured/deferred](completion-storage.md) |
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |
 | O6 | Planned | Native synchronous kernels |
-| O7 | Planned | Reusable dispatch and per-system policies |
+| O7 | Next focused experiment | [Worker completion channel](worker-completion-channel.md), then reusable dispatch and per-system policies |
 | O8 | Planned | Wait/wakeup and idle overhead |
 | O9 | Conditional | Layout/SIMD/revision experiments after profiling |
 | O10 | Conditional | Worker-distributed scheduling after local bottlenecks |

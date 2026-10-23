@@ -54,7 +54,7 @@ or fallback allocations as eliminated.
 At 1,000 requests/eight workers, allocations fall **55,857→50,857**, with 1,124
 reallocations unchanged. The producer-handle allocation category disappears from
 the diagnostic profile (about five events/request removed); the measured profile
-is 51.989 events/request versus the stable count's 51.981. No new command storage
+is 51.987 events/request versus the stable count's 51.981. No new command storage
 or arena growth is observed after warmup.
 
 Eight-worker process medians improve 29.82–33.92→28.12–30.19 µs/request with some
