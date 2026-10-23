@@ -101,18 +101,18 @@ Each item is complete only when marked **kept**, **rejected with evidence**, or
 Files: `crates/benches/src/stateful/steady.rs`, examples/support,
 `tools/measure-allocations`, `tools/profile-allocations`, `tools/profile-engine`.
 
-- [ ] Add explicit complete-iteration allocation/reallocation/free totals, not
+- [x] Add explicit complete-iteration allocation/reallocation/free totals, not
   only normalized per-request values. Keep full input/evaluation/result cost.
-- [ ] Separate a drive-only measurement from result materialization. Prototype
+- [x] Separate a drive-only measurement from result materialization. Prototype
   a public `stir().await` only if useful: it must use the same real settlement
   path, not a benchmark-only engine path. A blocking SyncBowl wrapper is separate.
 - [ ] Track high-water retained capacities, peak/live bytes, and growth after a
   deliberately larger batch. Existing requested-byte counters measure traffic,
   not memory residency.
-- [ ] Extend attribution into the remaining “other pipeline” category. Distinguish
+- [x] Extend attribution into the remaining “other pipeline” category. Distinguish
   planning, guards, producer handles, dispatch, publication, snapshots, storage,
   cleanup, waiters, and results. Keep diagnostics off during timing.
-- [ ] Add repeatable allocation-budget checks for known bounded scenarios.
+- [x] Add repeatable allocation-budget checks for known bounded scenarios.
   Warmup must be finite and recorded; do not warm until a noisy pass happens.
 - [ ] Refresh operation accounting: candidates, admitted/executed rows, memo
   hits, retries, polls, ready batches, publications, and useful requests.
@@ -410,6 +410,8 @@ See [the partition/clustering proposal](ideas/schema-execution-and-partitions.md
   fixed-ID fixture to an old fresh-world Bevy number as an exact ratio.
 - [ ] Publish supported zero/near-zero scenarios, residual allocation sources,
   retained-memory costs and deliberately unsupported cases.
+- [ ] Run the final code-style/formatting and cleanup pass (rustfmt is skipped
+  during optimization batches per the user’s 2026-10-23 instruction).
 - [ ] Mark every experiment kept/rejected/deferred with evidence and clean up
   discarded prototypes. Update this plan and superseded roadmap claims.
 
@@ -501,7 +503,7 @@ with a blocking public API.
 | ID | Status | Result/commit |
 | --- | --- | --- |
 | Baseline | Complete | `35247bc`; command + planning arena integration |
-| O0 | Planned | Budgets and remaining allocation attribution |
+| O0 | In progress | [Iteration budgets](iteration-budgets.md): kept; lifetime/growth measurements and broader audit remain |
 | O1 | Planned | Candidate/query-plan reuse |
 | O2 | Planned | Owned metadata/guards/memo reuse |
 | O3 | Planned | Producers/publication/cleanup |

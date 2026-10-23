@@ -1,0 +1,77 @@
+{
+  "description": "Initial regression budgets for settled bounded workloads; purchases/drive remain measured optimization targets, not near-zero claims.",
+  "rules": [
+    {
+      "case": "idle",
+      "workers": 1,
+      "slots": 1,
+      "maximum_per_iteration": {
+        "alloc_calls": 0,
+        "realloc_calls": 0
+      }
+    },
+    {
+      "case": "read",
+      "workers": 1,
+      "slots": 1,
+      "maximum_per_iteration": {
+        "alloc_calls": 4,
+        "realloc_calls": 0
+      }
+    },
+    {
+      "case": "idle",
+      "workers": 1,
+      "slots": 1000,
+      "maximum_per_iteration": {
+        "alloc_calls": 0,
+        "realloc_calls": 0
+      }
+    },
+    {
+      "case": "read",
+      "workers": 1,
+      "slots": 1000,
+      "maximum_per_iteration": {
+        "alloc_calls": 4,
+        "realloc_calls": 8
+      }
+    },
+    {
+      "case": "idle",
+      "workers": 8,
+      "slots": 1,
+      "maximum_per_iteration": {
+        "alloc_calls": 0,
+        "realloc_calls": 0
+      }
+    },
+    {
+      "case": "read",
+      "workers": 8,
+      "slots": 1,
+      "maximum_per_iteration": {
+        "alloc_calls": 4,
+        "realloc_calls": 0
+      }
+    },
+    {
+      "case": "idle",
+      "workers": 8,
+      "slots": 1000,
+      "maximum_per_iteration": {
+        "alloc_calls": 0,
+        "realloc_calls": 0
+      }
+    },
+    {
+      "case": "read",
+      "workers": 8,
+      "slots": 1000,
+      "maximum_per_iteration": {
+        "alloc_calls": 4,
+        "realloc_calls": 8
+      }
+    }
+  ]
+}

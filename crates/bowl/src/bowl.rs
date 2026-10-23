@@ -482,8 +482,7 @@ where
             return S::materialize(&self.bowl, &snapshot, &self.args, None);
         }
 
-        self.bowl.settle().await;
-        self.bowl.drain_deferred_bound_cleanup().await;
+        self.bowl.stir().await;
         let snapshot = self.bowl.snapshot().await;
         S::materialize(&self.bowl, &snapshot, &self.args, None)
     }
@@ -1691,6 +1690,16 @@ impl Bowl {
             last_settled: false,
             _marker: PhantomData,
         }
+    }
+
+    /// Drives ordinary evaluation and deferred bound cleanup without
+    /// materializing query results. Uses the same settlement path as a scoop.
+    ///
+    /// Inputs arriving during evaluation keep the normal epoch rules; this
+    /// does not promise to consume an unbounded stream of future input.
+    pub async fn stir(&self) {
+        self.settle().await;
+        self.drain_deferred_bound_cleanup().await;
     }
 
     /// Drains bound entities whose handles were dropped without `take`.
@@ -5641,6 +5650,7 @@ mod tests {
             );
         });
     }
+
 
     #[test]
     fn deferred_cleanup_refreshes_the_published_settled_snapshot() {

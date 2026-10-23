@@ -308,6 +308,10 @@ represent state, not ordering. Prefer tracked joins and phases for ordering.
 
 ### Generations, snapshots, and scheduling
 
+Use `bowl.stir().await` to drive ordinary settlement and deferred bound cleanup
+without materializing query results. A normal `scoop` uses the same path before
+reading its results.
+
 Inputs are batched into generations. Each evaluation wave plans from a shared
 structural snapshot and memo table, runs non-conflicting invocations
 concurrently, then commits completed buffers. A commit whose captured

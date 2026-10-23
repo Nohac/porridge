@@ -40,6 +40,19 @@ impl Purchases {
     /// Submit fresh revisions to the same entities, then settle and read replies.
     /// No world recreation or entity retirement; includes ordinary result materialization.
     pub async fn round(&mut self) -> usize {
+        self.submit().await;
+        self.read().await
+    }
+
+    /// Same input and settlement, without result materialization. Verification
+    /// outside the measured interval checks that every request was applied.
+    pub async fn drive_round(&mut self) -> usize {
+        self.submit().await;
+        self.bowl.stir().await;
+        self.slots.len()
+    }
+
+    async fn submit(&mut self) {
         self.sequence = self.sequence.checked_add(1).expect("sequence overflow");
         for &entity in &self.slots {
             self.bowl
@@ -54,7 +67,6 @@ impl Purchases {
                 ))
                 .await;
         }
-        self.read().await
     }
 
     /// A settled read materializes ordinary query guards, without new requests.
@@ -109,5 +121,43 @@ mod tests {
             assert_eq!(fixture.round().await, 4);
             fixture.verify().await;
         }
+    }
+}
+
+#[cfg(test)]
+mod drive_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn drive_only_uses_the_same_request_and_cleanup_path() {
+        let mut fixture = Purchases::new(4).await;
+        for _ in 0..5 {
+            assert_eq!(fixture.drive_round().await, 4);
+            fixture.verify().await;
+            assert_eq!(fixture.read().await, 4);
+        }
+
+        let pending = fixture
+            .bowl
+            .insert((
+                Owner(99),
+                Purchase {
+                    sequence: 1,
+                    price: 1,
+                    work: 0,
+                },
+                Outcome(None),
+            ))
+            .await
+            .bind();
+        let entity = pending.entity();
+        drop(pending);
+        fixture.bowl.stir().await;
+        let entities = fixture
+            .bowl
+            .scoop::<Query<(Entity, &Purchase)>>()
+            .last_settled()
+            .await;
+        assert!(entities.collect().into_iter().all(|(id, _)| id != entity));
     }
 }

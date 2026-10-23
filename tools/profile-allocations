@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import re
 import subprocess
 import time
 
@@ -28,9 +29,29 @@ def allocation_origin(stack):
         if ">::fingerprint_candidates " in stack:
             return "planning: join candidates"
         return "planning: other"
-    if "bowl::commands::Commands<" in stack and ">>::with_queue " in stack:
-        return "command producer handles"
-    return "other pipeline"
+    # Outside planning, assign the nearest recognized allocation-origin frame.
+    # Prefix checks avoid matching types merely nested inside generic arguments.
+    for raw in stack.splitlines():
+        frame = re.sub(r"^0x[0-9a-f]+: ", "", raw)
+        if frame.startswith("<bowl::commands::Commands<") and ">>::with_queue" in frame:
+            return "command producer handles"
+        if frame.startswith("bowl::system::finish_invocation"):
+            return "outputs and memo updates"
+        if frame.startswith("<bowl::query::guards::GuardStore>"):
+            return "guard buffers"
+        if frame.startswith("<bowl::commands::arena::CommandQueue>") and "::consume" in frame:
+            return "command application/storage"
+        if frame.startswith("bowl::bowl::commit_system_run"):
+            return "publication"
+        if frame.startswith("<bowl::system::FunctionSystem<"):
+            return "row construction/execution"
+        if frame.startswith(("<futures_util::stream::futures_unordered", "<futures_channel::mpsc", "<bowl::dispatch::")):
+            return "dispatch and completion"
+        if frame.startswith("<bowl::world::") and "::clone" in frame:
+            return "structural cloning"
+        if frame.startswith("<bowl::bowl::Bowl>::insert_inner"):
+            return "input staging/storage"
+    return "unclassified"
 
 
 def origin_totals(sites, requests):

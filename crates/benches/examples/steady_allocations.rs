@@ -43,7 +43,10 @@ fn main() {
     let metrics = number("ALLOC_METRICS", 0) != 0;
     let case = env::var("ALLOC_CASE").unwrap_or_else(|_| "purchases".into());
     assert!(workers > 0 && slots > 0 && rounds > 0 && warmup > 0);
-    assert!(matches!(case.as_str(), "purchases" | "read" | "probe"));
+    assert!(matches!(
+        case.as_str(),
+        "purchases" | "drive" | "idle" | "read" | "probe"
+    ));
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(workers)
@@ -92,6 +95,11 @@ fn main() {
             let start = Instant::now();
             let completed = match case.as_str() {
                 "purchases" => purchases.round().await,
+                "drive" => purchases.drive_round().await,
+                "idle" => {
+                    purchases.bowl.stir().await;
+                    1
+                }
                 "read" => purchases.read().await,
                 "probe" => {
                     for &entity in &ids {
@@ -124,12 +132,13 @@ fn main() {
             let kernel_after = allocations::kernel_snapshot();
 
             // All checks, output, and verification queries are outside measurement.
-            assert_eq!(completed, slots);
+            let operations = if case == "idle" { 1 } else { slots };
+            assert_eq!(completed, operations);
             if case != "probe" {
                 purchases.verify().await;
             }
             if round >= warmup {
-                println!("sample\t{}\t{slots}\t{wall_ns}", round - warmup);
+                println!("sample\t{}\t{operations}\t{wall_ns}", round - warmup);
                 for ((name, before), (_, after)) in metrics_before.into_iter().zip(metrics_after) {
                     println!("metric\t{}\t{name}\t{}", round - warmup, after - before);
                 }
