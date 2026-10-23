@@ -45,8 +45,36 @@ fn report_invocation_key_layout() {
         std::mem::size_of::<InvocationKeys>(), std::mem::size_of::<Vec<Entity>>(),
         std::mem::size_of::<SystemInvocation>(), std::mem::size_of::<Option<SystemInvocation>>(),
         std::mem::size_of::<Option<(SystemId, Vec<Entity>)>>());
+    println!("component_entry_layout bytes={}", std::mem::size_of::<ComponentEntry<Left>>());
     // Protect the measured common descriptor size on the current 64-bit target.
     // Optional owner layout and whole-workload memory are measured separately.
     #[cfg(target_pointer_width = "64")]
     assert_eq!(std::mem::size_of::<InvocationKeys>(), std::mem::size_of::<Vec<Entity>>());
+}
+
+#[test]
+fn ownership_replacement_preserves_base_values_and_retained_snapshots() {
+    let mut world = World::new();
+    let entity = Entity::from_raw(0);
+    let first = SystemInvocation { system: SystemId(0), keys: vec![entity].into() };
+    let second = SystemInvocation { system: SystemId(1), keys: vec![entity].into() };
+
+    world.insert_derived(entity, Left(10), first.clone());
+    let snapshot = world.clone();
+    world.remove_derived_entry(TypeId::of::<Left>(), entity, &second);
+    assert_eq!(world.get::<Left>(entity).unwrap().0, 10);
+
+    world.insert_base(entity, Left(20));
+    assert!(!world.derived_owners.contains_key(&first));
+    world.remove_derived_owned(&first);
+    assert_eq!(world.get::<Left>(entity).unwrap().0, 20);
+
+    world.insert_derived(entity, Left(30), first.clone());
+    world.insert_derived(entity, Left(40), second.clone());
+    assert!(!world.derived_owners.contains_key(&first));
+    world.remove_derived_owned(&first);
+    assert_eq!(world.get::<Left>(entity).unwrap().0, 40);
+    world.remove_derived_owned(&second);
+    assert!(world.get::<Left>(entity).is_none());
+    assert_eq!(snapshot.get::<Left>(entity).unwrap().0, 10);
 }

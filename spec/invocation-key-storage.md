@@ -69,3 +69,25 @@ changing invocation identity or adding unsafe layout tricks.
 Test base-over-derived replacement, wrong-owner retraction, deferred DerivedFrom
 capture, and snapshot retention. Measure entry layout and live/peak memory against
 O2a; do not claim an allocator-count improvement if only footprint changes.
+
+## O2b result: keep stored ownership simplification
+
+Removed the redundant Origin flag from entries and deferred DerivedFrom inserts.
+An optional invocation owner now represents the ownership distinction directly.
+The entry size falls **80→72 bytes** on the measured 64-bit host. Base replacement,
+wrong-owner retraction and retained-snapshot regression coverage passes, along
+with all 163 engine tests, workspace build and playground.
+
+Matched eight-worker lifetime runs at 1,000 slots retain
+5,042,340–5,042,844→4,939,292–4,939,796 bytes (103,048 fewer, about 2.04%). At 2,000
+slots the measured range is 10,064,364→9,858,796–9,859,300. Peaks fall about 2–3%.
+Both sizes retain stable plateaus. This recovers the O2a optional-owner footprint
+penalty and saves a little more; these are requested heap bytes, not process RSS.
+
+Allocation counts remain **65,857 alloc + 2,124 realloc per 1,000-request
+iteration**. Eight-worker time 31.76→32.13 µs/request has overlapping process
+ranges, as does the one-worker comparison. Keep for simpler ownership and lower
+memory; no throughput or allocation-count win is claimed. All four optimized
+smokes and eight idle/read allocation budgets pass.
+
+[Measured results and provenance](benchmarks/2026-10-23-owner-metadata.json).

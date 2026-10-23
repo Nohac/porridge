@@ -56,7 +56,7 @@ The whole model hangs on a few types; understanding their interaction requires r
 - `World` stores schema components in dense slots sharing the presence-bit registry, with a `TypeId` map fallback for undeclared/internal types (`world/stores.rs`). Each `Store<T>` retains its `BTreeMap<Entity, ComponentEntry<T>>`; there are no archetypes.
 - Component values live in shared **guarded cells** (`Arc<ComponentCell<T>>` — a hand-rolled readers/writer lock over `UnsafeCell`). A `Snapshot` is just a structural `World::clone()`: it clones the maps and `Arc`s, not the user data. Live mutation write-locks the cell while snapshots hold read guards.
 - Every tracked write bumps a global `Revision` and stamps the entry. If a component has a `fingerprint()` (via `#[component(hash)]`) and the fingerprint is unchanged, the old revision is kept — this is the change-detection cutoff.
-- Components have `Origin::Base` (caller-inserted) or `Origin::Derived` with an `owner: SystemInvocation`. Rerunning an invocation first calls `remove_derived_owned(owner)` and then applies its new commands — outputs are *replaced*, not diffed.
+- Components have an optional `owner: SystemInvocation`: `None` for caller-inserted inputs, `Some(owner)` for derived outputs. Reruns apply commands over previous outputs, preserving equal fingerprints, then remove stale leftovers; full invocation retraction uses `remove_derived_owned(owner)`.
 
 ### Queries and system params (`query.rs`, `system.rs`)
 

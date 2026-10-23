@@ -44,19 +44,12 @@ pub(crate) type InvocationKeys = smallvec::SmallVec<[Entity; 2]>;
 /// ```
 ///
 /// Derived outputs written by an invocation are owned by this value. On rerun,
-/// the runner removes old outputs for the owner before applying new commands.
+/// commands replace outputs and the runner removes leftovers no longer emitted.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[doc(hidden)]
 pub struct SystemInvocation {
     pub(crate) system: SystemId,
     pub(crate) keys: InvocationKeys,
-}
-
-/// Whether a component was inserted by a caller or derived by a system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Origin {
-    Base,
-    Derived,
 }
 
 /// Stored component value plus tracking metadata.
@@ -68,7 +61,7 @@ struct ComponentEntry<T> {
     value: Arc<ComponentCell<T>>,
     revision: Revision,
     fingerprint: Option<u64>,
-    origin: Origin,
+    // None is caller-owned input; Some identifies the deriving invocation.
     owner: Option<SystemInvocation>,
 }
 
@@ -78,7 +71,6 @@ impl<T> Clone for ComponentEntry<T> {
             value: Arc::clone(&self.value),
             revision: self.revision,
             fingerprint: self.fingerprint,
-            origin: self.origin,
             owner: self.owner.clone(),
         }
     }
@@ -554,7 +546,7 @@ impl<T: Component> StoreDyn for Store<T> {
 
     fn remove_entry_owned(&mut self, entity: Entity, owner: &SystemInvocation) -> Option<bool> {
         let entry = self.entries.get(&entity)?;
-        if entry.origin != Origin::Derived || entry.owner.as_ref() != Some(owner) {
+        if entry.owner.as_ref() != Some(owner) {
             return None;
         }
 
@@ -647,7 +639,7 @@ pub struct World {
     /// command-application order makes a derived fact stale on arrival
     /// whenever a *later* command in the same buffer writes to its anchor
     /// entity — and cleanup then silently reaps it.
-    pending_derived_from: Vec<(Entity, DerivedFrom, Origin, Option<SystemInvocation>)>,
+    pending_derived_from: Vec<(Entity, DerivedFrom, Option<SystemInvocation>)>,
     /// True while `flush_derived_from` re-enters `insert`, so the deferral
     /// branch steps aside and the anchors capture for real.
     flushing_anchors: bool,
@@ -1031,8 +1023,8 @@ impl World {
         }
         let pending = std::mem::take(&mut self.pending_derived_from);
         self.flushing_anchors = true;
-        for (entity, value, origin, owner) in pending {
-            self.insert(entity, value, origin, owner);
+        for (entity, value, owner) in pending {
+            self.insert(entity, value, owner);
         }
         self.flushing_anchors = false;
     }
@@ -1131,7 +1123,7 @@ impl World {
 
     /// Inserts a base input component.
     pub(crate) fn insert_base<T: Component>(&mut self, entity: Entity, value: T) {
-        self.insert(entity, value, Origin::Base, None);
+        self.insert(entity, value, None);
     }
 
     /// Inserts a system-derived component owned by `owner`.
@@ -1141,7 +1133,7 @@ impl World {
         value: T,
         owner: SystemInvocation,
     ) {
-        self.insert(entity, value, Origin::Derived, Some(owner));
+        self.insert(entity, value, Some(owner));
     }
 
     /// Inserts a component and updates revision metadata.
@@ -1153,7 +1145,6 @@ impl World {
         &mut self,
         entity: Entity,
         mut value: T,
-        origin: Origin,
         owner: Option<SystemInvocation>,
     ) {
         if let Some(derived_from) = (&mut value as &mut dyn Any).downcast_mut::<DerivedFrom>() {
@@ -1165,7 +1156,7 @@ impl World {
             if !self.flushing_anchors {
                 let deferred = std::mem::replace(derived_from, DerivedFrom::many([]));
                 self.pending_derived_from
-                    .push((entity, deferred, origin, owner));
+                    .push((entity, deferred, owner));
                 return;
             }
             derived_from.capture(|entity| self.entity_revision(entity));
@@ -1225,7 +1216,7 @@ impl World {
             self.mutations += 1;
         }
 
-        if cfg!(debug_assertions) && origin == Origin::Derived {
+        if cfg!(debug_assertions) && owner.is_some() {
             self.written_derived
                 .push((TypeId::of::<T>(), entity, std::any::type_name::<T>()));
         }
@@ -1241,7 +1232,6 @@ impl World {
                 value: Arc::new(ComponentCell::new(value)),
                 revision,
                 fingerprint,
-                origin,
                 owner,
             },
         );
@@ -1265,13 +1255,11 @@ impl World {
                 self.unindex_derived(&previous_owner, type_id, entity);
             }
         }
-        if origin == Origin::Derived {
-            if let Some(new_owner) = new_owner {
-                self.derived_owners
-                    .entry(new_owner)
-                    .or_default()
-                    .insert((type_id, entity));
-            }
+        if let Some(new_owner) = new_owner {
+            self.derived_owners
+                .entry(new_owner)
+                .or_default()
+                .insert((type_id, entity));
         }
 
         // Relationship maintenance: keep the target's inverse current. An
@@ -1405,9 +1393,8 @@ impl World {
 
     /// Removes every derived component currently owned by `owner`.
     ///
-    /// This is what makes system outputs replaceable: rerunning the same
-    /// invocation clears its previous facts before applying the new command
-    /// buffer.
+    /// Used when retracting an invocation entirely. Ordinary reruns apply new
+    /// commands first and remove only outputs that were not re-emitted.
     pub(crate) fn remove_derived_owned(&mut self, owner: &SystemInvocation) {
         self.derived_spawns
             .lock()

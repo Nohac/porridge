@@ -512,7 +512,7 @@ with a blocking public API.
 | Baseline | Complete | `35247bc`; command + planning arena integration |
 | O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
 | O1 | Measured slices kept | [O1a/O1b](join-candidate-storage.md): 156,815 → 100,857 alloc/iteration; cross-pass layouts deferred to shared O5 registry, remaining row work tracked |
-| O2 | In progress | [Inline keys kept](invocation-key-storage.md): 65,857 alloc/iteration; ownership layout, guards, output/memo buffers remain |
+| O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 65,857 alloc/iteration; [guard reuse next](guard-buffer-reuse.md), output/memo buffers remain |
 | O3 | Planned | Producers/publication/cleanup |
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |

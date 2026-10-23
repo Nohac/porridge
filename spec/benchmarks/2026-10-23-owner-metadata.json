@@ -1,0 +1,280 @@
+{
+  "date": "2026-10-23",
+  "report": {
+    "recommendation": "keep for retained/peak memory reduction; no allocation count or throughput win claim",
+    "provenance": {
+      "baseline": "../inline-keys-candidate/manifest.json",
+      "candidate": "../owner-metadata-candidate/manifest.json",
+      "matching_Cargo_features": true,
+      "all_binary_hashes_verified": true,
+      "entry_bytes_before": 80,
+      "entry_bytes_after": 72
+    },
+    "checks": {
+      "root_engine_tests": 163,
+      "optimized_smokes": [
+        "engine",
+        "stateful",
+        "dispatch",
+        "command_buffers"
+      ],
+      "allocation_budget_failures": []
+    },
+    "purchases": [
+      {
+        "workers": 1,
+        "slots": 1,
+        "before": {
+          "alloc_median": 557.0,
+          "alloc_range": [
+            557,
+            651
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            45
+          ],
+          "timing_median_us": 62.5675,
+          "process_medians_us": [
+            63.0535,
+            62.477000000000004,
+            62.1565
+          ],
+          "round_timing_range_us": [
+            59.401,
+            74.35
+          ]
+        },
+        "after": {
+          "alloc_median": 557.0,
+          "alloc_range": [
+            557,
+            651
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            45
+          ],
+          "timing_median_us": 62.147,
+          "process_medians_us": [
+            63.3685,
+            67.2415,
+            60.8995
+          ],
+          "round_timing_range_us": [
+            59.963,
+            90.67
+          ]
+        }
+      },
+      {
+        "workers": 1,
+        "slots": 1000,
+        "before": {
+          "alloc_median": 74002.5,
+          "alloc_range": [
+            68059,
+            112744
+          ],
+          "realloc_median": 2487.5,
+          "realloc_range": [
+            2237,
+            3697
+          ],
+          "timing_median_us": 22.6269415,
+          "process_medians_us": [
+            25.150971,
+            21.828327,
+            24.051652
+          ],
+          "round_timing_range_us": [
+            20.601267,
+            30.077762999999997
+          ]
+        },
+        "after": {
+          "alloc_median": 72948.0,
+          "alloc_range": [
+            70381,
+            116939
+          ],
+          "realloc_median": 2453.5,
+          "realloc_range": [
+            2347,
+            3956
+          ],
+          "timing_median_us": 22.4879605,
+          "process_medians_us": [
+            23.689266,
+            21.65994,
+            22.048069
+          ],
+          "round_timing_range_us": [
+            19.881806,
+            28.177063999999998
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1,
+        "before": {
+          "alloc_median": 557.0,
+          "alloc_range": [
+            557,
+            651
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            45
+          ],
+          "timing_median_us": 112.81200000000001,
+          "process_medians_us": [
+            114.1745,
+            101.8565,
+            117.876
+          ],
+          "round_timing_range_us": [
+            92.974,
+            134.773
+          ]
+        },
+        "after": {
+          "alloc_median": 557.0,
+          "alloc_range": [
+            557,
+            652
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            46
+          ],
+          "timing_median_us": 107.36699999999999,
+          "process_medians_us": [
+            107.517,
+            98.2745,
+            113.23750000000001
+          ],
+          "round_timing_range_us": [
+            56.286,
+            317.206
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1000,
+        "before": {
+          "alloc_median": 65857.0,
+          "alloc_range": [
+            65856,
+            65857
+          ],
+          "realloc_median": 2124.0,
+          "realloc_range": [
+            2124,
+            2124
+          ],
+          "timing_median_us": 31.756064000000002,
+          "process_medians_us": [
+            30.9128405,
+            32.236110499999995,
+            32.597184
+          ],
+          "round_timing_range_us": [
+            28.64389,
+            36.795055999999995
+          ]
+        },
+        "after": {
+          "alloc_median": 65857.0,
+          "alloc_range": [
+            65852,
+            68487
+          ],
+          "realloc_median": 2124.0,
+          "realloc_range": [
+            2124,
+            2345
+          ],
+          "timing_median_us": 32.1325865,
+          "process_medians_us": [
+            30.669033,
+            32.068191,
+            33.287620000000004
+          ],
+          "round_timing_range_us": [
+            27.370769,
+            41.397269
+          ]
+        }
+      }
+    ],
+    "memory": {
+      "baseline": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            5042340,
+            5042844
+          ],
+          "first_last": [
+            5042340,
+            5042340
+          ],
+          "peak_bytes": 9794248
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            10064364,
+            10064364
+          ],
+          "first_last": [
+            10064364,
+            10064364
+          ],
+          "peak_bytes": 19403080
+        }
+      },
+      "candidate": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            4939292,
+            4939796
+          ],
+          "first_last": [
+            4939292,
+            4939292
+          ],
+          "peak_bytes": 9503200
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            9858796,
+            9859300
+          ],
+          "first_last": [
+            9859300,
+            9858796
+          ],
+          "peak_bytes": 18966944
+        }
+      }
+    },
+    "limits": [
+      "Three alternating timing/counting process repetitions, overlapping ranges; no important timing regression established.",
+      "Single matched lifetime/growth run per binary with twelve warmup and twelve steady iterations at each population.",
+      "Lifetime runs observe total retained/peak heap; no DHAT throughput inference.",
+      "Allocation medians unchanged in stable eight-worker cases; one-worker variability reflects scheduling.",
+      "No broad compiler suite needed for metadata-only change given flat purchase results."
+    ]
+  },
+  "artifact_root": "target/optimization-o2/owner-metadata-assessment"
+}
