@@ -1,4 +1,7 @@
 //! Isolate worker dispatch using the production executor, without a Bowl.
+// The shared executor also exposes the synchronous engine path, which this
+// existing async microbenchmark does not exercise.
+#[allow(dead_code)]
 #[path = "../../bowl/src/dispatch/executor.rs"]
 mod executor;
 

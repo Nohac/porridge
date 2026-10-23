@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Porridge is an ECS-inspired **incremental evaluation** prototype for compilers, language tools, and other stateful non-game systems. Facts are components on entities, systems are async functions that derive more facts, and callers query settled results. It is a prototype: the API is still being shaped, and the playground is the main documentation alongside `README.md`, `TODO.md` (roadmap), and `spec/` (design docs — `formal-semantics.md`, `streaming-evaluation.md`, `access-scheduling.md`, etc.).
+Porridge is an ECS-inspired **incremental evaluation** prototype for compilers, language tools, and other stateful non-game systems. Facts are components on entities, systems are async or explicitly synchronous functions that derive more facts, and callers query settled results. It is a prototype: the API is still being shaped, and the playground is the main documentation alongside `README.md`, `TODO.md` (roadmap), and `spec/` (design docs — `formal-semantics.md`, `streaming-evaluation.md`, `access-scheduling.md`, etc.).
 
 ## Change workflow
 
@@ -67,6 +67,14 @@ The whole model hangs on a few types; understanding their interaction requires r
 - `View<T>` is the **ambient** counterpart: same snapshot, but contributes *no* memo deps — a system reruns only when its driving `Query` row changes, even if viewed data changed. This is deliberate (TODO §10) and the duplicate-defs checker relies on it.
 - `Commands<S>` buffers writes under a declared output set; they apply only at commit, owned by the emitting invocation. `MutRef<'_, T>` in a system query is a scheduler-visible write edge yielding an in-place `&mut T` (write guard held for the invocation; revision bookkeeping at commit, which also absorbs the row's own write into the memo so systems don't invalidate themselves). `Mut<T>` is external-only (scoop results with `with_original`/`with_latest`). Tuple system params form the cartesian product of their state sets.
 - External reads go through `bowl.scoop::<Query<...>>()` (settles first, then materializes from a snapshot), with runtime-argument filters (`Where<Eq<T>>` etc. via `.args(...)`, `Named<Tag, _>` + `.args_for::<Tag>` for per-query args). `Cow<T>` + `for_each` is the clone-on-write external mutation path; `Bowl::insert(...).bind().take::<T>()` is the destructive request/response path (`BoundEntity`).
+
+### Kernel execution
+
+- `sync_kernel(f)` registers a plain function with existing system parameters.
+  Ordinary worker plans execute direct call batches; async functions retain their
+  future executor. Registration, planning, admission, guards and publication are
+  shared. Grouped hooks, Settle and no-runtime sync fallback currently use the
+  existing adapters. See `spec/synchronous-kernel-experiment.md`.
 
 ### Evaluation (`bowl.rs`)
 

@@ -60,6 +60,8 @@ impl PerfControl {
 }
 
 fn main() -> std::io::Result<()> {
+    let mode = env::var("PROFILE_KERNELS").unwrap_or_else(|_| "async".into())
+        .parse::<purchases::KernelMode>().expect("PROFILE_KERNELS");
     let workers = number("PROFILE_WORKERS", 8, true);
     let workload = env::var("PROFILE_WORKLOAD").unwrap_or_else(|_| "purchases".into());
     assert!(matches!(
@@ -76,7 +78,7 @@ fn main() -> std::io::Result<()> {
     let width = number("PROFILE_DISPATCH_BATCH", 16, true);
     let mut control = PerfControl::open()?;
     println!(
-        "config\tworkers={workers}\trequests={requests}\tper_owner={per_owner}\twork={work}\trounds={rounds}\twarmup={warmup}\tbatch={width}\tworkload={workload}\tmetrics={diagnostics}\tsampled={}",
+        "config\tworkers={workers}\trequests={requests}\tper_owner={per_owner}\twork={work}\trounds={rounds}\twarmup={warmup}\tbatch={width}\tworkload={workload}\tkernels={mode:?}\tmetrics={diagnostics}\tsampled={}",
         control.is_some()
     );
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -100,7 +102,7 @@ fn main() -> std::io::Result<()> {
                 (bowl, Some(target))
             } else {
                 (
-                    purchases::create(requests.div_ceil(per_owner), u64::MAX, u64::MAX).await,
+                    purchases::create_with_mode(requests.div_ceil(per_owner), u64::MAX, u64::MAX, mode).await,
                     None,
                 )
             };

@@ -1,5 +1,5 @@
 //! Independent validation artifacts followed by one guarded state update.
-use bowl::{Bowl, Commands, CommitLimit, Component, Entity, Eq, MutRef, Not, Query, Schema, Where};
+use bowl::{Bowl, Commands, CommitLimit, Component, Entity, Eq, MutRef, Not, Query, Schema, Where, sync_kernel};
 
 #[derive(Component, Hash)]
 #[component(hash)]
@@ -60,13 +60,31 @@ fn compute(work: u32) {
     std::hint::black_box(value);
 }
 
-async fn validate_wallet(
-    requests: Query<(
-        Entity<purchase_schema::Request>,
-        &Owner,
-        &Purchase,
-        &Outcome,
-    )>,
+type ValidationRequests<'a> = Query<(Entity<purchase_schema::Request>, &'a Owner, &'a Purchase, &'a Outcome)>;
+type ApplyRequests<'a> = Query<(Entity, &'a Owner, &'a Purchase, &'a Debit, &'a Grant, MutRef<'a, Outcome>)>;
+type ApplyAccounts<'a> = Query<(Entity, MutRef<'a, Wallet>, MutRef<'a, Inventory>, MutRef<'a, Sequence>), Where<Eq<Owner>>>;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KernelMode {
+    #[default]
+    Async,
+    Sync,
+}
+
+impl std::str::FromStr for KernelMode {
+    type Err = &'static str;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name {
+            "async" => Ok(Self::Async),
+            "sync" => Ok(Self::Sync),
+            _ => Err("kernel mode must be async or sync"),
+        }
+    }
+}
+
+fn validate_wallet(
+    requests: ValidationRequests<'_>,
     wallets: Query<&Wallet, Where<Eq<Owner>>>,
     mut commands: Commands<(purchase_schema::Request,)>,
 ) {
@@ -83,13 +101,8 @@ async fn validate_wallet(
     });
 }
 
-async fn validate_inventory(
-    requests: Query<(
-        Entity<purchase_schema::Request>,
-        &Owner,
-        &Purchase,
-        &Outcome,
-    )>,
+fn validate_inventory(
+    requests: ValidationRequests<'_>,
     inventories: Query<&Inventory, Where<Eq<Owner>>>,
     mut commands: Commands<(purchase_schema::Request,)>,
 ) {
@@ -109,29 +122,7 @@ async fn validate_inventory(
     });
 }
 
-#[expect(
-    clippy::type_complexity,
-    reason = "keep the complete guarded update boundary visible"
-)]
-async fn apply(
-    requests: Query<(
-        Entity,
-        &Owner,
-        &Purchase,
-        &Debit,
-        &Grant,
-        MutRef<'_, Outcome>,
-    )>,
-    accounts: Query<
-        (
-            Entity,
-            MutRef<'_, Wallet>,
-            MutRef<'_, Inventory>,
-            MutRef<'_, Sequence>,
-        ),
-        Where<Eq<Owner>>,
-    >,
-) {
+fn apply(requests: ApplyRequests<'_>, accounts: ApplyAccounts<'_>) {
     let (_, _, purchase, debit, grant, mut outcome) = requests.item();
     let (_, mut wallet, mut inventory, mut sequence) = accounts.item();
     if outcome.0.is_some() {
@@ -161,14 +152,32 @@ async fn apply(
     outcome.0 = Some(accepted);
 }
 
+// Both execution modes run exactly the same purchase bodies.
+async fn validate_wallet_async(requests: ValidationRequests<'_>, wallets: Query<&Wallet, Where<Eq<Owner>>>, commands: Commands<(purchase_schema::Request,)>) {
+    validate_wallet(requests, wallets, commands);
+}
+
+async fn validate_inventory_async(requests: ValidationRequests<'_>, inventories: Query<&Inventory, Where<Eq<Owner>>>, commands: Commands<(purchase_schema::Request,)>) {
+    validate_inventory(requests, inventories, commands);
+}
+
+async fn apply_async(requests: ApplyRequests<'_>, accounts: ApplyAccounts<'_>) {
+    apply(requests, accounts);
+}
+
 /// Settled persistent accounts, with no request artifacts yet.
 pub async fn create(owners: usize, balance: u64, capacity: u64) -> Bowl {
-    let bowl = Bowl::builder()
-        .schema::<PurchaseSchema>()
-        .system(validate_wallet)
-        .system(validate_inventory)
-        .system(apply)
-        .build();
+    create_with_mode(owners, balance, capacity, KernelMode::Async).await
+}
+
+pub async fn create_with_mode(owners: usize, balance: u64, capacity: u64, mode: KernelMode) -> Bowl {
+    let builder = Bowl::builder().schema::<PurchaseSchema>();
+    let bowl = match mode {
+        KernelMode::Async => builder
+            .system(validate_wallet_async).system(validate_inventory_async).system(apply_async),
+        KernelMode::Sync => builder
+            .system(sync_kernel(validate_wallet)).system(sync_kernel(validate_inventory)).system(sync_kernel(apply)),
+    }.build();
     // Workload sizes must not silently trip the engine's application guardrail.
     bowl.set_commit_limit(CommitLimit::None);
     for owner in 0..owners {

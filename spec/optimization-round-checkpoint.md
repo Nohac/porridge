@@ -68,3 +68,10 @@ untracked .claude/ and CHANGELOG.md were left untouched.
 
 [Campaign roadmap](optimization-roadmap.md) ·
 [Final batch-future comparison](benchmarks/2026-10-24-batch-futures.json)
+
+## Focused follow-up
+
+After this checkpoint, the requested [sync/async kernel experiment](synchronous-kernel-experiment.md)
+was implemented and measured. Both modes are supported; removing per-row kernel
+futures yielded only modest/noisy throughput changes, with lower requested byte
+traffic. The rest of the campaign was not resumed.

@@ -1,3 +1,6 @@
+mod synchronous;
+pub use synchronous::{Synchronous, sync_kernel};
+
 use std::{any::TypeId, collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
 
 use async_fn_traits::{
@@ -2564,7 +2567,25 @@ pub async fn cleanup_stale_derived(
     }
 }
 
-struct FunctionSystem<F, Marker> {
+fn prepare_invocations<P: SystemParam>(
+    id: SystemId, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>,
+    hint: Option<&[Entity]>, prepared: &impl PreparedParam<P>,
+    buffers: Option<&mut PlanningStorage>,
+) -> PlannedRun<P::State> {
+    if let Some(buffers) = buffers {
+        let mut planned = plan_prepared_with_scratch::<P>(
+            id, snapshot, memo, hint, prepared, &mut buffers.scratch,
+        );
+        for invocation in &mut planned.invocations {
+            invocation.commands = buffers.commands.take();
+        }
+        planned
+    } else {
+        plan_prepared::<P>(id, snapshot, memo, hint, prepared)
+    }
+}
+
+pub(crate) struct FunctionSystem<F, Marker> {
     id: SystemId,
     /// Behind `Arc` so planned run futures own their callee and stay
     /// `'static` (spawnable).
@@ -2591,17 +2612,9 @@ where
     + 'static {
         let function = Arc::clone(&self.function);
         let prepared = F::Param::prepare(&snapshot);
-        let planned = if let Some(buffers) = buffers {
-            let mut planned = plan_prepared_with_scratch::<F::Param>(
-                self.id, &snapshot, memo, hint, &prepared, &mut buffers.scratch,
-            );
-            for invocation in &mut planned.invocations {
-                invocation.commands = buffers.commands.take();
-            }
-            planned
-        } else {
-            plan_prepared::<F::Param>(self.id, &snapshot, memo, hint, &prepared)
-        };
+        let planned = prepare_invocations::<F::Param>(
+            self.id, &snapshot, memo, hint, &prepared, buffers,
+        );
         // Immutable plan context needs one shared handle per row. Keep the
         // Bowl and callee here too, avoiding their per-row reference counts.
         let context = Arc::new((bowl, snapshot, prepared, function));
@@ -2747,13 +2760,27 @@ where
         hint: Option<&[Entity]>,
         buffers: &mut PlanningStorage,
     ) -> Box<dyn crate::dispatch::RunPlan> {
-        crate::dispatch::prepare(self.plan_rows(bowl, snapshot, memo, hint, Some(buffers)))
+        F::plan_execution(self, bowl, snapshot, memo, hint, buffers)
     }
 
 }
 
 pub(crate) trait SystemParamFunction<Marker>: Send + Sync + 'static {
     type Param: SystemParam;
+
+    fn plan_execution(
+        system: &FunctionSystem<Self, Marker>, bowl: Bowl, snapshot: Arc<Snapshot>,
+        memo: &HashMap<SystemInvocation, MemoEntry>, hint: Option<&[Entity]>,
+        buffers: &mut PlanningStorage,
+    ) -> Box<dyn crate::dispatch::RunPlan>
+    where Self: Sized, Marker: Send + Sync + 'static, Self::Param: Send + Sync + 'static,
+    {
+        crate::dispatch::prepare(system.plan_rows(bowl, snapshot, memo, hint, Some(buffers)))
+    }
+
+    fn run_sync<'a>(&'a self, _params: <Self::Param as SystemParam>::Item<'a>) {
+        unreachable!("asynchronous kernel dispatched as a synchronous call");
+    }
 
     // FunctionSystem is generic over the callee: keep its future concrete until
     // the outer invocation crosses the heterogeneous Runnable boundary.

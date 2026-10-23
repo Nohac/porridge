@@ -93,6 +93,7 @@ def main():
     parser.add_argument("--binary", type=Path, default=Path("target/release/examples/profile_purchases"))
     candidates = sorted(Path("/nix/store").glob("*-perf-linux-*/bin/perf")) if Path("/nix/store").exists() else []
     parser.add_argument("--perf", type=Path, default=shutil.which("perf") or (candidates[-1] if candidates else None))
+    parser.add_argument("--kernels", choices=("async", "sync"), default="async")
     parser.add_argument("--out", type=Path, default=Path("target/hardware-profile") / time.strftime("%Y%m%d-%H%M%S"))
     parser.add_argument("--cases", default="independent-1,independent-8,contended-8,sparse-8,control")
     parser.add_argument("--modes", default="counters,diagnostics,sample")
@@ -139,7 +140,7 @@ def main():
         directory = root / f"{case}-{mode}-{group or 'none'}-{repeat}"
         directory.mkdir()
         ready, control, ack = [directory / name for name in ["ready", "control", "ack"]]
-        settings = {"PROFILE_WORKLOAD": workload, "PROFILE_WORKERS": str(count), "PROFILE_REQUESTS": str(requests),
+        settings = {"PROFILE_KERNELS": args.kernels, "PROFILE_WORKLOAD": workload, "PROFILE_WORKERS": str(count), "PROFILE_REQUESTS": str(requests),
                     "PROFILE_PER_OWNER": str(owners), "PROFILE_WORK": str(work), "PROFILE_ROWS": "1000",
                     "PROFILE_ROUNDS": str(args.rounds), "PROFILE_WARMUP": str(args.warmup),
                     "PROFILE_DISPATCH_BATCH": "16", "PROFILE_READY": str(ready), "PROFILE_METRICS": str(int(mode == "diagnostics"))}

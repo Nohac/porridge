@@ -1,0 +1,1563 @@
+{
+  "date": "2026-10-24",
+  "decision": "keep optional direct synchronous kernels alongside async; modest/noisy end-to-end benefit and substantially lower byte traffic",
+  "comparison": "same binary; before=async, after=sync; default purchase mode remains async",
+  "post_measurement_changes": "Tokio-specific test cfg gates and documentation only; production and fixture code unchanged",
+  "report": {
+    "recommendation": "keep genuine native sync path alongside async: completed work matches, row polling eliminated for sync kernels, large requested-byte reduction, modest favorable timing with overlapping process ranges",
+    "provenance": {
+      "candidate": "../native-sync-candidate/manifest.json",
+      "prior_async_control": "../../optimization-o7/batch-futures-candidate/manifest.json",
+      "primary_same_binary_sha256": "cc2f0bc774cad197a6b030de88f79a3e1740e7517bc6752b35a9848a80506846",
+      "before_mode": "async",
+      "after_mode": "sync",
+      "features_and_Cargo_match_prior_control": true,
+      "source_and_frozen_binary_hashes_verified": true
+    },
+    "checks": {
+      "root_engine_tests": 174,
+      "optimized_smokes": [
+        "engine",
+        "stateful",
+        "dispatch",
+        "command_buffers"
+      ],
+      "budgets": {
+        "async": [],
+        "sync": []
+      },
+      "counted_work_per_round": "5000 started/completed rows, async=5000 row polls and 0 sync calls, sync=0 row polls and 5000 sync calls; zero stale publications in all measured count rounds"
+    },
+    "scaling": [
+      {
+        "workers": 1,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 49042.0,
+              "range": [
+                43935,
+                83589
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 21041175.0,
+              "range": [
+                18593911,
+                39181639
+              ]
+            },
+            "dealloc_calls": {
+              "median": 49006.5,
+              "range": [
+                43990,
+                83607
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 27955295.0,
+              "range": [
+                25373175,
+                45984503
+              ]
+            },
+            "realloc_calls": {
+              "median": 1520.0,
+              "range": [
+                1309,
+                2829
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6715696.0,
+              "range": [
+                6383584,
+                7052264
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 13538636.0,
+              "range": [
+                12872736,
+                14215888
+              ]
+            },
+            "allocation_events": {
+              "median": 50521.5,
+              "range": [
+                45314,
+                86418
+              ]
+            }
+          },
+          "timing_median_us": 25.6966,
+          "process_medians_us": [
+            25.688544999999998,
+            24.575098500000003,
+            28.025519
+          ],
+          "round_range_us": [
+            21.929996,
+            34.739753
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 1179,
+            "candidate_rows": 338658,
+            "memo_hits": 169329,
+            "dependency_records": 1933290,
+            "access_records": 966645,
+            "admission_ns": 111538737,
+            "admission_candidates": 169329,
+            "already_running": 19329,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 10255,
+            "enqueue_to_first_poll_ns": 69371530442,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 247393335,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 199329,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 48759.0,
+              "range": [
+                41585,
+                102850
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 15674599.0,
+              "range": [
+                12103759,
+                42786879
+              ]
+            },
+            "dealloc_calls": {
+              "median": 48739.0,
+              "range": [
+                41544,
+                102887
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 19472679.0,
+              "range": [
+                15529767,
+                46717007
+              ]
+            },
+            "realloc_calls": {
+              "median": 1348.5,
+              "range": [
+                1113,
+                3432
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 3706040.0,
+              "range": [
+                3297304,
+                3890432
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 7519768.0,
+              "range": [
+                6688672,
+                7909984
+              ]
+            },
+            "allocation_events": {
+              "median": 50068.5,
+              "range": [
+                42698,
+                106282
+              ]
+            }
+          },
+          "timing_median_us": 24.629831499999998,
+          "process_medians_us": [
+            24.6830615,
+            24.394119,
+            24.3713155
+          ],
+          "round_range_us": [
+            21.176301,
+            33.702697
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 1410,
+            "candidate_rows": 340440,
+            "memo_hits": 170221,
+            "dependency_records": 1942208,
+            "access_records": 971095,
+            "admission_ns": 104885411,
+            "admission_candidates": 170219,
+            "already_running": 20219,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 10443,
+            "enqueue_to_first_poll_ns": 70546897387,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 245328753,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 200219,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        }
+      },
+      {
+        "workers": 4,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 43120.5,
+              "range": [
+                40226,
+                52520
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 18343439.0,
+              "range": [
+                17508959,
+                23034315
+              ]
+            },
+            "dealloc_calls": {
+              "median": 43131.0,
+              "range": [
+                40162,
+                52566
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 24665023.0,
+              "range": [
+                23566479,
+                29682571
+              ]
+            },
+            "realloc_calls": {
+              "median": 1229.0,
+              "range": [
+                1124,
+                1516
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5976180.0,
+              "range": [
+                5963016,
+                6526632
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12045616.0,
+              "range": [
+                12019616,
+                13151992
+              ]
+            },
+            "allocation_events": {
+              "median": 44323.5,
+              "range": [
+                41350,
+                54036
+              ]
+            }
+          },
+          "timing_median_us": 25.8635585,
+          "process_medians_us": [
+            26.400547,
+            25.492807,
+            25.886356
+          ],
+          "round_range_us": [
+            23.205873,
+            28.670936
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 663,
+            "candidate_rows": 301768,
+            "memo_hits": 150885,
+            "dependency_records": 1748856,
+            "access_records": 874419,
+            "admission_ns": 141542565,
+            "admission_candidates": 150883,
+            "already_running": 883,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9916,
+            "enqueue_to_first_poll_ns": 27394302442,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 269533059,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180883,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 42442.5,
+              "range": [
+                39592,
+                61441
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 12378099.0,
+              "range": [
+                11572855,
+                22848383
+              ]
+            },
+            "dealloc_calls": {
+              "median": 42464.5,
+              "range": [
+                39524,
+                61440
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 15653803.0,
+              "range": [
+                14627507,
+                26147751
+              ]
+            },
+            "realloc_calls": {
+              "median": 1119.0,
+              "range": [
+                998,
+                1757
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 2978828.0,
+              "range": [
+                2927760,
+                3512520
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 6051920.0,
+              "range": [
+                5950128,
+                7121016
+              ]
+            },
+            "allocation_events": {
+              "median": 43605.5,
+              "range": [
+                40590,
+                63177
+              ]
+            }
+          },
+          "timing_median_us": 24.800322,
+          "process_medians_us": [
+            25.108220499999998,
+            24.638447499999998,
+            23.827575000000003
+          ],
+          "round_range_us": [
+            21.785173999999998,
+            35.036682
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 651,
+            "candidate_rows": 300997,
+            "memo_hits": 150499,
+            "dependency_records": 1744997,
+            "access_records": 872494,
+            "admission_ns": 129003858,
+            "admission_candidates": 150498,
+            "already_running": 498,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 10299,
+            "enqueue_to_first_poll_ns": 24808459679,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 259537166,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180498,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40210,
+                53020
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 17726155.0,
+              "range": [
+                17420899,
+                24153051
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40158,
+                53012
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 23792083.0,
+              "range": [
+                23511251,
+                30392387
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.5,
+              "range": [
+                1124,
+                1392
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5963920,
+                6603656
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                12022016,
+                13301120
+              ]
+            },
+            "allocation_events": {
+              "median": 41352.5,
+              "range": [
+                41335,
+                54412
+              ]
+            }
+          },
+          "timing_median_us": 29.2280625,
+          "process_medians_us": [
+            28.367782,
+            30.02792,
+            29.1691565
+          ],
+          "round_range_us": [
+            24.935841,
+            33.222584000000005
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 468,
+            "candidate_rows": 300255,
+            "memo_hits": 150127,
+            "dependency_records": 1741287,
+            "access_records": 870648,
+            "admission_ns": 193114310,
+            "admission_candidates": 150128,
+            "already_running": 128,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9702,
+            "enqueue_to_first_poll_ns": 28746102213,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 309172578,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180128,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 39597.0,
+              "range": [
+                39588,
+                47979
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 11864115.0,
+              "range": [
+                11862395,
+                15683007
+              ]
+            },
+            "dealloc_calls": {
+              "median": 39597.0,
+              "range": [
+                39516,
+                48043
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 14886483.0,
+              "range": [
+                14851291,
+                18824047
+              ]
+            },
+            "realloc_calls": {
+              "median": 1000.0,
+              "range": [
+                998,
+                1187
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 2927952.0,
+              "range": [
+                2927760,
+                3361808
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5950512.0,
+              "range": [
+                5950128,
+                6818032
+              ]
+            },
+            "allocation_events": {
+              "median": 40597.5,
+              "range": [
+                40586,
+                49158
+              ]
+            }
+          },
+          "timing_median_us": 28.7252735,
+          "process_medians_us": [
+            28.022243,
+            28.3101735,
+            29.649894500000002
+          ],
+          "round_range_us": [
+            24.186723999999998,
+            31.597322
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 465,
+            "candidate_rows": 302181,
+            "memo_hits": 151091,
+            "dependency_records": 1750909,
+            "access_records": 875450,
+            "admission_ns": 165817484,
+            "admission_candidates": 151090,
+            "already_running": 1090,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9856,
+            "enqueue_to_first_poll_ns": 22687957434,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 299443475,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 181090,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        }
+      },
+      {
+        "workers": 16,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40222,
+                78377
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 17726155.0,
+              "range": [
+                17725235,
+                38031131
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40159,
+                78423
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 23792083.0,
+              "range": [
+                23759323,
+                43852987
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.0,
+              "range": [
+                1124,
+                2030
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5710656,
+                6362160
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                11510640,
+                12841584
+              ]
+            },
+            "allocation_events": {
+              "median": 41352.0,
+              "range": [
+                41346,
+                80407
+              ]
+            }
+          },
+          "timing_median_us": 29.360541,
+          "process_medians_us": [
+            26.4650835,
+            29.889169000000003,
+            29.788525
+          ],
+          "round_range_us": [
+            24.206392,
+            39.890658
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 558,
+            "candidate_rows": 302602,
+            "memo_hits": 151302,
+            "dependency_records": 1753018,
+            "access_records": 876500,
+            "admission_ns": 192056612,
+            "admission_candidates": 151300,
+            "already_running": 1300,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 10665,
+            "enqueue_to_first_poll_ns": 29954767698,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 328373462,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 181300,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 39597.0,
+              "range": [
+                39596,
+                50005
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 11864115.0,
+              "range": [
+                11863611,
+                16810019
+              ]
+            },
+            "dealloc_calls": {
+              "median": 39597.0,
+              "range": [
+                39532,
+                50065
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 14886483.0,
+              "range": [
+                14853723,
+                20107235
+              ]
+            },
+            "realloc_calls": {
+              "median": 999.0,
+              "range": [
+                998,
+                1275
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 2927856.0,
+              "range": [
+                2927760,
+                3173128
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5950320.0,
+              "range": [
+                5950128,
+                6438984
+              ]
+            },
+            "allocation_events": {
+              "median": 40596.0,
+              "range": [
+                40594,
+                51280
+              ]
+            }
+          },
+          "timing_median_us": 28.4553815,
+          "process_medians_us": [
+            29.7405295,
+            28.2968185,
+            27.6788675
+          ],
+          "round_range_us": [
+            25.609687,
+            38.888195
+          ],
+          "diagnostic_totals": {
+            "plan_calls": 480,
+            "candidate_rows": 300265,
+            "memo_hits": 150133,
+            "dependency_records": 1741329,
+            "access_records": 870660,
+            "admission_ns": 170656823,
+            "admission_candidates": 150132,
+            "already_running": 132,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9993,
+            "enqueue_to_first_poll_ns": 27815711237,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 309393701,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180132,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          }
+        }
+      }
+    ],
+    "async_sanity": [
+      {
+        "workers": 1,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 46477.5,
+              "range": [
+                43688,
+                94536
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 19671685.0,
+              "range": [
+                18645207,
+                44816143
+              ]
+            },
+            "dealloc_calls": {
+              "median": 46479.0,
+              "range": [
+                43706,
+                94577
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 26388149.0,
+              "range": [
+                25128415,
+                51713055
+              ]
+            },
+            "realloc_calls": {
+              "median": 1447.0,
+              "range": [
+                1242,
+                2759
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6646188.0,
+              "range": [
+                6318384,
+                6973616
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 13396284.0,
+              "range": [
+                12733632,
+                14053576
+              ]
+            },
+            "allocation_events": {
+              "median": 47938.0,
+              "range": [
+                44930,
+                97295
+              ]
+            }
+          },
+          "timing_median_us": 23.724576499999998,
+          "process_medians_us": [
+            25.378186499999998,
+            22.792701,
+            22.9307655
+          ],
+          "round_range_us": [
+            21.731834,
+            32.674024
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 47093.5,
+              "range": [
+                42698,
+                92604
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 20043675.0,
+              "range": [
+                17972083,
+                43055867
+              ]
+            },
+            "dealloc_calls": {
+              "median": 47083.5,
+              "range": [
+                42704,
+                92617
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 26824043.0,
+              "range": [
+                24420591,
+                49616155
+              ]
+            },
+            "realloc_calls": {
+              "median": 1466.5,
+              "range": [
+                1295,
+                3659
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6704192.0,
+              "range": [
+                6358008,
+                6989304
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 13518540.0,
+              "range": [
+                12816192,
+                14086464
+              ]
+            },
+            "allocation_events": {
+              "median": 48510.5,
+              "range": [
+                43993,
+                96263
+              ]
+            }
+          },
+          "timing_median_us": 25.1834965,
+          "process_medians_us": [
+            28.4342565,
+            24.608201,
+            23.99783
+          ],
+          "round_range_us": [
+            22.208499,
+            32.172432
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40223,
+                61910
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 17726155.0,
+              "range": [
+                17725355,
+                28906103
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40155,
+                61966
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 23792083.0,
+              "range": [
+                23758227,
+                35206575
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.0,
+              "range": [
+                1124,
+                1750
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5971320,
+                6178120
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                12037248,
+                12447648
+              ]
+            },
+            "allocation_events": {
+              "median": 41351.0,
+              "range": [
+                41347,
+                63660
+              ]
+            }
+          },
+          "timing_median_us": 29.646303,
+          "process_medians_us": [
+            30.438846499999997,
+            28.456093000000003,
+            29.869688
+          ],
+          "round_range_us": [
+            25.586794,
+            40.492768
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40203,
+                58695
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 17726155.0,
+              "range": [
+                17723275,
+                26179639
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40149,
+                58749
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 23792083.0,
+              "range": [
+                23759827,
+                33347639
+              ]
+            },
+            "realloc_calls": {
+              "median": 1125.0,
+              "range": [
+                1124,
+                2168
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971416.0,
+              "range": [
+                5971320,
+                7040456
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037440.0,
+              "range": [
+                12037248,
+                14190456
+              ]
+            },
+            "allocation_events": {
+              "median": 41352.5,
+              "range": [
+                41328,
+                60639
+              ]
+            }
+          },
+          "timing_median_us": 28.5021395,
+          "process_medians_us": [
+            27.8967175,
+            29.816703500000003,
+            28.230153
+          ],
+          "round_range_us": [
+            24.659032,
+            33.858048000000004
+          ]
+        }
+      }
+    ],
+    "memory": {
+      "async": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            5563324,
+            5563828
+          ],
+          "first_last": [
+            5563828,
+            5563828
+          ],
+          "peak_bytes": 11122152
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            11106828,
+            11106828
+          ],
+          "first_last": [
+            11106828,
+            11106828
+          ],
+          "peak_bytes": 22027904
+        }
+      },
+      "sync": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            5563324,
+            5563828
+          ],
+          "first_last": [
+            5563828,
+            5563828
+          ],
+          "peak_bytes": 10975360
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            11106732,
+            11107236
+          ],
+          "first_last": [
+            11106732,
+            11106732
+          ],
+          "peak_bytes": 21884744
+        }
+      }
+    },
+    "profiles": {
+      "async": {
+        "events_per_request": 41.355,
+        "origins": [
+          {
+            "origin": "row construction/execution",
+            "calls": 11027,
+            "calls_per_request": 11.027,
+            "percent": 26.664248579373716
+          },
+          {
+            "origin": "planning: other",
+            "calls": 10428,
+            "calls_per_request": 10.428,
+            "percent": 25.215814290895903
+          },
+          {
+            "origin": "dispatch and completion",
+            "calls": 7876,
+            "calls_per_request": 7.876,
+            "percent": 19.044855519284248
+          },
+          {
+            "origin": "command application/storage",
+            "calls": 7579,
+            "calls_per_request": 7.579,
+            "percent": 18.326683593277718
+          },
+          {
+            "origin": "publication",
+            "calls": 2589,
+            "calls_per_request": 2.589,
+            "percent": 6.260428001450852
+          },
+          {
+            "origin": "unclassified",
+            "calls": 1802,
+            "calls_per_request": 1.802,
+            "percent": 4.357393301898199
+          },
+          {
+            "origin": "structural cloning",
+            "calls": 40,
+            "calls_per_request": 0.04,
+            "percent": 0.09672349171805102
+          },
+          {
+            "origin": "guard buffers",
+            "calls": 14,
+            "calls_per_request": 0.014,
+            "percent": 0.03385322210131786
+          }
+        ],
+        "metrics": {
+          "plan_calls": 12,
+          "candidate_rows": 10000,
+          "memo_hits": 5000,
+          "dependency_records": 58000,
+          "access_records": 29000,
+          "admission_ns": 93362345,
+          "admission_candidates": 5000,
+          "already_running": 0,
+          "conflict_deferrals": 0,
+          "admitted_rows": 5000,
+          "dispatch_batches": 315,
+          "enqueue_to_first_poll_ns": 8841781561,
+          "started_rows": 5000,
+          "completed_row_polls": 5000,
+          "completed_sync_calls": 0,
+          "publication_ns": 26569780,
+          "publication_calls": 5003,
+          "stale_publications": 0,
+          "accepted_output_groups": 5000,
+          "buffered_commands": 2000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 6000,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 29000,
+          "reconciled_writes": 4000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        }
+      },
+      "sync": {
+        "events_per_request": 40.599,
+        "origins": [
+          {
+            "origin": "dispatch and completion",
+            "calls": 18750,
+            "calls_per_request": 18.75,
+            "percent": 46.1834035321067
+          },
+          {
+            "origin": "planning: other",
+            "calls": 10428,
+            "calls_per_request": 10.428,
+            "percent": 25.685361708416462
+          },
+          {
+            "origin": "command application/storage",
+            "calls": 7579,
+            "calls_per_request": 7.579,
+            "percent": 18.66794748639129
+          },
+          {
+            "origin": "publication",
+            "calls": 2589,
+            "calls_per_request": 2.589,
+            "percent": 6.377004359713293
+          },
+          {
+            "origin": "unclassified",
+            "calls": 1172,
+            "calls_per_request": 1.172,
+            "percent": 2.8867706101135497
+          },
+          {
+            "origin": "structural cloning",
+            "calls": 40,
+            "calls_per_request": 0.04,
+            "percent": 0.09852459420182763
+          },
+          {
+            "origin": "row construction/execution",
+            "calls": 27,
+            "calls_per_request": 0.027,
+            "percent": 0.06650410108623366
+          },
+          {
+            "origin": "guard buffers",
+            "calls": 14,
+            "calls_per_request": 0.014,
+            "percent": 0.03448360797063967
+          }
+        ],
+        "metrics": {
+          "plan_calls": 12,
+          "candidate_rows": 10000,
+          "memo_hits": 5000,
+          "dependency_records": 58000,
+          "access_records": 29000,
+          "admission_ns": 76042588,
+          "admission_candidates": 5000,
+          "already_running": 0,
+          "conflict_deferrals": 0,
+          "admitted_rows": 5000,
+          "dispatch_batches": 315,
+          "enqueue_to_first_poll_ns": 2356989752,
+          "started_rows": 5000,
+          "completed_row_polls": 0,
+          "completed_sync_calls": 5000,
+          "publication_ns": 24456181,
+          "publication_calls": 5003,
+          "stale_publications": 0,
+          "accepted_output_groups": 5000,
+          "buffered_commands": 2000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 6000,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 29000,
+          "reconciled_writes": 4000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        }
+      }
+    },
+    "cpu_fresh_world": {
+      "async": {
+        "workload": "fresh-world independent-8, not steady",
+        "driver_tid": 1181875,
+        "sampled_period_by_tid": {
+          "1181875": 2954000000,
+          "1181877": 141000000,
+          "1181881": 124000000,
+          "1181879": 133000000,
+          "1181878": 132000000,
+          "1181883": 132000000,
+          "1181882": 123000000,
+          "1181880": 144000000,
+          "1181876": 131000000
+        },
+        "driver_fraction": 0.7359242650722472,
+        "total_sampled_cycles_approx": 4014000000,
+        "samples_approx": 4014.0,
+        "sampled_timing_us_per_request": 37.37719035,
+        "top_self_symbols": [
+          {
+            "percent": 5.31,
+            "symbol": "<bowl::world::Store<benches::Slot<0>> as bowl::world::StoreDyn>::revision_for_entity"
+          },
+          {
+            "percent": 3.36,
+            "symbol": "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+          },
+          {
+            "percent": 3.11,
+            "symbol": "<std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+          },
+          {
+            "percent": 2.86,
+            "symbol": "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&bowl::entity::Entity>"
+          },
+          {
+            "percent": 2.62,
+            "symbol": "<smallvec::SmallVec<[bowl::entity::Entity; 2]> as core::clone::Clone>::clone"
+          },
+          {
+            "percent": 1.82,
+            "symbol": "<bowl::world::stores::Stores>::get"
+          },
+          {
+            "percent": 1.62,
+            "symbol": "<bowl::access::Reservations>::remove"
+          },
+          {
+            "percent": 1.59,
+            "symbol": "<bowl::world::ComponentCell<benches::Slot<0>>>::read"
+          },
+          {
+            "percent": 1.52,
+            "symbol": "__memmove_avx512_unaligned_erms"
+          },
+          {
+            "percent": 1.49,
+            "symbol": "<bowl::world::World>::spawn_slots"
+          },
+          {
+            "percent": 1.47,
+            "symbol": "<std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+          },
+          {
+            "percent": 1.47,
+            "symbol": "_int_free_chunk"
+          }
+        ]
+      },
+      "sync": {
+        "workload": "fresh-world independent-8, not steady",
+        "driver_tid": 1181911,
+        "sampled_period_by_tid": {
+          "1181911": 3102000000,
+          "1181912": 159000000,
+          "1181918": 96000000,
+          "1181919": 108000000,
+          "1181915": 117000000,
+          "1181916": 113000000,
+          "1181913": 156000000,
+          "1181914": 139000000,
+          "1181917": 111000000
+        },
+        "driver_fraction": 0.7564008778346745,
+        "total_sampled_cycles_approx": 4101000000,
+        "samples_approx": 4101.0,
+        "sampled_timing_us_per_request": 34.76871465,
+        "top_self_symbols": [
+          {
+            "percent": 5.32,
+            "symbol": "<bowl::world::Store<benches::Slot<0>> as bowl::world::StoreDyn>::revision_for_entity"
+          },
+          {
+            "percent": 3.54,
+            "symbol": "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>"
+          },
+          {
+            "percent": 3.0,
+            "symbol": "<std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+          },
+          {
+            "percent": 2.83,
+            "symbol": "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&bowl::entity::Entity>"
+          },
+          {
+            "percent": 2.61,
+            "symbol": "<std::hash::random::DefaultHasher as core::hash::Hasher>::write"
+          },
+          {
+            "percent": 2.49,
+            "symbol": "_int_malloc"
+          },
+          {
+            "percent": 1.98,
+            "symbol": "<bowl::dispatch::plan::CallPlan<core::iter::adapters::map::Map<alloc::vec::into_iter::IntoIter<bowl::system::PlannedInvocation<(bowl::entity::Entity, bowl::entity::Entity, ())>>, <bowl::system::FunctionSystem<bowl::system::synchronous::Synchronous<benches::stateful::purchases::validate_inventory>, (bowl::system::synchronous::SynchronousMarker, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>))>>::plan_sync_rows::{closure#0}>> as bowl::dispatch::plan::RunPlan>::dispatch::{closure#0}::{closure#0}"
+          },
+          {
+            "percent": 1.93,
+            "symbol": "<smallvec::SmallVec<[bowl::entity::Entity; 2]> as core::clone::Clone>::clone"
+          },
+          {
+            "percent": 1.83,
+            "symbol": "<bowl::world::stores::Stores>::get"
+          },
+          {
+            "percent": 1.76,
+            "symbol": "bowl::bowl::commit_system_run::{closure#0}"
+          },
+          {
+            "percent": 1.73,
+            "symbol": "<bowl::dispatch::plan::CallPlan<core::iter::adapters::map::Map<alloc::vec::into_iter::IntoIter<bowl::system::PlannedInvocation<(bowl::entity::Entity, bowl::entity::Entity, ())>>, <bowl::system::FunctionSystem<bowl::system::synchronous::Synchronous<benches::stateful::purchases::validate_wallet>, (bowl::system::synchronous::SynchronousMarker, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>))>>::plan_sync_rows::{closure#0}>> as bowl::dispatch::plan::RunPlan>::dispatch::{closure#0}::{closure#0}"
+          },
+          {
+            "percent": 1.58,
+            "symbol": "<bowl::access::Reservations>::remove"
+          }
+        ]
+      }
+    },
+    "limitations": [
+      "Primary same-binary comparison: three alternating process repetitions, warmed fixed-world 1000 slots, eight warmup and ten measured rounds per process.",
+      "CPU samples are separate fresh-world observations, not steady throughput measurements; single run per mode and about 4000 cycle samples each.",
+      "Driver sample fraction rises 73.59% to75.64%; composition alone does not prove higher driver cost or lower total CPU.",
+      "Timing ranges overlap; eight/sixteen-worker medians improve two of three paired runs, no universal speedup claim.",
+      "Counting metrics are enabled only for counted passes; timing passes are uninstrumented.",
+      "One-worker and four-worker allocator medians vary with scheduling; compare complete iteration ranges and work totals.",
+      "DHAT categories change when sync closure construction moves into executor stacks; category disappearance is not an equivalent allocation reduction.",
+      "One matched lifetime/growth process per mode, no throughput inference from DHAT."
+    ]
+  },
+  "artifact_root": "target/optimization-o6/native-sync-assessment"
+}

@@ -12,8 +12,9 @@ fn runtime(workers: usize) -> tokio::runtime::Runtime {
 #[test]
 fn purchases_preserve_order_and_state_after_response_retirement() {
     for workers in [1, 4] {
+        for mode in [purchases::KernelMode::Async, purchases::KernelMode::Sync] {
         runtime(workers).block_on(async {
-            let bowl = purchases::create(8, 20, 20).await;
+            let bowl = purchases::create_with_mode(8, 20, 20, mode).await;
             let mut responses = purchases::batch(&bowl, 32, 4, 0).await;
             responses.sort_by_key(|response| (response.owner, response.sequence));
             assert_eq!(responses.len(), 32);
@@ -33,14 +34,16 @@ fn purchases_preserve_order_and_state_after_response_retirement() {
             assert_eq!(bowl.scoop::<Query<(Entity, &Purchase)>>().await.len(), 0);
             assert!(purchases::drain(&bowl).await.is_empty());
         });
+        }
     }
 }
 
 #[test]
 fn refusal_does_not_partially_mutate_and_replay_cannot_charge_twice() {
     runtime(4).block_on(async {
+        for mode in [purchases::KernelMode::Async, purchases::KernelMode::Sync] {
         for (balance, capacity) in [(0, 10), (10, 0)] {
-            let bowl = purchases::create(1, balance, capacity).await;
+            let bowl = purchases::create_with_mode(1, balance, capacity, mode).await;
             let request = Purchase {
                 sequence: 1,
                 price: 1,
@@ -57,7 +60,7 @@ fn refusal_does_not_partially_mutate_and_replay_cannot_charge_twice() {
             assert_eq!((wallet.0, inventory.units, sequence.0), (balance, 0, 1));
         }
 
-        let bowl = purchases::create(1, 10, 10).await;
+        let bowl = purchases::create_with_mode(1, 10, 10, mode).await;
         let request = Purchase {
             sequence: 1,
             price: 3,
@@ -70,6 +73,7 @@ fn refusal_does_not_partially_mutate_and_replay_cannot_charge_twice() {
         let rows = bowl.scoop::<Query<(Entity, &Wallet, &Inventory)>>().await;
         let (_, wallet, inventory) = &rows.collect()[0];
         assert_eq!((wallet.0, inventory.units), (7, 1));
+        }
     });
 }
 

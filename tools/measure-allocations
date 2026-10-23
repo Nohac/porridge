@@ -48,6 +48,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=Path("target/release/examples/steady_allocations"))
     parser.add_argument("--before", type=Path, help="preserved baseline binary; alternate order each repetition")
+    parser.add_argument("--kernels", choices=("async", "sync"), default="async")
+    parser.add_argument("--before-kernels", choices=("async", "sync"), help="baseline mode; defaults to --kernels")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--cases", default="purchases,read,probe")
     parser.add_argument("--workers", default="1,8")
@@ -85,6 +87,7 @@ def main():
         rustc=subprocess.check_output(["rustc", "--version"], text=True).strip(),
         kernel=list(os.uname()), driver_cpu=driver, worker_cpus=cpu_order,
         configuration=vars(args), records=[])
+    kernel_modes = {"after": args.kernels, "before": args.before_kernels or args.kernels}
     for case in cases:
         for count in workers:
             for size in slots:
@@ -96,7 +99,7 @@ def main():
                         for label in order:
                             name = f"{label}-{case}-{count}-{size}-count{counting}-{repeat}"
                             ready = root / f"{name}.ready"
-                            settings = dict(ALLOC_CASE=case, ALLOC_WORKERS=str(count), ALLOC_SLOTS=str(size),
+                            settings = dict(ALLOC_KERNELS=kernel_modes[label], ALLOC_CASE=case, ALLOC_WORKERS=str(count), ALLOC_SLOTS=str(size),
                                 ALLOC_COUNT=str(counting), ALLOC_METRICS=str(int(args.metrics and counting)), ALLOC_ROUNDS=str(args.rounds), ALLOC_WARMUP=str(args.warmup), ALLOC_READY=str(ready))
                             with (root / f"{name}.tsv").open("w") as out, (root / f"{name}.err").open("w") as err:
                                 proc = subprocess.Popen([str(binaries[label])], env=os.environ | settings, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True)
@@ -129,7 +132,7 @@ def main():
                                 elif parts[0] == "allocation":
                                     allocations.append(dict(round=int(parts[1]), operation=parts[2], engine=int(parts[3]), kernel=int(parts[4])))
                             assert len(samples) == args.rounds
-                            record = dict(label=label, case=case, workers=count, slots=size, counting=bool(counting), repeat=repeat, samples=samples, allocations=allocations, metrics=metrics,
+                            record = dict(label=label, kernels=kernel_modes[label], case=case, workers=count, slots=size, counting=bool(counting), repeat=repeat, samples=samples, allocations=allocations, metrics=metrics,
                                 iterations=iteration_totals(samples, allocations))
                             report["records"].append(record)
                             if budgets is not None:

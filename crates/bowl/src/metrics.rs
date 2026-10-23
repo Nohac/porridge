@@ -32,6 +32,7 @@ counters! {
     FirstPollNs => "enqueue_to_first_poll_ns",
     StartedRows => "started_rows",
     RowPolls => "completed_row_polls",
+    SyncCalls => "completed_sync_calls",
     PublicationNs => "publication_ns",
     PublicationCalls => "publication_calls",
     StalePublications => "stale_publications",

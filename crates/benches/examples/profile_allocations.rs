@@ -13,6 +13,8 @@ fn number(name: &str, default: usize) -> usize {
 }
 
 fn main() {
+    let mode = env::var("HEAP_KERNELS").unwrap_or_else(|_| "async".into())
+        .parse::<benches::stateful::purchases::KernelMode>().expect("HEAP_KERNELS");
     let workers = number("HEAP_WORKERS", 8);
     let slots = number("HEAP_SLOTS", 1000);
     let warmup = number("HEAP_WARMUP", 8);
@@ -35,10 +37,10 @@ fn main() {
     }
     runtime.block_on(async {
         if lifetime {
-            profile_lifetime(slots, grow_to, warmup, rounds, &path).await;
+            profile_lifetime(slots, grow_to, warmup, rounds, &path, mode).await;
             return;
         }
-        let mut fixture = Purchases::new(slots).await;
+        let mut fixture = Purchases::new_with_mode(slots, mode).await;
         fixture.bowl.set_dispatch_batch_size(16);
         for _ in 0..warmup {
             assert_eq!(fixture.round().await, slots);
@@ -73,13 +75,13 @@ fn main() {
     });
 }
 
-async fn profile_lifetime(slots: usize, grow_to: usize, warmup: usize, rounds: usize, path: &std::path::Path) {
+async fn profile_lifetime(slots: usize, grow_to: usize, warmup: usize, rounds: usize, path: &std::path::Path, mode: benches::stateful::purchases::KernelMode) {
     // Allocate the reporting storage before profiling. Its capacity is fixed,
     // so collecting samples cannot itself look like accumulating engine memory.
     let per_phase = warmup.checked_add(rounds).and_then(|n| n.checked_add(1)).expect("sample count overflow");
     let mut samples = Vec::with_capacity(per_phase.checked_mul(2).expect("sample count overflow"));
     let profile = dhat::Profiler::builder().file_name(path).trim_backtraces(Some(32)).build();
-    let mut fixture = Purchases::new(slots).await;
+    let mut fixture = Purchases::new_with_mode(slots, mode).await;
     fixture.bowl.set_dispatch_batch_size(16);
     samples.push(("setup", 0, slots, dhat::HeapStats::get()));
     for (size, warm_label, steady_label) in [

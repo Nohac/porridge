@@ -9,7 +9,7 @@ use futures::{
 #[cfg(feature = "parallel")]
 mod executor;
 mod plan;
-pub(crate) use plan::{Admission, RunPlan, prepare};
+pub(crate) use plan::{Admission, RunPlan, prepare, prepare_calls};
 
 pub(crate) type Row = (SystemInvocation, SystemRun);
 pub(crate) type Run = BoxFuture<'static, Row>;
@@ -31,6 +31,18 @@ impl Queue {
         }
 
         Self::Cooperative(FuturesUnordered::new())
+    }
+
+    pub(crate) fn push_calls<C>(&mut self, calls: Vec<C>)
+    where C: FnOnce() -> Row + Send + 'static,
+    {
+        match self {
+            // Preserve the existing no-runtime fallback; direct calls target
+            // worker batches in this first slice.
+            Self::Cooperative(pending) => pending.extend(calls.into_iter().map(|call| async move { call() }.boxed())),
+            #[cfg(feature = "parallel")]
+            Self::Workers(pending) => pending.push(call_batch(calls)),
+        }
     }
 
     pub(crate) fn push_batch<F>(&mut self, runs: Vec<F>)
@@ -81,6 +93,16 @@ where
     }
 
     runs.into_iter().collect::<FuturesUnordered<_>>().boxed()
+}
+
+#[cfg(feature = "parallel")]
+fn call_batch<C>(calls: Vec<C>) -> Runs
+where C: FnOnce() -> Row + Send + 'static,
+{
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        return executor::spawn_calls(&runtime, calls);
+    }
+    futures::stream::iter(calls).map(|call| call()).boxed()
 }
 
 #[cfg(test)]
@@ -176,6 +198,48 @@ mod tests {
             assert_eq!(ids.len(), COUNT, "ready completions must remain visible to the driver drain");
             ids.sort_unstable();
             assert_eq!(ids, (0..COUNT as u64).collect::<Vec<_>>());
+        });
+    }
+
+    #[test]
+    #[cfg(feature = "parallel")]
+    fn synchronous_worker_panic_is_propagated() {
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+            let calls: Vec<fn() -> Row> = vec![|| panic!("sync kernel failed"), || row(2)];
+            let mut values = call_batch(calls);
+            assert!(std::panic::AssertUnwindSafe(values.next()).catch_unwind().await.is_err());
+        });
+    }
+
+    #[test]
+    #[cfg(feature = "parallel")]
+    fn cancelled_sync_batch_stops_between_calls() {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        tokio::runtime::Builder::new_multi_thread().worker_threads(1).build().unwrap().block_on(async {
+            let (started, entered) = oneshot::channel();
+            let (release, resume) = std::sync::mpsc::channel();
+            let (dropped, observed) = oneshot::channel();
+            let second_ran = Arc::new(AtomicBool::new(false));
+            let ran = Arc::clone(&second_ran);
+            let notice = Dropped(Some(dropped));
+            let calls: Vec<Box<dyn FnOnce() -> Row + Send>> = vec![
+                Box::new(move || {
+                    started.send(()).unwrap();
+                    resume.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+                    row(1)
+                }),
+                Box::new(move || {
+                    let _notice = notice;
+                    ran.store(true, Ordering::SeqCst);
+                    row(2)
+                }),
+            ];
+            let values = call_batch(calls);
+            entered.await.unwrap();
+            drop(values);
+            release.send(()).unwrap();
+            observed.await.unwrap();
+            assert!(!second_ran.load(Ordering::SeqCst));
         });
     }
 

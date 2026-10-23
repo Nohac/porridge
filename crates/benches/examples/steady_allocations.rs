@@ -5,7 +5,7 @@ mod allocations;
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-use benches::stateful::steady::Purchases;
+use benches::stateful::{steady::Purchases, purchases::KernelMode};
 use bowl::{Bowl, Component, Entity, Query, Schema};
 use std::{env, hint::black_box, time::Instant};
 
@@ -39,6 +39,7 @@ fn main() {
     let slots = number("ALLOC_SLOTS", 1000);
     let rounds = number("ALLOC_ROUNDS", 10);
     let warmup = number("ALLOC_WARMUP", 3);
+    let mode = env::var("ALLOC_KERNELS").unwrap_or_else(|_| "async".into()).parse::<KernelMode>().expect("ALLOC_KERNELS");
     let counting = number("ALLOC_COUNT", 1) != 0;
     let metrics = number("ALLOC_METRICS", 0) != 0;
     let case = env::var("ALLOC_CASE").unwrap_or_else(|_| "purchases".into());
@@ -54,7 +55,7 @@ fn main() {
         .build()
         .unwrap();
     println!(
-        "config\tcase={case}\tworkers={workers}\tslots={slots}\twarmup={warmup}\trounds={rounds}\tcounting={counting}"
+        "config\tcase={case}\tworkers={workers}\tslots={slots}\twarmup={warmup}\trounds={rounds}\tcounting={counting}\tkernels={mode:?}"
     );
     if let Some(path) = env::var_os("ALLOC_READY") {
         std::fs::write(path, std::process::id().to_string()).unwrap();
@@ -64,7 +65,7 @@ fn main() {
     }
 
     runtime.block_on(async {
-        let mut purchases = Purchases::new(if case == "probe" { 0 } else { slots }).await;
+        let mut purchases = Purchases::new_with_mode(if case == "probe" { 0 } else { slots }, mode).await;
         purchases.bowl.set_dispatch_batch_size(16);
         let probe = Bowl::builder()
             .schema::<ProbeSchema>()

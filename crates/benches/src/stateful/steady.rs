@@ -11,7 +11,11 @@ pub struct Purchases {
 
 impl Purchases {
     pub async fn new(owners: usize) -> Self {
-        let bowl = purchases::create(owners, u64::MAX, u64::MAX).await;
+        Self::new_with_mode(owners, purchases::KernelMode::Async).await
+    }
+
+    pub async fn new_with_mode(owners: usize, mode: purchases::KernelMode) -> Self {
+        let bowl = purchases::create_with_mode(owners, u64::MAX, u64::MAX, mode).await;
         let mut slots = Vec::with_capacity(owners);
         for owner in 0..owners {
             slots.push(

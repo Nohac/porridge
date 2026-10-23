@@ -73,6 +73,38 @@ where
     runs.into_iter().collect::<FuturesUnordered<_>>().boxed()
 }
 
+/// One runtime task for a batch of plain calls. Results stream individually;
+/// there is no future set or per-row kernel future in this loop.
+pub(crate) fn spawn_calls<C, T>(runtime: &tokio::runtime::Handle, calls: Vec<C>) -> BoxStream<'static, T>
+where C: FnOnce() -> T + Send + 'static, T: Send + 'static,
+{
+    if calls.len() == 1 {
+        let call = calls.into_iter().next().expect("one call");
+        return futures::stream::once(SpawnedRun {
+            handle: runtime.spawn(async move { call() }),
+        }).boxed();
+    }
+    if calls.is_empty() {
+        return futures::stream::empty().boxed();
+    }
+    let (sender, receiver) = tokio::sync::mpsc::channel(calls.len());
+    let handle = runtime.spawn(async move {
+        for call in calls {
+            // Aborting a running sync function cannot preempt its body. Stop
+            // cancelled read batches between calls; writer streams are drained.
+            if sender.is_closed() { return; }
+            match sender.try_send(call()) {
+                Ok(()) => {}
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                    panic!("completion capacity covers every admitted row");
+                }
+            }
+        }
+    });
+    Box::pin(SpawnedBatch { receiver, handle })
+}
+
 struct SpawnedRun<T> {
     handle: tokio::task::JoinHandle<T>,
 }

@@ -274,19 +274,19 @@ does not make total scheduling O(1). Keep opaque-parameter full-plan fallbacks.
 
 Files: system adapters/builder/macros, `dispatch/plan.rs`, executor and tests.
 
-Illustrative registration, not a finalized API:
+Initial supported registration:
 
 ```rust
-builder.system_sync(update_balances).system(fetch_remote_facts)
+builder.system(sync_kernel(update_balances)).system(fetch_remote_facts)
 ```
 
-- [ ] Add an explicit non-async adapter with shared parameter preparation,
+- [x] Add an explicit non-async adapter with shared parameter preparation,
   guards, access admission, revisions, output ownership and publication.
-- [ ] Execute synchronous rows directly inside a typed batch loop, without
+- [x] Execute ordinary synchronous worker rows directly inside a typed batch loop, without
   constructing/polling a future node for each row.
 - [ ] Compare tiny inline execution, worker batches, immediate async kernels,
   and genuinely suspending async kernels.
-- [ ] Preserve mixed sync/async plans and independently available completions.
+- [x] Preserve mixed sync/async plans and independently available completions.
   Publish incrementally or in bounded ready chunks; no wait-for-all barrier
   behind an unrelated suspended sibling.
 - [ ] Keep panic propagation, reader cancellation and writer-drain guarantees.
@@ -524,7 +524,7 @@ with a blocking public API.
 | O3 | In progress | [Unique producer reuse kept](producer-reuse.md): 50,857 alloc/iteration; [completion retention measured/deferred](completion-storage.md) |
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |
-| O6 | Planned | Native synchronous kernels |
+| O6 | Initial worker path validated | [Same-binary sync/async comparison](synchronous-kernel-experiment.md); small/noisy throughput change, lower byte traffic; fallback and policy work remain |
 | O7 | In progress | [Readiness-preserving completion channel kept](worker-completion-channel.md): 45,227 alloc/iteration; [shared context kept](invocation-context.md), [inner batch future storage kept](batch-future-storage.md): 40,227 alloc/iteration |
 | O8 | Planned | Wait/wakeup and idle overhead |
 | O9 | Conditional | Layout/SIMD/revision experiments after profiling |
@@ -541,3 +541,8 @@ See [the checkpoint](optimization-round-checkpoint.md) for retained/rejected
 changes, current measurements and the next starting point. Formatting/style and
 the broader final validation pass remain in O11; rustfmt stayed deferred during
 this round as requested.
+
+O6 follow-up (2026-10-24): the user requested and authorized the focused native
+sync comparison after the round pause. That slice is implemented and measured;
+other campaign work remains paused. The initial API supports mixed kernels, with
+the worker fast path and compatibility limits documented above.
