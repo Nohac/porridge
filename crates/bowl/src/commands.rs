@@ -1,3 +1,8 @@
+mod arena;
+
+pub use arena::BaseCommands;
+pub(crate) use arena::{CommandQueue, Pool};
+
 use std::{
     marker::PhantomData,
     sync::{
@@ -17,7 +22,7 @@ use crate::{
 ///
 /// Commands do not mutate the live world immediately. A system writes into its
 /// invocation-local command buffer; the runner applies those commands at the
-/// end of the generation.
+/// invocation commit.
 ///
 /// ```text
 /// system reads snapshot N
@@ -49,7 +54,7 @@ impl<S> Clone for Commands<S> {
 /// Invocation-local buffer state: the queued operations plus the spawn-id
 /// reservation context.
 pub(crate) struct CommandBuffer {
-    ops: Vec<Box<dyn CommandOp>>,
+    ops: CommandQueue,
     /// The invocation's previous spawn ids, in spawn order. Reservation
     /// hands these out slot by slot so idempotent reruns keep their entity
     /// identity; new slots allocate from the shared counter.
@@ -62,9 +67,17 @@ impl Commands<Anything> {
     /// Creates an invocation-local command buffer that reserves spawn ids
     /// from `spawn_slots` first and `allocator` after.
     pub(crate) fn new(spawn_slots: Vec<Entity>, allocator: Arc<AtomicU64>) -> Self {
+        Self::with_queue(spawn_slots, allocator, CommandQueue::default())
+    }
+
+    pub(crate) fn with_queue(
+        spawn_slots: Vec<Entity>,
+        allocator: Arc<AtomicU64>,
+        ops: CommandQueue,
+    ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(CommandBuffer {
-                ops: Vec::new(),
+                ops,
                 spawn_slots,
                 spawn_cursor: 0,
                 allocator,
@@ -125,7 +138,7 @@ impl<S> Commands<S> {
             .copied()
             .unwrap_or_else(|| Entity::from_raw(buffer.allocator.fetch_add(1, Ordering::Relaxed)));
         buffer.spawn_cursor += 1;
-        buffer.ops.push(Box::new(SpawnCommand { bundle, reserved }));
+        buffer.ops.push(SpawnCommand { bundle, reserved });
         reserved.retype()
     }
 
@@ -135,13 +148,13 @@ impl<S> Commands<S> {
             .lock()
             .expect("command buffer lock poisoned")
             .ops
-            .push(Box::new(RemoveEntityCommand {
+            .push(RemoveEntityCommand {
                 entity: entity.untyped(),
-            }));
+            });
     }
 
     /// Drains buffered command operations after the system invocation returns.
-    pub(crate) fn take(self) -> Vec<Box<dyn CommandOp>> {
+    pub(crate) fn take(self) -> CommandQueue {
         std::mem::take(&mut self.inner.lock().expect("command buffer lock poisoned").ops)
     }
 }
@@ -172,10 +185,10 @@ impl<S, H> EntityCommands<'_, S, H> {
             .lock()
             .expect("command buffer lock poisoned")
             .ops
-            .push(Box::new(InsertCommand {
+            .push(InsertCommand {
                 entity: self.entity,
                 value,
-            }));
+            });
     }
 
     /// Buffers removing component `T` from this entity.
@@ -185,17 +198,17 @@ impl<S, H> EntityCommands<'_, S, H> {
             .lock()
             .expect("command buffer lock poisoned")
             .ops
-            .push(Box::new(RemoveComponentCommand::<T> {
+            .push(RemoveComponentCommand::<T> {
                 entity: self.entity,
                 _marker: std::marker::PhantomData,
-            }));
+            });
     }
 }
 
 /// Operation produced by a system command buffer.
-pub(crate) trait CommandOp: Send {
+pub(crate) trait CommandOp: Send + 'static {
     /// Applies the operation as a derived write owned by `owner`.
-    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation);
+    fn apply(self, world: &mut World, owner: &SystemInvocation);
 
     /// Whether this operation is held back when issued from a
     /// [`Phase::Settle`](crate::Phase::Settle) system: inserts and spawns
@@ -211,7 +224,7 @@ struct InsertCommand<T> {
 }
 
 impl<T: Component> CommandOp for InsertCommand<T> {
-    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
+    fn apply(self, world: &mut World, owner: &SystemInvocation) {
         world.insert_derived(self.entity, self.value, owner.clone());
     }
 
@@ -229,7 +242,7 @@ struct SpawnCommand<B> {
 }
 
 impl<B: Bundle> CommandOp for SpawnCommand<B> {
-    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
+    fn apply(self, world: &mut World, owner: &SystemInvocation) {
         let entity = B::singleton_key()
             .map(|key| world.singleton_entity_or_register(key, self.reserved))
             .unwrap_or(self.reserved);
@@ -247,7 +260,7 @@ struct RemoveEntityCommand {
 }
 
 impl CommandOp for RemoveEntityCommand {
-    fn apply(self: Box<Self>, world: &mut World, _owner: &SystemInvocation) {
+    fn apply(self, world: &mut World, _owner: &SystemInvocation) {
         world.remove_entity(self.entity);
     }
 }
@@ -258,15 +271,15 @@ struct RemoveComponentCommand<T> {
 }
 
 impl<T: Component> CommandOp for RemoveComponentCommand<T> {
-    fn apply(self: Box<Self>, world: &mut World, owner: &SystemInvocation) {
+    fn apply(self, world: &mut World, owner: &SystemInvocation) {
         world.remove_component::<T>(self.entity, Some(owner));
     }
 }
 
 #[doc(hidden)]
-pub trait BaseCommandOp: Send {
+pub trait BaseCommandOp: Send + 'static {
     /// Applies the operation as a base input write.
-    fn apply(self: Box<Self>, world: &mut World);
+    fn apply(self, world: &mut World);
 }
 
 /// Base insert queued by public `Bowl::insert`.
@@ -276,7 +289,7 @@ pub(crate) struct InsertBaseCommand<T> {
 }
 
 impl<T: Component> BaseCommandOp for InsertBaseCommand<T> {
-    fn apply(self: Box<Self>, world: &mut World) {
+    fn apply(self, world: &mut World) {
         world.insert_base(self.entity, self.value);
     }
 }
@@ -288,7 +301,7 @@ pub(crate) struct RemoveComponentBaseCommand<T> {
 }
 
 impl<T: Component> BaseCommandOp for RemoveComponentBaseCommand<T> {
-    fn apply(self: Box<Self>, world: &mut World) {
+    fn apply(self, world: &mut World) {
         world.remove_component::<T>(self.entity, None);
     }
 }
@@ -299,7 +312,7 @@ pub(crate) struct DespawnBaseCommand {
 }
 
 impl BaseCommandOp for DespawnBaseCommand {
-    fn apply(self: Box<Self>, world: &mut World) {
+    fn apply(self, world: &mut World) {
         world.remove_entity(self.entity);
     }
 }

@@ -21,14 +21,16 @@ use crate::{
     Component, Entity, IntoSystem, Query, QueryResult,
     access::Reservations,
     commands::{
-        BaseCommandOp, CommandOp, DespawnBaseCommand, InsertBaseCommand, RemoveComponentBaseCommand,
+        BaseCommands, CommandQueue, DespawnBaseCommand, InsertBaseCommand,
+        RemoveComponentBaseCommand,
     },
     declare::{Schema, ShapeDesc},
+    planning::Storage as PlanningStorage,
     query::{
         ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
         ExternalQueryFilter, ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
     },
-    system::{BoxedSystem, MemoEntry, Phase, SystemRun},
+    system::{BoxedSystem, MemoEntry, Phase, SystemOutput, SystemRun},
     world::{Snapshot, SystemId, SystemInvocation, TryUpdate, World},
 };
 
@@ -152,17 +154,20 @@ struct State {
     running_generation: Option<u64>,
     next_generation: u64,
     pending_generation: Option<u64>,
-    pending_inputs: Vec<Box<dyn BaseCommandOp>>,
+    pending_inputs: BaseCommands,
+    /// Temporarily driver-owned while planning outside the state lock.
+    /// Concurrent external staging can use an unpooled queue during that window.
+    planning_storage: Option<PlanningStorage>,
     /// External inputs that arrived while an epoch (an active settle) was
     /// driving, tagged with their arrival sequence. Promoted into
     /// `pending_inputs` at epoch boundaries by settles whose entry
     /// watermark covers them, so mid-epoch generations never drain input
     /// that arrived after the settle began (spec/epochs.md).
-    deferred_inputs: Vec<(u64, Box<dyn BaseCommandOp>)>,
+    deferred_inputs: std::collections::VecDeque<(u64, BaseCommands)>,
     /// Insert/spawn commands issued by `Phase::Settle` systems. The settle
     /// phase cannot drive its own settle forward: these queue as owned
     /// derived writes for the start of the next run.
-    deferred_settle: Vec<(SystemInvocation, Box<dyn CommandOp>)>,
+    deferred_settle: Vec<SystemOutput>,
     /// The registered entity schema, if any: derived writes are
     /// shape-checked against it at commit in debug builds.
     schema: Option<Arc<Vec<ShapeDesc>>>,
@@ -1130,8 +1135,9 @@ impl Bowl {
                     running_generation: None,
                     next_generation: 1,
                     pending_generation: None,
-                    pending_inputs: Vec::new(),
-                    deferred_inputs: Vec::new(),
+                    pending_inputs: BaseCommands::default(),
+                    planning_storage: Some(PlanningStorage::default()),
+                    deferred_inputs: std::collections::VecDeque::new(),
                     deferred_settle: Vec::new(),
                     schema: None,
                     input_seq: 0,
@@ -1489,8 +1495,8 @@ impl Bowl {
     /// See [`BowlEntity::despawn`]: whole-entity removal, deferred
     /// mid-epoch unless `.preempting()` forces a boundary.
     async fn despawn_inner(&self, entity: Entity, preempting: bool) {
-        let mut commands: Vec<Box<dyn BaseCommandOp>> =
-            vec![Box::new(DespawnBaseCommand { entity })];
+        let mut commands = BaseCommands::default();
+        commands.push(DespawnBaseCommand { entity });
 
         {
             let mut state = lock_state(&self.inner.state).await;
@@ -1505,9 +1511,7 @@ impl Bowl {
             if !preempting {
                 state.input_seq += 1;
                 let tag = state.input_seq;
-                state
-                    .deferred_inputs
-                    .extend(commands.into_iter().map(|command| (tag, command)));
+                state.deferred_inputs.push_back((tag, commands));
                 return;
             }
         }
@@ -1536,11 +1540,8 @@ impl Bowl {
     /// generation, active epochs defer it to the next one, and
     /// `.preempting()` forces a boundary.
     async fn remove_component_inner<T: Component>(&self, entity: Entity, preempting: bool) {
-        let mut commands: Vec<Box<dyn BaseCommandOp>> =
-            vec![Box::new(RemoveComponentBaseCommand::<T> {
-                entity,
-                _marker: PhantomData,
-            })];
+        let mut commands = BaseCommands::default();
+        commands.push(RemoveComponentBaseCommand::<T> { entity, _marker: PhantomData });
 
         {
             let mut state = lock_state(&self.inner.state).await;
@@ -1557,9 +1558,7 @@ impl Bowl {
                 // the next epoch, like any other deferred input.
                 state.input_seq += 1;
                 let tag = state.input_seq;
-                state
-                    .deferred_inputs
-                    .extend(commands.into_iter().map(|command| (tag, command)));
+                state.deferred_inputs.push_back((tag, commands));
                 return;
             }
         }
@@ -1601,12 +1600,16 @@ impl Bowl {
                     .map(|key| state.world.singleton_entity_or_spawn(key))
                     .unwrap_or_else(|| state.world.spawn_empty())
             });
-            let mut commands = Vec::new();
+            // Keep each Bundle's staging isolated: custom Bundle::queue may
+            // panic or manipulate its buffer before returning.
+            let mut commands = BaseCommands(
+                state.planning_storage.as_mut().map_or_else(CommandQueue::default, |storage| storage.commands.take()),
+            );
             bundle.queue(entity, &mut commands);
             let next_generation = state.next_generation;
 
             if state.settling == 0 {
-                state.pending_inputs.extend(commands);
+                state.pending_inputs.append(&mut commands);
                 let generation = *state.pending_generation.get_or_insert(next_generation);
                 return InsertedEntity {
                     bowl: self.clone(),
@@ -1625,9 +1628,7 @@ impl Bowl {
                 // work via its watermark.
                 state.input_seq += 1;
                 let tag = state.input_seq;
-                state
-                    .deferred_inputs
-                    .extend(commands.into_iter().map(|command| (tag, command)));
+                state.deferred_inputs.push_back((tag, commands));
                 let generation = state.completed_generation;
                 return InsertedEntity {
                     bowl: self.clone(),
@@ -2335,6 +2336,11 @@ impl Bowl {
                         }
                     }
                 }
+                let mut planning_storage = lock_state(&self.inner.state)
+                    .await
+                    .planning_storage
+                    .take()
+                    .unwrap_or_default();
                 for system in systems
                     .iter()
                     .filter(|system| system.phase == phase && system.needs_planning(&snapshot))
@@ -2373,6 +2379,7 @@ impl Bowl {
                         Arc::clone(&snapshot),
                         memo,
                         hint.as_deref(),
+                        &mut planning_storage,
                     );
                     if system.delta_eligible {
                         system
@@ -2397,6 +2404,7 @@ impl Bowl {
                         writers: &mut write_runs,
                     });
                 }
+                lock_state(&self.inner.state).await.planning_storage = Some(planning_storage);
             }
 
             let first = match self
@@ -2547,17 +2555,16 @@ impl Bowl {
         let mut state = lock_state(&self.inner.state).await;
         let generation = state.pending_generation.take()?;
         state.world.maybe_roll_plan_epoch();
-        let inputs = std::mem::take(&mut state.pending_inputs);
-
         // Settle-phase inserts deferred from the previous settle land first:
         // they are this run's opening state (gate markers, seeded facts),
         // applied as ordinary owned derived writes.
         let deferred_settle = std::mem::take(&mut state.deferred_settle);
-        for (owner, command) in deferred_settle {
-            command.apply(&mut state.world, &owner);
+        for mut output in deferred_settle {
+            output.commands.apply(&mut state.world, Some(&output.owner));
         }
-        for input in inputs {
-            input.apply(&mut state.world);
+        {
+            let State { pending_inputs, world, .. } = &mut *state;
+            pending_inputs.apply(world);
         }
         state.world.flush_derived_from();
         // Deferred settle inserts are recorded as derived writes; drain
@@ -2807,17 +2814,12 @@ fn promote_deferred_inputs(state: &mut State, watermark: u64) -> bool {
         return false;
     }
 
-    let mut kept = Vec::new();
     let mut promoted = false;
-    for (tag, input) in state.deferred_inputs.drain(..).collect::<Vec<_>>() {
-        if tag <= watermark {
-            state.pending_inputs.push(input);
-            promoted = true;
-        } else {
-            kept.push((tag, input));
-        }
+    while state.deferred_inputs.front().is_some_and(|(tag, _)| *tag <= watermark) {
+        let (_, mut input) = state.deferred_inputs.pop_front().expect("checked front");
+        state.pending_inputs.append(&mut input);
+        promoted = true;
     }
-    state.deferred_inputs = kept;
 
     if promoted {
         let next_generation = state.next_generation;
@@ -3170,20 +3172,29 @@ async fn commit_system_run(
         crate::metrics::add(crate::metrics::Counter::BufferedCommands, output.commands.len() as u64);
         let writer = output.owner.system;
         let previous = state.world.take_derived_outputs(&output.owner);
-        let mut deferred: Vec<(SystemInvocation, Box<dyn CommandOp>)> = Vec::new();
-        for command in output.commands {
-            if defer_inserts && command.defers_at_settle() {
-                deferred.push((output.owner.clone(), command));
-                continue;
-            }
-            command.apply(&mut state.world, &output.owner);
-        }
+        let mut commands = output.commands;
+        let mut deferred = if defer_inserts {
+            state.planning_storage.as_mut().map_or_else(CommandQueue::default, |storage| storage.commands.take())
+        } else {
+            CommandQueue::default()
+        };
+        commands.apply_or_defer(
+            &mut state.world,
+            Some(&output.owner),
+            defer_inserts.then_some(&mut deferred),
+        );
+
         // Anchor capture is deferred to buffer end; flush before the stale
         // sweep so re-emitted DerivedFrom entries count as re-emitted.
         state.world.flush_derived_from();
         state.world.finish_derived_spawns(&output.owner);
         state.world.remove_derived_stale(&output.owner, previous);
-        state.deferred_settle.append(&mut deferred);
+        if !deferred.is_empty() {
+            state.deferred_settle.push(SystemOutput {
+                owner: output.owner.clone(),
+                commands: deferred,
+            });
+        }
 
         // Debug flag: producing an entity that a same-phase system reads
         // ambiently is a silent race — the viewer may already have run and
@@ -3471,7 +3482,7 @@ pub trait Bundle: Send + 'static {
     fn singleton_key() -> Option<TypeId>;
 
     #[doc(hidden)]
-    fn queue(self, entity: Entity, commands: &mut Vec<Box<dyn BaseCommandOp>>);
+    fn queue(self, entity: Entity, commands: &mut BaseCommands);
 
     #[doc(hidden)]
     fn insert_derived(self, world: &mut World, entity: Entity, owner: SystemInvocation);
@@ -3501,9 +3512,9 @@ macro_rules! impl_bundle {
             }
 
             #[allow(non_snake_case)]
-            fn queue(self, entity: Entity, commands: &mut Vec<Box<dyn BaseCommandOp>>) {
+            fn queue(self, entity: Entity, commands: &mut BaseCommands) {
                 let ($($T,)*) = self;
-                $(commands.push(Box::new(InsertBaseCommand { entity, value: $T }));)*
+                $(commands.push(InsertBaseCommand { entity, value: $T });)*
             }
 
             #[allow(non_snake_case)]

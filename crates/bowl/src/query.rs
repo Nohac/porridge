@@ -941,10 +941,28 @@ pub trait QueryParam {
     }
     /// Returns entity keys that identify the invocation for this row.
     fn keys(state: &Self::State) -> Vec<Entity>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
+        out.extend(Self::keys(state));
+    }
     /// Returns tracked component revisions that should invalidate this row.
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn deps_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Dep>) {
+        out.extend(Self::deps(snapshot, state));
+    }
     /// Returns component rows this query item reads or writes while running.
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn access_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Access>) {
+        out.extend(Self::access(snapshot, state));
+    }
     /// Returns component-level access covering every possible row, used by
     /// ambient params that read whole stores.
     fn access_all() -> Vec<Access>;
@@ -1105,7 +1123,13 @@ impl<H: FacetKind> QueryParam for Entity<H> {
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
-        vec![*state]
+        let mut out = Vec::new();
+        <Self as QueryParam>::keys_into(state, &mut out);
+        out
+    }
+
+    fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
+        out.extend([*state]);
     }
 
     // The facet anchor contributes row matching but no revision deps:
@@ -1176,17 +1200,33 @@ impl<'q, T: Component> QueryParam for &'q T {
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
-        vec![*state]
+        let mut out = Vec::new();
+        <Self as QueryParam>::keys_into(state, &mut out);
+        out
+    }
+
+    fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
+        out.extend([*state]);
     }
 
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
-        component_dep_if_tracked::<T>(snapshot, *state)
-            .into_iter()
-            .collect()
+        let mut out = Vec::new();
+        <Self as QueryParam>::deps_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Dep>) {
+        out.extend(component_dep_if_tracked::<T>(snapshot, *state));
     }
 
     fn access(_snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
-        vec![Access::read::<T>(*state)]
+        let mut out = Vec::new();
+        <Self as QueryParam>::access_into(_snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Access>) {
+        out.extend([Access::read::<T>(*state)]);
     }
 
     fn access_all() -> Vec<Access> {
@@ -1259,17 +1299,33 @@ impl<'q, T: Component> QueryParam for (MutRef<'q, T>,) {
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
-        vec![*state]
+        let mut out = Vec::new();
+        <Self as QueryParam>::keys_into(state, &mut out);
+        out
+    }
+
+    fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
+        out.extend([*state]);
     }
 
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
-        component_dep_if_tracked::<T>(snapshot, *state)
-            .into_iter()
-            .collect()
+        let mut out = Vec::new();
+        <Self as QueryParam>::deps_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Dep>) {
+        out.extend(component_dep_if_tracked::<T>(snapshot, *state));
     }
 
     fn access(_snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
-        vec![Access::write::<T>(*state)]
+        let mut out = Vec::new();
+        <Self as QueryParam>::access_into(_snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Access>) {
+        out.extend([Access::write::<T>(*state)]);
     }
 
     fn access_all() -> Vec<Access> {
@@ -1351,6 +1407,12 @@ pub trait QueryPart {
         true
     }
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn deps_into(snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
+        out.extend(Self::deps(snapshot, entity));
+    }
     /// Dependencies observed for this part on one related member.
     ///
     /// Related projections override required reads to observe absence as
@@ -1359,6 +1421,12 @@ pub trait QueryPart {
         Self::deps(snapshot, entity)
     }
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn access_into(snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Access>) {
+        out.extend(Self::access(snapshot, entity));
+    }
     fn access_all() -> Access;
     /// Whether this part reads component `key` (bound join provider).
     ///
@@ -1426,9 +1494,13 @@ impl<'q, T: Component> QueryPart for &'q T {
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
-        component_dep_if_tracked::<T>(snapshot, entity)
-            .into_iter()
-            .collect()
+        let mut out = Vec::new();
+        <Self as QueryPart>::deps_into(snapshot, entity, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
+        out.extend(component_dep_if_tracked::<T>(snapshot, entity));
     }
 
     fn observed_member_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1438,7 +1510,13 @@ impl<'q, T: Component> QueryPart for &'q T {
     }
 
     fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
-        vec![Access::read::<T>(entity)]
+        let mut out = Vec::new();
+        <Self as QueryPart>::access_into(_snapshot, entity, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Access>) {
+        out.extend([Access::read::<T>(entity)]);
     }
 
     fn access_all() -> Access {
@@ -1518,9 +1596,13 @@ impl<'q, T: Component> QueryPart for Option<&'q T> {
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
-        optional_component_dep::<T>(snapshot, entity)
-            .into_iter()
-            .collect()
+        let mut out = Vec::new();
+        <Self as QueryPart>::deps_into(snapshot, entity, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
+        out.extend(optional_component_dep::<T>(snapshot, entity));
     }
 
     fn observed_member_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
@@ -1530,9 +1612,15 @@ impl<'q, T: Component> QueryPart for Option<&'q T> {
     }
 
     fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
+        let mut out = Vec::new();
+        <Self as QueryPart>::access_into(_snapshot, entity, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Access>) {
         // Declared even when absent: a writer creating `T` on this row must
         // still serialize against the observing invocation.
-        vec![Access::read::<T>(entity)]
+        out.extend([Access::read::<T>(entity)]);
     }
 
     fn access_all() -> Access {
@@ -1670,13 +1758,23 @@ impl<'q, T: Component> QueryPart for MutRef<'q, T> {
     }
 
     fn deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep> {
-        component_dep_if_tracked::<T>(snapshot, entity)
-            .into_iter()
-            .collect()
+        let mut out = Vec::new();
+        <Self as QueryPart>::deps_into(snapshot, entity, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
+        out.extend(component_dep_if_tracked::<T>(snapshot, entity));
     }
 
     fn access(_snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
-        vec![Access::write::<T>(entity)]
+        let mut out = Vec::new();
+        <Self as QueryPart>::access_into(_snapshot, entity, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Access>) {
+        out.extend([Access::write::<T>(entity)]);
     }
 
     fn access_all() -> Access {
@@ -1846,20 +1944,34 @@ macro_rules! impl_entity_query_param {
             }
 
             fn keys(state: &Self::State) -> Vec<Entity> {
-                vec![*state]
+                let mut out = Vec::new();
+                <Self as QueryParam>::keys_into(state, &mut out);
+                out
+            }
+
+            fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
+                out.extend([*state]);
             }
 
             fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
-                let mut deps = Vec::new();
-                $(deps.extend($P::deps(snapshot, *state));)*
-                deps
+                let mut out = Vec::new();
+                <Self as QueryParam>::deps_into(snapshot, state, &mut out);
+                out
+            }
+
+            fn deps_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Dep>) {
+                $($P::deps_into(snapshot, *state, out);)*
             }
 
 
             fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
-                let mut access = Vec::new();
-                $(access.extend($P::access(snapshot, *state));)*
-                access
+                let mut out = Vec::new();
+                <Self as QueryParam>::access_into(snapshot, state, &mut out);
+                out
+            }
+
+            fn access_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Access>) {
+                $($P::access_into(snapshot, *state, out);)*
             }
 
             fn access_all() -> Vec<Access> {
@@ -1931,6 +2043,12 @@ pub trait RelatedQueryPart {
     fn matches(snapshot: &Snapshot, entity: Entity) -> bool;
     fn observed_deps(snapshot: &Snapshot, entity: Entity) -> Vec<Dep>;
     fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn access_into(snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Access>) {
+        out.extend(Self::access(snapshot, entity));
+    }
     fn fetch<'a>(
         bowl: &Bowl,
         snapshot: &'a Snapshot,
@@ -1961,9 +2079,13 @@ macro_rules! impl_related_query_part {
             }
 
             fn access(snapshot: &Snapshot, entity: Entity) -> Vec<Access> {
-                let mut access = Vec::new();
-                $(access.extend($P::access(snapshot, entity));)*
-                access
+                let mut out = Vec::new();
+                Self::access_into(snapshot, entity, &mut out);
+                out
+            }
+
+            fn access_into(snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Access>) {
+                $($P::access_into(snapshot, entity, out);)*
             }
 
             fn fetch<'a>(
@@ -2120,7 +2242,19 @@ pub trait QueryFilter<Q: QueryParam> {
         Vec::new()
     }
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn deps_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        out.extend(Self::deps(snapshot, state));
+    }
     fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn access_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Access>) {
+        out.extend(Self::access(snapshot, state));
+    }
     /// Component-level access covering every row this filter inspects.
     fn access_all() -> Vec<Access> {
         Vec::new()
@@ -2198,13 +2332,23 @@ where
     }
 
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
-        component_dep_if_tracked::<T>(snapshot, state.entity())
-            .into_iter()
-            .collect()
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::deps_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        out.extend(component_dep_if_tracked::<T>(snapshot, state.entity()));
     }
 
     fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
-        vec![Access::read::<T>(state.entity())]
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::access_into(_snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Access>) {
+        out.extend([Access::read::<T>(state.entity())]);
     }
 
     fn access_all() -> Vec<Access> {
@@ -2238,13 +2382,23 @@ where
     }
 
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
-        component_dep_if_tracked::<T>(snapshot, state.entity())
-            .into_iter()
-            .collect()
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::deps_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        out.extend(component_dep_if_tracked::<T>(snapshot, state.entity()));
     }
 
     fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
-        vec![Access::read::<T>(state.entity())]
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::access_into(_snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Access>) {
+        out.extend([Access::read::<T>(state.entity())]);
     }
 
     fn access_all() -> Vec<Access> {
@@ -2359,15 +2513,25 @@ where
     }
 
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
-        let mut deps = L::deps(snapshot, state);
-        deps.extend(R::deps(snapshot, state));
-        deps
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::deps_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        L::deps_into(snapshot, state, out);
+        R::deps_into(snapshot, state, out);
     }
 
     fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
-        let mut access = L::access(snapshot, state);
-        access.extend(R::access(snapshot, state));
-        access
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::access_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Access>) {
+        L::access_into(snapshot, state, out);
+        R::access_into(snapshot, state, out);
     }
 
     fn access_all() -> Vec<Access> {
@@ -2438,11 +2602,23 @@ where
     }
 
     fn deps(snapshot: &Snapshot, state: &Q::State) -> Vec<Dep> {
-        <And<Where<L>, Where<R>> as QueryFilter<Q>>::deps(snapshot, state)
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::deps_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::deps_into(snapshot, state, out);
     }
 
     fn access(snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
-        <And<Where<L>, Where<R>> as QueryFilter<Q>>::access(snapshot, state)
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::access_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Access>) {
+        <And<Where<L>, Where<R>> as QueryFilter<Q>>::access_into(snapshot, state, out);
     }
 
     fn access_all() -> Vec<Access> {
@@ -2489,7 +2665,13 @@ where
     }
 
     fn access(_snapshot: &Snapshot, state: &Q::State) -> Vec<Access> {
-        vec![Access::read::<T>(state.entity())]
+        let mut out = Vec::new();
+        <Self as QueryFilter<Q>>::access_into(_snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(_snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Access>) {
+        out.extend([Access::read::<T>(state.entity())]);
     }
 
     fn access_all() -> Vec<Access> {
@@ -2858,8 +3040,9 @@ where
     Q: QueryParam,
     F: QueryFilter<Q>,
 {
-    let mut deps = Q::deps(snapshot, state);
-    deps.extend(F::deps(snapshot, state));
+    let mut deps = Vec::new();
+    Q::deps_into(snapshot, state, &mut deps);
+    F::deps_into(snapshot, state, &mut deps);
     deps
 }
 
@@ -2868,8 +3051,9 @@ where
     Q: QueryParam,
     F: QueryFilter<Q>,
 {
-    let mut access = Q::access(snapshot, state);
-    access.extend(F::access(snapshot, state));
+    let mut access = Vec::new();
+    Q::access_into(snapshot, state, &mut access);
+    F::access_into(snapshot, state, &mut access);
     access
 }
 

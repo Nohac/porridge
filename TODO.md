@@ -856,6 +856,12 @@ Remaining work:
   `spec/steady-state-allocations.md`. Ordinary query guards now hold erased cell
   Arcs instead of boxing each fetched guard. Planner, command, snapshot, and
   result allocations remain; zero-allocation steady state is not achieved.
+  Base and derived commands now use bump-scope arenas with driver-owned recycling
+  for ordinary invocations (`spec/bump-command-integration.md`); hook fallbacks,
+  producer handles, and return-channel allocations still need attention.
+  Planning now reuses bump scratch and appends ordinary metadata directly
+  (`spec/planning-storage.md`); admitted row/memo ownership and join candidate
+  allocation remain separate follow-ups.
 - Per-system admission and commit policies remain proposals. The implemented
   `set_dispatch_batch_size` is a maximum rows-per-task setting only.
 

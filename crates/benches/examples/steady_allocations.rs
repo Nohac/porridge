@@ -40,6 +40,7 @@ fn main() {
     let rounds = number("ALLOC_ROUNDS", 10);
     let warmup = number("ALLOC_WARMUP", 3);
     let counting = number("ALLOC_COUNT", 1) != 0;
+    let metrics = number("ALLOC_METRICS", 0) != 0;
     let case = env::var("ALLOC_CASE").unwrap_or_else(|_| "purchases".into());
     assert!(workers > 0 && slots > 0 && rounds > 0 && warmup > 0);
     assert!(matches!(case.as_str(), "purchases" | "read" | "probe"));
@@ -79,6 +80,12 @@ fn main() {
         }
 
         for round in 0..warmup.checked_add(rounds).expect("round count overflow") {
+            let metrics_before = if metrics {
+                bowl::metrics::snapshot()
+            } else {
+                Vec::new()
+            };
+            bowl::metrics::set_enabled(metrics && round >= warmup);
             let before = allocations::snapshot();
             let kernel_before = allocations::kernel_snapshot();
             allocations::enable(counting && round >= warmup);
@@ -107,6 +114,12 @@ fn main() {
             };
             let wall_ns = start.elapsed().as_nanos();
             allocations::enable(false);
+            bowl::metrics::set_enabled(false);
+            let metrics_after = if metrics {
+                bowl::metrics::snapshot()
+            } else {
+                Vec::new()
+            };
             let after = allocations::snapshot();
             let kernel_after = allocations::kernel_snapshot();
 
@@ -117,6 +130,9 @@ fn main() {
             }
             if round >= warmup {
                 println!("sample\t{}\t{slots}\t{wall_ns}", round - warmup);
+                for ((name, before), (_, after)) in metrics_before.into_iter().zip(metrics_after) {
+                    println!("metric\t{}\t{name}\t{}", round - warmup, after - before);
+                }
                 for (((name, before), (_, after)), ((_, kb), (_, ka))) in before
                     .into_iter()
                     .zip(after)

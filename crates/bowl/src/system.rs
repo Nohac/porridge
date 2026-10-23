@@ -7,7 +7,8 @@ use futures::future::{BoxFuture, FutureExt, join_all};
 
 use crate::{
     Bowl, Commands, DerivedFrom, Entity, Query, TrackedView, View,
-    commands::CommandOp,
+    commands::CommandQueue,
+    planning::{Scratch, Storage as PlanningStorage},
     prepared::PreparedParam,
     declare::{Anything, DeclarationList},
     query::{
@@ -80,7 +81,7 @@ pub(crate) struct MemoEntry {
 /// before applying `commands`.
 pub(crate) struct SystemOutput {
     pub(crate) owner: SystemInvocation,
-    pub(crate) commands: Vec<Box<dyn CommandOp>>,
+    pub(crate) commands: CommandQueue,
 }
 
 /// Outputs and memo writes produced by one system for one generation.
@@ -159,6 +160,7 @@ struct PlannedRun<State> {
 }
 
 struct PlannedInvocation<State> {
+    commands: CommandQueue,
     state: State,
     owner: SystemInvocation,
     deps: Vec<Dep>,
@@ -246,8 +248,26 @@ pub trait SystemParam {
         usize::MAX
     }
     fn keys(state: &Self::State) -> Vec<Entity>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
+        out.extend(Self::keys(state));
+    }
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn deps_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Dep>) {
+        out.extend(Self::deps(snapshot, state));
+    }
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access>;
+
+    /// Appends metadata into caller-owned storage. Custom implementations may
+    /// keep the Vec-returning method; ordinary parameters avoid temporary Vecs.
+    fn access_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Access>) {
+        out.extend(Self::access(snapshot, state));
+    }
     /// Builds the user-facing parameter value.
     ///
     /// `guards` is owned by the running invocation and dropped only after the
@@ -447,15 +467,35 @@ where
     }
 
     fn keys(state: &Self::State) -> Vec<Entity> {
-        Q::keys(state)
+        let mut out = Vec::new();
+        Self::keys_into(state, &mut out);
+        out
+    }
+
+    fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
+        Q::keys_into(state, out);
     }
 
     fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
-        filtered_deps::<Q, Filter>(snapshot, state)
+        let mut out = Vec::new();
+        Self::deps_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn deps_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Dep>) {
+        Q::deps_into(snapshot, state, out);
+        Filter::deps_into(snapshot, state, out);
     }
 
     fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
-        filtered_access::<Q, Filter>(snapshot, state)
+        let mut out = Vec::new();
+        Self::access_into(snapshot, state, &mut out);
+        out
+    }
+
+    fn access_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Access>) {
+        Q::access_into(snapshot, state, out);
+        Filter::access_into(snapshot, state, out);
     }
 
     fn written_types(out: &mut Vec<TypeId>) {
@@ -1214,11 +1254,15 @@ macro_rules! impl_system_param_tuple {
             }
 
             fn keys(state: &Self::State) -> Vec<Entity> {
+                let mut out = Vec::new();
+                Self::keys_into(state, &mut out);
+                out
+            }
+
+            fn keys_into(state: &Self::State, out: &mut impl Extend<Entity>) {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = state;
-                let mut keys = Vec::new();
-                $(keys.extend($P::keys($P));)*
-                keys
+                $($P::keys_into($P, out);)*
             }
 
             fn prepare(snapshot: &Snapshot) -> impl PreparedParam<Self> + 'static + use<$($P),*>
@@ -1227,19 +1271,27 @@ macro_rules! impl_system_param_tuple {
             }
 
             fn deps(snapshot: &Snapshot, state: &Self::State) -> Vec<Dep> {
+                let mut out = Vec::new();
+                Self::deps_into(snapshot, state, &mut out);
+                out
+            }
+
+            fn deps_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Dep>) {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = state;
-                let mut deps = Vec::new();
-                $(deps.extend($P::deps(snapshot, $P));)*
-                deps
+                $($P::deps_into(snapshot, $P, out);)*
             }
 
             fn access(snapshot: &Snapshot, state: &Self::State) -> Vec<Access> {
+                let mut out = Vec::new();
+                Self::access_into(snapshot, state, &mut out);
+                out
+            }
+
+            fn access_into(snapshot: &Snapshot, state: &Self::State, out: &mut impl Extend<Access>) {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = state;
-                let mut access = Vec::new();
-                $(access.extend($P::access(snapshot, $P));)*
-                access
+                $($P::access_into(snapshot, $P, out);)*
             }
 
             fn fetch<'a>(
@@ -1395,6 +1447,19 @@ fn plan_prepared<Params: SystemParam>(
     hint: Option<&[Entity]>,
     prepared: &impl PreparedParam<Params>,
 ) -> PlannedRun<Params::State> {
+    plan_prepared_with_scratch::<Params>(
+        system, snapshot, memo, hint, prepared, &mut Scratch::default(),
+    )
+}
+
+fn plan_prepared_with_scratch<Params: SystemParam>(
+    system: SystemId,
+    snapshot: &Snapshot,
+    memo: &HashMap<SystemInvocation, MemoEntry>,
+    hint: Option<&[Entity]>,
+    prepared: &impl PreparedParam<Params>,
+    scratch: &mut Scratch,
+) -> PlannedRun<Params::State> {
     let states = match hint {
         Some(hint) => Params::states_hinted(snapshot, hint),
         None => Params::states(snapshot),
@@ -1403,40 +1468,57 @@ fn plan_prepared<Params: SystemParam>(
     let candidates = states.len();
     let (mut hits, mut dependencies, mut accesses) = (0, 0, 0);
     let completed = !states.is_empty();
-    let invocations = states
-        .into_iter()
-        .filter_map(|state| {
-            let owner = SystemInvocation {
-                system,
-                keys: Params::keys(&state),
-            };
-            let mut deps = Vec::new();
-            prepared.deps(snapshot, &state, &mut deps);
+    let Scratch { arena, owner } = scratch;
+    owner.system = system;
+    let before_chunks = trace.then(|| arena.stats().count());
+    let before_keys = owner.keys.capacity();
+
+    // The scope resets on success or unwind. Only owned copies for admitted
+    // rows escape into futures/memos; no scratch borrow can outlive this call.
+    let invocations = arena.scoped(|scope| {
+        let mut deps = bump_scope::BumpVec::new_in(&scope);
+        let mut access = bump_scope::BumpVec::new_in(&scope);
+        let mut invocations = Vec::new();
+
+        for state in states {
+            owner.keys.clear();
+            Params::keys_into(&state, &mut owner.keys);
+            deps.clear();
+            prepared.deps_into(snapshot, &state, &mut deps);
             if trace {
                 dependencies += deps.len() as u64;
             }
-            if !Params::always_run() && memo.get(&owner).is_some_and(|entry| entry.deps == deps) {
+
+            if !Params::always_run()
+                && memo.get(owner).is_some_and(|entry| entry.deps.as_slice() == deps.as_slice())
+            {
                 if trace {
                     hits += 1;
                 }
-                return None;
+                continue;
             }
 
-            let access = Params::access(snapshot, &state);
+            access.clear();
+            Params::access_into(snapshot, &state, &mut access);
             if trace {
                 accesses += access.len() as u64;
             }
-            Some(PlannedInvocation {
+            invocations.push(PlannedInvocation {
+                commands: CommandQueue::default(),
                 state,
-                owner,
-                deps,
-                access,
-            })
-        })
-        .collect();
+                owner: owner.clone(),
+                deps: deps.to_vec(),
+                access: access.to_vec(),
+            });
+        }
 
-    if trace {
+        invocations
+    });
+
+    if let Some(before_chunks) = before_chunks {
         use crate::metrics::{add, Counter::*};
+        add(PlanningArenaGrowth, (arena.stats().count() - before_chunks) as u64);
+        add(PlanningKeyGrowth, u64::from(owner.keys.capacity() != before_keys));
         add(PlanCalls, 1);
         add(CandidateRows, candidates as u64);
         add(MemoHits, hits);
@@ -1444,10 +1526,7 @@ fn plan_prepared<Params: SystemParam>(
         add(AccessRecords, accesses);
     }
 
-    PlannedRun {
-        completed,
-        invocations,
-    }
+    PlannedRun { completed, invocations }
 }
 
 /// Counts a system's rows for [`crate::Bowl::explain`]: `(matched,
@@ -1567,6 +1646,7 @@ pub(crate) trait Runnable: Send + Sync {
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
+        _buffers: &mut PlanningStorage,
     ) -> Box<dyn crate::dispatch::RunPlan> {
         crate::dispatch::prepare(self.stream_runs(bowl, snapshot, memo, hint).into_iter())
     }
@@ -2181,8 +2261,9 @@ where
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
+        buffers: &mut PlanningStorage,
     ) -> Box<dyn crate::dispatch::RunPlan> {
-        self.system.plan_runs(bowl, snapshot, memo, hint)
+        self.system.plan_runs(bowl, snapshot, memo, hint, buffers)
     }
 
     fn run_settled<'a>(
@@ -2434,8 +2515,9 @@ impl BoxedSystem {
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
+        buffers: &mut PlanningStorage,
     ) -> Box<dyn crate::dispatch::RunPlan> {
-        self.runnable.plan_runs(bowl, snapshot, memo, hint)
+        self.runnable.plan_runs(bowl, snapshot, memo, hint, buffers)
     }
 
     pub(crate) fn run_settled<'a>(
@@ -2506,55 +2588,70 @@ where
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
+        buffers: Option<&mut PlanningStorage>,
     ) -> impl ExactSizeIterator<
         Item = PlannedSystemRun<impl Future<Output = SystemRun> + Send + 'static>,
     > + Send
     + 'static {
         let function = Arc::clone(&self.function);
         let prepared = F::Param::prepare(&snapshot);
-        let planned = plan_prepared::<F::Param>(self.id, &snapshot, memo, hint, &prepared);
+        let planned = if let Some(buffers) = buffers {
+            let mut planned = plan_prepared_with_scratch::<F::Param>(
+                self.id, &snapshot, memo, hint, &prepared, &mut buffers.scratch,
+            );
+            for invocation in &mut planned.invocations {
+                invocation.commands = buffers.commands.take();
+            }
+            planned
+        } else {
+            plan_prepared::<F::Param>(self.id, &snapshot, memo, hint, &prepared)
+        };
         // One shared context replaces the row's snapshot handle, avoiding an
         // additional reference-count operation per admitted row.
         let context = Arc::new((snapshot, prepared));
-        planned.invocations.into_iter().map(move |invocation| {
-            let owner = invocation.owner.clone();
-            let access = invocation.access.clone();
-            let bowl = bowl.clone();
-            let function = Arc::clone(&function);
-            let context = Arc::clone(&context);
-            let run = async move {
-                let (snapshot, prepared) = context.as_ref();
-                let writes = written_rows(&invocation.access);
-                let commands = Commands::new(
-                    snapshot.spawn_slots(&invocation.owner),
-                    snapshot.entity_allocator(),
-                );
-                // Read guards live here, in the invocation frame, so
-                // borrows handed to the system stay locked until the
-                // system function returns.
-                let mut guards = GuardStore::new();
-                let params =
-                    prepared.fetch(&bowl, snapshot, &invocation.state, &commands, &mut guards);
-                function.run(params).await;
-                drop(guards);
+        planned
+            .invocations
+            .into_iter()
+            .map(move |invocation| {
+                let owner = invocation.owner.clone();
+                let access = invocation.access.clone();
+                let bowl = bowl.clone();
+                let function = Arc::clone(&function);
+                let context = Arc::clone(&context);
+                let run = async move {
+                    let (snapshot, prepared) = context.as_ref();
+                    let writes = written_rows(&invocation.access);
+                    let commands = Commands::with_queue(
+                        snapshot.spawn_slots(&invocation.owner),
+                        snapshot.entity_allocator(),
+                        invocation.commands,
+                    );
+                    // Read guards live here, in the invocation frame, so
+                    // borrows handed to the system stay locked until the
+                    // system function returns.
+                    let mut guards = GuardStore::new();
+                    let params =
+                        prepared.fetch(&bowl, snapshot, &invocation.state, &commands, &mut guards);
+                    function.run(params).await;
+                    drop(guards);
 
-                let (output, memo_update) = finish_invocation(
-                    invocation.owner,
-                    invocation.deps,
-                    snapshot.revision_raw(),
-                    commands,
-                );
+                    let (output, memo_update) = finish_invocation(
+                        invocation.owner,
+                        invocation.deps,
+                        snapshot.revision_raw(),
+                        commands,
+                    );
 
-                SystemRun {
-                    completed: true,
-                    outputs: vec![output],
-                    memo_updates: vec![memo_update],
-                    writes,
-                }
-            };
+                    SystemRun {
+                        completed: true,
+                        outputs: vec![output],
+                        memo_updates: vec![memo_update],
+                        writes,
+                    }
+                };
 
-            PlannedSystemRun { owner, access, run }
-        })
+                PlannedSystemRun { owner, access, run }
+            })
     }
 }
 
@@ -2636,7 +2733,7 @@ where
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
     ) -> Vec<PlannedSystemRun> {
-        self.plan_rows(bowl, snapshot, memo, hint)
+        self.plan_rows(bowl, snapshot, memo, hint, None)
             .map(|planned| PlannedSystemRun {
                 owner: planned.owner,
                 access: planned.access,
@@ -2651,8 +2748,9 @@ where
         snapshot: Arc<Snapshot>,
         memo: &HashMap<SystemInvocation, MemoEntry>,
         hint: Option<&[Entity]>,
+        buffers: &mut PlanningStorage,
     ) -> Box<dyn crate::dispatch::RunPlan> {
-        crate::dispatch::prepare(self.plan_rows(bowl, snapshot, memo, hint))
+        crate::dispatch::prepare(self.plan_rows(bowl, snapshot, memo, hint, Some(buffers)))
     }
 
 }

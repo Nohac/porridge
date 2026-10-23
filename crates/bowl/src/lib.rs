@@ -104,6 +104,7 @@ mod dispatch;
 mod declare;
 mod entity;
 mod prepared;
+mod planning;
 #[doc(hidden)]
 pub mod metrics;
 mod query;
@@ -186,3 +187,6 @@ pub mod __derive {
     pub use crate::world::Snapshot;
     pub use crate::{Bowl, Commands, Entity};
 }
+
+#[doc(hidden)]
+pub use commands::{BaseCommands, BaseCommandOp};

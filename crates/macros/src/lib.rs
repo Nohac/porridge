@@ -553,13 +553,13 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
         ));
         states_tuple.push_str(&format!("__f{index},"));
         keys_body.push_str(&format!(
-            "out.extend(<{static_ty} as ::bowl::__derive::SystemParam>::keys(&state.{index}));"
+            "<{static_ty} as ::bowl::__derive::SystemParam>::keys_into(&state.{index}, out);"
         ));
         deps_body.push_str(&format!(
-            "out.extend(<{static_ty} as ::bowl::__derive::SystemParam>::deps(snapshot, &state.{index}));"
+            "<{static_ty} as ::bowl::__derive::SystemParam>::deps_into(snapshot, &state.{index}, out);"
         ));
         access_body.push_str(&format!(
-            "out.extend(<{static_ty} as ::bowl::__derive::SystemParam>::access(snapshot, &state.{index}));"
+            "<{static_ty} as ::bowl::__derive::SystemParam>::access_into(snapshot, &state.{index}, out);"
         ));
         fetch_fields.push_str(&format!(
             "{field_name}: <{item_lt_ty} as ::bowl::__derive::SystemParam>::fetch(bowl, snapshot, &state.{index}, commands, guards),"
@@ -599,8 +599,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
 
             fn keys(state: &Self::State) -> ::std::vec::Vec<::bowl::__derive::Entity> {{
                 let mut out = ::std::vec::Vec::new();
-                {keys_body}
+                <Self as ::bowl::__derive::SystemParam>::keys_into(state, &mut out);
                 out
+            }}
+
+            fn keys_into(state: &Self::State, out: &mut impl ::core::iter::Extend<::bowl::__derive::Entity>) {{
+                {keys_body}
             }}
 
             fn deps(
@@ -608,8 +612,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 state: &Self::State,
             ) -> ::std::vec::Vec<::bowl::__derive::Dep> {{
                 let mut out = ::std::vec::Vec::new();
-                {deps_body}
+                <Self as ::bowl::__derive::SystemParam>::deps_into(snapshot, state, &mut out);
                 out
+            }}
+
+            fn deps_into(snapshot: &::bowl::__derive::Snapshot, state: &Self::State, out: &mut impl ::core::iter::Extend<::bowl::__derive::Dep>) {{
+                {deps_body}
             }}
 
             fn access(
@@ -617,8 +625,12 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 state: &Self::State,
             ) -> ::std::vec::Vec<::bowl::__derive::Access> {{
                 let mut out = ::std::vec::Vec::new();
-                {access_body}
+                <Self as ::bowl::__derive::SystemParam>::access_into(snapshot, state, &mut out);
                 out
+            }}
+
+            fn access_into(snapshot: &::bowl::__derive::Snapshot, state: &Self::State, out: &mut impl ::core::iter::Extend<::bowl::__derive::Access>) {{
+                {access_body}
             }}
 
             fn fetch<'__item>(

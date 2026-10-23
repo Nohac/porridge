@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--cases", default="purchases,read,probe")
     parser.add_argument("--workers", default="1,8")
     parser.add_argument("--slots", default="1,1000")
+    parser.add_argument("--metrics", action="store_true", help="engine diagnostics during allocation passes only")
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repetitions", type=int, default=3)
@@ -64,7 +65,7 @@ def main():
                             name = f"{label}-{case}-{count}-{size}-count{counting}-{repeat}"
                             ready = root / f"{name}.ready"
                             settings = dict(ALLOC_CASE=case, ALLOC_WORKERS=str(count), ALLOC_SLOTS=str(size),
-                                ALLOC_COUNT=str(counting), ALLOC_ROUNDS=str(args.rounds), ALLOC_WARMUP=str(args.warmup), ALLOC_READY=str(ready))
+                                ALLOC_COUNT=str(counting), ALLOC_METRICS=str(int(args.metrics and counting)), ALLOC_ROUNDS=str(args.rounds), ALLOC_WARMUP=str(args.warmup), ALLOC_READY=str(ready))
                             with (root / f"{name}.tsv").open("w") as out, (root / f"{name}.err").open("w") as err:
                                 proc = subprocess.Popen([str(binaries[label])], env=os.environ | settings, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True)
                                 try:
@@ -86,15 +87,17 @@ def main():
                                     if proc.poll() is None:
                                         proc.kill()
                                         proc.wait()
-                            samples, allocations = [], []
+                            samples, allocations, metrics = [], [], []
                             for line in (root / f"{name}.tsv").read_text().splitlines():
                                 parts = line.split("\t")
                                 if parts[0] == "sample":
                                     samples.append(dict(round=int(parts[1]), operations=int(parts[2]), wall_ns=int(parts[3])))
+                                elif parts[0] == "metric":
+                                    metrics.append(dict(round=int(parts[1]), name=parts[2], value=int(parts[3])))
                                 elif parts[0] == "allocation":
                                     allocations.append(dict(round=int(parts[1]), operation=parts[2], engine=int(parts[3]), kernel=int(parts[4])))
                             assert len(samples) == args.rounds
-                            report["records"].append(dict(label=label, case=case, workers=count, slots=size, counting=bool(counting), repeat=repeat, samples=samples, allocations=allocations))
+                            report["records"].append(dict(label=label, case=case, workers=count, slots=size, counting=bool(counting), repeat=repeat, samples=samples, allocations=allocations, metrics=metrics))
                             (root / "report.json").write_text(json.dumps(report, indent=2, default=str) + "\n")
                 for label in binaries:
                     records = [r for r in report["records"] if (r["label"], r["case"], r["workers"], r["slots"]) == (label, case, count, size)]

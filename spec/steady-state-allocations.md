@@ -114,15 +114,24 @@ fixture or guard modules.
 - [x] Measure bounded warmed fixed IDs, settled reads, and user allocation control.
 - [x] Remove per-component guard boxes; compare compact and inline collections.
 - [ ] Reuse query guard collection capacity across invocations.
-- [ ] Reuse row keys/dependencies/access metadata and planner scratch capacity.
-- [ ] Reuse command buffers; avoid unconditional buffers without a Commands param.
-      Preserve cloned-handle and commit ownership semantics.
+- [x] Reuse planning scratch and avoid intermediate metadata Vecs
+      ([implementation and results](planning-storage.md)).
+- [ ] Recycle admitted-row metadata while preserving in-flight/memo ownership.
+- [x] Reuse ordinary invocation payload buffers and retained base-input storage
+      using [bump-scope integration](bump-command-integration.md).
+- [ ] Extend recycling to hook fallback paths and avoid unconditional producer
+      handles without a Commands param. Preserve cloned-handle ownership.
 - [ ] Reuse output/memo bookkeeping and execution queue capacity across waves.
 - [ ] Address structural snapshot copying and replacement component-cell allocation
       while preserving outstanding readers and derived-output ownership.
 - [ ] Add growth/churn/retained-reader allocation cases and per-path budgets.
 - [ ] Enforce zero allocator calls for explicitly supported steady-state cases.
 
-Follow allocation call stacks before choosing the next substantial storage
-change. The existing `profile_purchases` continues to measure fresh-world
+The [command integration allocation profile](bump-command-integration.md#where-the-remaining-allocations-originate)
+attributes about 66% of warmed purchase allocation/reallocation calls to planning.
+Command arenas show no growth after warmup. The subsequent
+[planning-storage change](planning-storage.md) removes 75 allocations and 22
+reallocations per request in the eight-worker case; join candidates and
+retained execution/memo storage remain. Follow call stacks before choosing the
+next substantial storage change. The existing `profile_purchases` continues to measure fresh-world
 request retirement; its numbers are not interchangeable with fixed-ID work.

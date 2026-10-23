@@ -15,6 +15,12 @@ use crate::{Bowl, Commands, Entity, MutRef, Query};
 pub trait PreparedParam<P: SystemParam>: Send + Sync {
     fn deps(&self, snapshot: &Snapshot, state: &P::State, out: &mut Vec<Dep>);
 
+    fn deps_into(&self, snapshot: &Snapshot, state: &P::State, out: &mut impl Extend<Dep>) {
+        let mut deps = Vec::new();
+        self.deps(snapshot, state, &mut deps);
+        out.extend(deps);
+    }
+
     fn fetch<'a>(
         &'a self,
         bowl: &Bowl,
@@ -30,6 +36,12 @@ pub trait PreparedParam<P: SystemParam>: Send + Sync {
 pub trait PreparedQuery<Q: QueryParam>: Send + Sync {
     fn deps(&self, snapshot: &Snapshot, state: &Q::State, out: &mut Vec<Dep>);
 
+    fn deps_into(&self, snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        let mut deps = Vec::new();
+        self.deps(snapshot, state, &mut deps);
+        out.extend(deps);
+    }
+
     fn fetch<'a>(
         &'a self,
         bowl: &Bowl,
@@ -43,6 +55,12 @@ pub trait PreparedQuery<Q: QueryParam>: Send + Sync {
 #[doc(hidden)]
 pub trait PreparedPart<P: QueryPart>: Send + Sync {
     fn deps(&self, snapshot: &Snapshot, entity: Entity, out: &mut Vec<Dep>);
+
+    fn deps_into(&self, snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
+        let mut deps = Vec::new();
+        self.deps(snapshot, entity, &mut deps);
+        out.extend(deps);
+    }
 
     fn fetch<'a>(
         &'a self,
@@ -63,7 +81,11 @@ impl<P> Fallback<P> {
 
 impl<P: SystemParam> PreparedParam<P> for Fallback<P> {
     fn deps(&self, snapshot: &Snapshot, state: &P::State, out: &mut Vec<Dep>) {
-        out.extend(P::deps(snapshot, state));
+        <Self as PreparedParam<P>>::deps_into(self, snapshot, state, out);
+    }
+
+    fn deps_into(&self, snapshot: &Snapshot, state: &P::State, out: &mut impl Extend<Dep>) {
+        P::deps_into(snapshot, state, out);
     }
 
     fn fetch<'a>(
@@ -80,7 +102,11 @@ impl<P: SystemParam> PreparedParam<P> for Fallback<P> {
 
 impl<Q: QueryParam> PreparedQuery<Q> for Fallback<Q> {
     fn deps(&self, snapshot: &Snapshot, state: &Q::State, out: &mut Vec<Dep>) {
-        out.extend(Q::deps(snapshot, state));
+        <Self as PreparedQuery<Q>>::deps_into(self, snapshot, state, out);
+    }
+
+    fn deps_into(&self, snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        Q::deps_into(snapshot, state, out);
     }
 
     fn fetch<'a>(
@@ -96,7 +122,11 @@ impl<Q: QueryParam> PreparedQuery<Q> for Fallback<Q> {
 
 impl<P: QueryPart> PreparedPart<P> for Fallback<P> {
     fn deps(&self, snapshot: &Snapshot, entity: Entity, out: &mut Vec<Dep>) {
-        out.extend(P::deps(snapshot, entity));
+        <Self as PreparedPart<P>>::deps_into(self, snapshot, entity, out);
+    }
+
+    fn deps_into(&self, snapshot: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
+        P::deps_into(snapshot, entity, out);
     }
 
     fn fetch<'a>(
@@ -111,7 +141,11 @@ impl<P: QueryPart> PreparedPart<P> for Fallback<P> {
 }
 
 impl<T: crate::Component> PreparedPart<&T> for ResolvedStore<T> {
-    fn deps(&self, _: &Snapshot, entity: Entity, out: &mut Vec<Dep>) {
+    fn deps(&self, snapshot: &Snapshot, entity: Entity, out: &mut Vec<Dep>) {
+        <Self as PreparedPart<&T>>::deps_into(self, snapshot, entity, out);
+    }
+
+    fn deps_into(&self, _: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
         out.extend(self.dependency(entity, false));
     }
 
@@ -130,7 +164,11 @@ impl<T: crate::Component> PreparedPart<&T> for ResolvedStore<T> {
 }
 
 impl<T: crate::Component> PreparedPart<Option<&T>> for ResolvedStore<T> {
-    fn deps(&self, _: &Snapshot, entity: Entity, out: &mut Vec<Dep>) {
+    fn deps(&self, snapshot: &Snapshot, entity: Entity, out: &mut Vec<Dep>) {
+        <Self as PreparedPart<Option<&T>>>::deps_into(self, snapshot, entity, out);
+    }
+
+    fn deps_into(&self, _: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
         out.extend(self.dependency(entity, true));
     }
 
@@ -147,7 +185,11 @@ impl<T: crate::Component> PreparedPart<Option<&T>> for ResolvedStore<T> {
 }
 
 impl<T: crate::Component> PreparedPart<MutRef<'_, T>> for ResolvedStore<T> {
-    fn deps(&self, _: &Snapshot, entity: Entity, out: &mut Vec<Dep>) {
+    fn deps(&self, snapshot: &Snapshot, entity: Entity, out: &mut Vec<Dep>) {
+        <Self as PreparedPart<MutRef<'_, T>>>::deps_into(self, snapshot, entity, out);
+    }
+
+    fn deps_into(&self, _: &Snapshot, entity: Entity, out: &mut impl Extend<Dep>) {
         out.extend(self.dependency(entity, false));
     }
 
@@ -171,7 +213,11 @@ pub(crate) struct Scalar<P, S>(pub(crate) S, pub(crate) PhantomData<fn() -> P>);
 
 impl<T: crate::Component, S: PreparedPart<&'static T>> PreparedQuery<&T> for Scalar<T, S> {
     fn deps(&self, snapshot: &Snapshot, state: &Entity, out: &mut Vec<Dep>) {
-        self.0.deps(snapshot, *state, out);
+        <Self as PreparedQuery<&T>>::deps_into(self, snapshot, state, out);
+    }
+
+    fn deps_into(&self, snapshot: &Snapshot, state: &Entity, out: &mut impl Extend<Dep>) {
+        self.0.deps_into(snapshot, *state, out);
     }
 
     fn fetch<'a>(
@@ -189,7 +235,11 @@ impl<T: crate::Component, S: PreparedPart<MutRef<'static, T>>> PreparedQuery<(Mu
     for Scalar<T, S>
 {
     fn deps(&self, snapshot: &Snapshot, state: &Entity, out: &mut Vec<Dep>) {
-        self.0.deps(snapshot, *state, out);
+        <Self as PreparedQuery<(MutRef<'_, T>,)>>::deps_into(self, snapshot, state, out);
+    }
+
+    fn deps_into(&self, snapshot: &Snapshot, state: &Entity, out: &mut impl Extend<Dep>) {
+        self.0.deps_into(snapshot, *state, out);
     }
 
     fn fetch<'a>(
@@ -209,8 +259,12 @@ impl<Q: QueryParam, F: QueryFilter<Q> + Send, S: PreparedQuery<Q>> PreparedParam
     for Filtered<S>
 {
     fn deps(&self, snapshot: &Snapshot, state: &Q::State, out: &mut Vec<Dep>) {
-        self.0.deps(snapshot, state, out);
-        out.extend(F::deps(snapshot, state));
+        <Self as PreparedParam<Query<Q, F>>>::deps_into(self, snapshot, state, out);
+    }
+
+    fn deps_into(&self, snapshot: &Snapshot, state: &Q::State, out: &mut impl Extend<Dep>) {
+        self.0.deps_into(snapshot, state, out);
+        F::deps_into(snapshot, state, out);
     }
 
     fn fetch<'a>(
@@ -231,11 +285,15 @@ macro_rules! prepared_tuples {
     ($(($P:ident, $S:ident)),*) => {
         impl<$($P: SystemParam, $S: PreparedParam<$P>),*> PreparedParam<($($P,)*)> for ($($S,)*) {
             fn deps(&self, snapshot: &Snapshot, state: &($($P::State,)*), out: &mut Vec<Dep>) {
+                <Self as PreparedParam<($($P,)*)>>::deps_into(self, snapshot, state, out);
+            }
+
+            fn deps_into(&self, snapshot: &Snapshot, state: &($($P::State,)*), out: &mut impl Extend<Dep>) {
                 #[allow(non_snake_case)]
                 let ($($P,)*) = state;
                 #[allow(non_snake_case)]
                 let ($($S,)*) = self;
-                $($S.deps(snapshot, $P, out);)*
+                $($S.deps_into(snapshot, $P, out);)*
             }
 
             fn fetch<'a>(&'a self, bowl: &Bowl, snapshot: &'a Snapshot, state: &($($P::State,)*),
@@ -250,9 +308,13 @@ macro_rules! prepared_tuples {
 
         impl<H: FacetKind, $($P: QueryPart, $S: PreparedPart<$P>),*> PreparedQuery<(Entity<H>, $($P,)*)> for EntityParts<($($S,)*)> {
             fn deps(&self, snapshot: &Snapshot, state: &Entity, out: &mut Vec<Dep>) {
+                <Self as PreparedQuery<(Entity<H>, $($P,)*)>>::deps_into(self, snapshot, state, out);
+            }
+
+            fn deps_into(&self, snapshot: &Snapshot, state: &Entity, out: &mut impl Extend<Dep>) {
                 #[allow(non_snake_case)]
                 let ($($S,)*) = &self.0;
-                $($S.deps(snapshot, *state, out);)*
+                $($S.deps_into(snapshot, *state, out);)*
             }
 
             fn fetch<'a>(&'a self, bowl: &Bowl, snapshot: &'a Snapshot, state: &Entity,

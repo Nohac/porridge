@@ -1,7 +1,8 @@
 # Command storage comparison
 
-Status: isolated experiment complete; production command storage is unchanged.
-`bump-scope` is a benchmark-only dependency. No engine feature selection changed.
+Status: the comparison is complete. The user selected bump-scope for production
+integration; see [the integration record](bump-command-integration.md). The
+comparison below retains its original boxed/arena/packed measurements.
 
 ## Implementations
 
@@ -75,7 +76,7 @@ Workspace build/tests, example tests, clippy, playground, and all Criterion
 smoke suites are part of this slice's verification. Test helpers live in the
 example target, not the harness-free Criterion target.
 
-## Decision and production follow-up
+## Original comparison recommendation
 
 Use the **Bevy-style packed approach as the starting point for small engine
 commands**, and retain bump-scope as a measured alternative for larger payloads
@@ -83,7 +84,7 @@ or temporary planner allocations. The library works; it is not necessary to
 write an allocator to use arena storage. It also does not eliminate the need
 for owning command-buffer bookkeeping in this architecture.
 
-Production integration should be a separate coherent change:
+The subsequent bump-scope integration addresses these requirements:
 
 1. Replace per-command boxes behind a reusable owned queue abstraction, preserving
    typed enqueue APIs and insertion order. Cover base inputs as well as derived
@@ -113,3 +114,18 @@ estimates. `--repetitions` and `--cpu` override defaults.
 cargo test --workspace --examples -j 20
 cargo +nightly miri test --workspace --example command_buffers command_storage_tests
 ```
+
+## Integration plan (bump-scope selected)
+
+The user selected bump-scope after the comparison. Integrate an owning arena
+queue for base and derived commands, preserving typed insertion and commit
+boundaries. Keep selective Settle deferral owned, not borrowed from recycled
+storage. A driver-owned pool leases payload queues during ordinary planning and
+accepts empty arenas back over a return channel; no new shared pool mutex.
+Producer handles are never recycled, only detached payload storage, so old
+Commands clones cannot mutate a later invocation's queue. Hook fallback paths
+may initially use unpooled arenas; record that limitation if retained.
+
+Verify normal/exceptional destruction, alignment/ZSTs, selective deferral,
+watermarked input promotion, stale discard, and pool recycling, including Miri.
+Then rerun fixed-world allocation/timing comparisons with preserved binaries.

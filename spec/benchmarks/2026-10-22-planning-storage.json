@@ -1,0 +1,1374 @@
+{
+  "date": "2026-10-22",
+  "notes": [
+    "Baseline is the preceding uncommitted command-arena integration, preserved before planning edits; base commit alone does not identify its source.",
+    "Allocation and wall-time passes are separate, alternating binary order across three processes. Same workspace features and optimized profile.",
+    "Workstation timings are directional. One-worker interleavings change planning work and allocation counts.",
+    "DHAT counts allocations and reallocations, attributed to original allocation stacks; profiling is separate from timing and changes scheduling.",
+    "Planning scratch is reused. Admitted row and memo buffers remain owned; join candidate materialization is unchanged."
+  ],
+  "measurements": {
+    "baseline": {
+      "raw_report_sha256": "2667d74c13e511d860efb6337a2865a1321d8684d5f35c8c13be52d379cc22fe",
+      "provenance": {
+        "base_commit": "4acd2a437041dbfd8c7738778d6cd57f7ab5915c",
+        "binaries": {
+          "after": {
+            "path": "/home/jonas/Development/Rust/porridge/target/planning-storage/before-steady_allocations",
+            "sha256": "5001981eecd2c765dde718c78785a0cf02c2be37a7cf4faf6a0b7fcc758e61db"
+          }
+        },
+        "source_sha256": {
+          "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+          "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+          "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+          "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+          "crates/bowl/src/query.rs": "08db53d89d78fb3fea31568cf39ceb06fe8201f56174444d548e4554ec9ba297",
+          "crates/bowl/src/system.rs": "cda2b25d959a99d51ab8eb7cc339288a0a7b57120388850461cb60aaf3e1ab3d",
+          "crates/bowl/src/world.rs": "0b640e6dace9097fd77f83b5cd4381bac034b6d7646213e651c2abe62b827244",
+          "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+          "crates/bowl/src/bowl.rs": "c7173cefd8d467b0a8c6a6e1ee95a00f3b00e33c737a43221ec0a239905fad25",
+          "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+          "crates/bowl/src/lib.rs": "150d50b741c283f71ca84ee2e5f758473797636b4e04ed3022212a0ac33f0789",
+          "crates/bowl/src/prepared.rs": "617d4583e29486b15aa19ca29f833ee47c7e8289935f0cd1173fa2b59d6f2733",
+          "crates/bowl/src/metrics.rs": "5265a20303a78ef042e22ffd4993c0e36b0415d081e4f518d894d3a55b4b7236",
+          "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+          "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+          "crates/bowl/src/system/planning_tests.rs": "c5d5e733d3b375c94095df006cf8d5e9618209fe66454a1bee79975995683265",
+          "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+          "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+          "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+          "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+          "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+          "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+          "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+          "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+          "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+          "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+          "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+          "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+          "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+          "crates/benches/examples/steady_allocations.rs": "5dfd75ff381dab03ed4d4d8445866ecf7f366eaa7fde545cfec2dc53bcca8a81",
+          "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+          "crates/benches/examples/profile_allocations.rs": "d1452e82e000a9b4ac785ce491ce895235fe9f9115ff2e5703e5504b83cc822f",
+          "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+          "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+          "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+          "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+          "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+          "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+        },
+        "source_scope": "current workspace; supplied baseline binary needs its original build manifest",
+        "runner_sha256": "8b926b2b6611849085398849268f93f1840615cceda566fa598d8d69fec2de61",
+        "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+        "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "kernel": [
+          "Linux",
+          "graphite",
+          "7.2.8",
+          "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+          "x86_64"
+        ],
+        "driver_cpu": 0,
+        "worker_cpus": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          3,
+          5,
+          7,
+          9,
+          11,
+          13,
+          15,
+          17,
+          19
+        ],
+        "configuration": {
+          "binary": "target/planning-storage/before-steady_allocations",
+          "before": null,
+          "out": "target/planning-storage/baseline",
+          "cases": "purchases,read",
+          "workers": "1,8",
+          "slots": "1,1000",
+          "metrics": false,
+          "rounds": 5,
+          "warmup": 3,
+          "repetitions": 1
+        }
+      },
+      "summary": [
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_us_per_operation": 141.506,
+          "process_median_us": [
+            141.506
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 796.0,
+            "alloc_requested_bytes": 92091.0,
+            "dealloc_calls": 796.0,
+            "dealloc_requested_bytes": 98459.0,
+            "realloc_calls": 71.0,
+            "realloc_old_bytes": 10064.0,
+            "realloc_new_bytes": 16432.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1000,
+          "median_us_per_operation": 32.932756999999995,
+          "process_median_us": [
+            32.932756999999995
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 244.737,
+            "alloc_requested_bytes": 26973.215,
+            "dealloc_calls": 244.699,
+            "dealloc_requested_bytes": 38733.703,
+            "realloc_calls": 25.009,
+            "realloc_old_bytes": 11348.816,
+            "realloc_new_bytes": 23130.056
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_us_per_operation": 117.07,
+          "process_median_us": [
+            117.07
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 684.0,
+            "alloc_requested_bytes": 84515.0,
+            "dealloc_calls": 684.0,
+            "dealloc_requested_bytes": 90387.0,
+            "realloc_calls": 60.0,
+            "realloc_old_bytes": 8640.0,
+            "realloc_new_bytes": 14512.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1000,
+          "median_us_per_operation": 41.182593000000004,
+          "process_median_us": [
+            41.182593000000004
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 231.814,
+            "alloc_requested_bytes": 25648.547,
+            "dealloc_calls": 231.815,
+            "dealloc_requested_bytes": 36898.459,
+            "realloc_calls": 24.124,
+            "realloc_old_bytes": 10834.8,
+            "realloc_new_bytes": 22084.208
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 1,
+          "slots": 1,
+          "median_us_per_operation": 1.072,
+          "process_median_us": [
+            1.072
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 4.0,
+            "alloc_requested_bytes": 1792.0,
+            "dealloc_calls": 4.0,
+            "dealloc_requested_bytes": 1792.0,
+            "realloc_calls": 0.0,
+            "realloc_old_bytes": 0.0,
+            "realloc_new_bytes": 0.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 1,
+          "slots": 1000,
+          "median_us_per_operation": 0.09682299999999999,
+          "process_median_us": [
+            0.09682299999999999
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 0.004,
+            "alloc_requested_bytes": 17.776,
+            "dealloc_calls": 0.004,
+            "dealloc_requested_bytes": 42.256,
+            "realloc_calls": 0.008,
+            "realloc_old_bytes": 24.48,
+            "realloc_new_bytes": 48.96
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 8,
+          "slots": 1,
+          "median_us_per_operation": 0.912,
+          "process_median_us": [
+            0.912
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 4.0,
+            "alloc_requested_bytes": 1792.0,
+            "dealloc_calls": 4.0,
+            "dealloc_requested_bytes": 1792.0,
+            "realloc_calls": 0.0,
+            "realloc_old_bytes": 0.0,
+            "realloc_new_bytes": 0.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 8,
+          "slots": 1000,
+          "median_us_per_operation": 0.096943,
+          "process_median_us": [
+            0.096943
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 0.004,
+            "alloc_requested_bytes": 17.776,
+            "dealloc_calls": 0.004,
+            "dealloc_requested_bytes": 42.256,
+            "realloc_calls": 0.008,
+            "realloc_old_bytes": 24.48,
+            "realloc_new_bytes": 48.96
+          },
+          "storage_metrics_sum": {}
+        }
+      ]
+    },
+    "comparison": {
+      "raw_report_sha256": "3665cdb90adb144dc3fd800af52bd16e6b63062952c3431baa152e02128939b6",
+      "provenance": {
+        "base_commit": "4acd2a437041dbfd8c7738778d6cd57f7ab5915c",
+        "binaries": {
+          "after": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+            "sha256": "c9b52c1e00be4ba4d10254b93ac32b3d3986967da07aaa82115cfcd1391fb699"
+          },
+          "before": {
+            "path": "/home/jonas/Development/Rust/porridge/target/planning-storage/before-steady_allocations",
+            "sha256": "5001981eecd2c765dde718c78785a0cf02c2be37a7cf4faf6a0b7fcc758e61db"
+          }
+        },
+        "source_sha256": {
+          "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+          "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+          "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+          "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+          "crates/bowl/src/query.rs": "0ded38d0686bbe8ad0e117c719142bd56857e29becc8041fb300fc784bca5130",
+          "crates/bowl/src/system.rs": "7a0bbb6e5d03db219c6a002b581ae0c6012c606272d43b06f34a842bc0910316",
+          "crates/bowl/src/world.rs": "0b640e6dace9097fd77f83b5cd4381bac034b6d7646213e651c2abe62b827244",
+          "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+          "crates/bowl/src/bowl.rs": "da3a638c39399371a1a72c15cc4a03d1c5500de6fd7ebb6c6a3cff3b5b7348d7",
+          "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+          "crates/bowl/src/lib.rs": "4bd531c49d3a7264f3365e2e1964aca5f70805cf91a91c5f75338bb404850019",
+          "crates/bowl/src/prepared.rs": "8baab8adbce158fc7d4506bb5251935abcddeca91aa7eb2a49a810e6be228961",
+          "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+          "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+          "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+          "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+          "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+          "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+          "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+          "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+          "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+          "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+          "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+          "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+          "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+          "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+          "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+          "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+          "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+          "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+          "crates/benches/examples/steady_allocations.rs": "5dfd75ff381dab03ed4d4d8445866ecf7f366eaa7fde545cfec2dc53bcca8a81",
+          "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+          "crates/benches/examples/profile_allocations.rs": "d1452e82e000a9b4ac785ce491ce895235fe9f9115ff2e5703e5504b83cc822f",
+          "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+          "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+          "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+          "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+          "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+          "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+        },
+        "source_scope": "current workspace; supplied baseline binary needs its original build manifest",
+        "runner_sha256": "8b926b2b6611849085398849268f93f1840615cceda566fa598d8d69fec2de61",
+        "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+        "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "kernel": [
+          "Linux",
+          "graphite",
+          "7.2.8",
+          "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+          "x86_64"
+        ],
+        "driver_cpu": 0,
+        "worker_cpus": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          3,
+          5,
+          7,
+          9,
+          11,
+          13,
+          15,
+          17,
+          19
+        ],
+        "configuration": {
+          "binary": "target/release/examples/steady_allocations",
+          "before": "target/planning-storage/before-steady_allocations",
+          "out": "target/planning-storage/comparison",
+          "cases": "purchases,read",
+          "workers": "1,8",
+          "slots": "1,1000",
+          "metrics": false,
+          "rounds": 10,
+          "warmup": 8,
+          "repetitions": 3
+        }
+      },
+      "summary": [
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_us_per_operation": 63.269,
+          "process_median_us": [
+            61.956500000000005,
+            65.398,
+            67.3865
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 609.0,
+            "alloc_requested_bytes": 81379.0,
+            "dealloc_calls": 609.0,
+            "dealloc_requested_bytes": 82635.0,
+            "realloc_calls": 38.0,
+            "realloc_old_bytes": 4344.0,
+            "realloc_new_bytes": 5600.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1000,
+          "median_us_per_operation": 28.926539000000002,
+          "process_median_us": [
+            29.758965500000002,
+            29.062054500000002,
+            27.89027
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 174.50400000000002,
+            "alloc_requested_bytes": 25160.139000000003,
+            "dealloc_calls": 174.5285,
+            "dealloc_requested_bytes": 32559.171000000002,
+            "realloc_calls": 2.4565,
+            "realloc_old_bytes": 7114.584,
+            "realloc_new_bytes": 14336.136
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_us_per_operation": 138.245,
+          "process_median_us": [
+            127.70049999999999,
+            327.401,
+            122.76599999999999
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 609.0,
+            "alloc_requested_bytes": 81379.0,
+            "dealloc_calls": 609.0,
+            "dealloc_requested_bytes": 82635.0,
+            "realloc_calls": 38.0,
+            "realloc_old_bytes": 4344.0,
+            "realloc_new_bytes": 5600.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1000,
+          "median_us_per_operation": 38.1602235,
+          "process_median_us": [
+            37.968709000000004,
+            37.9947025,
+            38.312455
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 156.815,
+            "alloc_requested_bytes": 22273.051,
+            "dealloc_calls": 156.814,
+            "dealloc_requested_bytes": 28905.955,
+            "realloc_calls": 2.124,
+            "realloc_old_bytes": 6538.8,
+            "realloc_new_bytes": 13172.208
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 1,
+          "slots": 1,
+          "median_us_per_operation": 0.897,
+          "process_median_us": [
+            0.516,
+            1.1925,
+            0.897
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 4.0,
+            "alloc_requested_bytes": 1792.0,
+            "dealloc_calls": 4.0,
+            "dealloc_requested_bytes": 1792.0,
+            "realloc_calls": 0.0,
+            "realloc_old_bytes": 0.0,
+            "realloc_new_bytes": 0.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 1,
+          "slots": 1000,
+          "median_us_per_operation": 0.1014205,
+          "process_median_us": [
+            0.1013355,
+            0.1014205,
+            0.101636
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 0.004,
+            "alloc_requested_bytes": 17.776,
+            "dealloc_calls": 0.004,
+            "dealloc_requested_bytes": 42.256,
+            "realloc_calls": 0.008,
+            "realloc_old_bytes": 24.48,
+            "realloc_new_bytes": 48.96
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 8,
+          "slots": 1,
+          "median_us_per_operation": 0.9115,
+          "process_median_us": [
+            0.972,
+            0.391,
+            0.932
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 4.0,
+            "alloc_requested_bytes": 1792.0,
+            "dealloc_calls": 4.0,
+            "dealloc_requested_bytes": 1792.0,
+            "realloc_calls": 0.0,
+            "realloc_old_bytes": 0.0,
+            "realloc_new_bytes": 0.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "after",
+          "case": "read",
+          "workers": 8,
+          "slots": 1000,
+          "median_us_per_operation": 0.1025125,
+          "process_median_us": [
+            0.10161600000000001,
+            0.10127549999999999,
+            0.106631
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 0.004,
+            "alloc_requested_bytes": 17.776,
+            "dealloc_calls": 0.004,
+            "dealloc_requested_bytes": 42.256,
+            "realloc_calls": 0.008,
+            "realloc_old_bytes": 24.48,
+            "realloc_new_bytes": 48.96
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_us_per_operation": 70.287,
+          "process_median_us": [
+            74.3995,
+            70.297,
+            65.4685
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 684.0,
+            "alloc_requested_bytes": 84515.0,
+            "dealloc_calls": 684.0,
+            "dealloc_requested_bytes": 90387.0,
+            "realloc_calls": 60.0,
+            "realloc_old_bytes": 8640.0,
+            "realloc_new_bytes": 14512.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1000,
+          "median_us_per_operation": 30.8656525,
+          "process_median_us": [
+            30.8480345,
+            31.200592,
+            30.935298
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 244.106,
+            "alloc_requested_bytes": 27256.839,
+            "dealloc_calls": 244.1295,
+            "dealloc_requested_bytes": 39271.609,
+            "realloc_calls": 24.854,
+            "realloc_old_bytes": 11398.504,
+            "realloc_new_bytes": 23223.059999999998
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_us_per_operation": 197.83249999999998,
+          "process_median_us": [
+            143.2095,
+            196.6655,
+            205.26600000000002
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 684.0,
+            "alloc_requested_bytes": 84515.0,
+            "dealloc_calls": 684.0,
+            "dealloc_requested_bytes": 90387.0,
+            "realloc_calls": 60.0,
+            "realloc_old_bytes": 8640.0,
+            "realloc_new_bytes": 14512.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1000,
+          "median_us_per_operation": 40.242376500000006,
+          "process_median_us": [
+            39.9418615,
+            40.665527,
+            39.8652965
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 231.815,
+            "alloc_requested_bytes": 25649.051,
+            "dealloc_calls": 231.815,
+            "dealloc_requested_bytes": 36898.459,
+            "realloc_calls": 24.124,
+            "realloc_old_bytes": 10834.8,
+            "realloc_new_bytes": 22084.208
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 1,
+          "slots": 1,
+          "median_us_per_operation": 1.0070000000000001,
+          "process_median_us": [
+            1.0070000000000001,
+            1.3175,
+            0.4405
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 4.0,
+            "alloc_requested_bytes": 1792.0,
+            "dealloc_calls": 4.0,
+            "dealloc_requested_bytes": 1792.0,
+            "realloc_calls": 0.0,
+            "realloc_old_bytes": 0.0,
+            "realloc_new_bytes": 0.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 1,
+          "slots": 1000,
+          "median_us_per_operation": 0.103655,
+          "process_median_us": [
+            0.108865,
+            0.101917,
+            0.10296349999999999
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 0.004,
+            "alloc_requested_bytes": 17.776,
+            "dealloc_calls": 0.004,
+            "dealloc_requested_bytes": 42.256,
+            "realloc_calls": 0.008,
+            "realloc_old_bytes": 24.48,
+            "realloc_new_bytes": 48.96
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 8,
+          "slots": 1,
+          "median_us_per_operation": 1.012,
+          "process_median_us": [
+            1.012,
+            0.431,
+            1.3225
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 4.0,
+            "alloc_requested_bytes": 1792.0,
+            "dealloc_calls": 4.0,
+            "dealloc_requested_bytes": 1792.0,
+            "realloc_calls": 0.0,
+            "realloc_old_bytes": 0.0,
+            "realloc_new_bytes": 0.0
+          },
+          "storage_metrics_sum": {}
+        },
+        {
+          "label": "before",
+          "case": "read",
+          "workers": 8,
+          "slots": 1000,
+          "median_us_per_operation": 0.102353,
+          "process_median_us": [
+            0.10199749999999999,
+            0.10380049999999999,
+            0.102062
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 0.004,
+            "alloc_requested_bytes": 17.776,
+            "dealloc_calls": 0.004,
+            "dealloc_requested_bytes": 42.256,
+            "realloc_calls": 0.008,
+            "realloc_old_bytes": 24.48,
+            "realloc_new_bytes": 48.96
+          },
+          "storage_metrics_sum": {}
+        }
+      ]
+    },
+    "diagnostics": {
+      "raw_report_sha256": "49a78d86eaa1ba9050db0fed2fae3e99029dc59cddb7b067063f81b9e5d48408",
+      "provenance": {
+        "base_commit": "4acd2a437041dbfd8c7738778d6cd57f7ab5915c",
+        "binaries": {
+          "after": {
+            "path": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+            "sha256": "c9b52c1e00be4ba4d10254b93ac32b3d3986967da07aaa82115cfcd1391fb699"
+          }
+        },
+        "source_sha256": {
+          "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+          "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+          "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+          "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+          "crates/bowl/src/query.rs": "0ded38d0686bbe8ad0e117c719142bd56857e29becc8041fb300fc784bca5130",
+          "crates/bowl/src/system.rs": "7a0bbb6e5d03db219c6a002b581ae0c6012c606272d43b06f34a842bc0910316",
+          "crates/bowl/src/world.rs": "0b640e6dace9097fd77f83b5cd4381bac034b6d7646213e651c2abe62b827244",
+          "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+          "crates/bowl/src/bowl.rs": "da3a638c39399371a1a72c15cc4a03d1c5500de6fd7ebb6c6a3cff3b5b7348d7",
+          "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+          "crates/bowl/src/lib.rs": "4bd531c49d3a7264f3365e2e1964aca5f70805cf91a91c5f75338bb404850019",
+          "crates/bowl/src/prepared.rs": "8baab8adbce158fc7d4506bb5251935abcddeca91aa7eb2a49a810e6be228961",
+          "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+          "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+          "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+          "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+          "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+          "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+          "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+          "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+          "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+          "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+          "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+          "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+          "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+          "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+          "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+          "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+          "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+          "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+          "crates/benches/examples/steady_allocations.rs": "5dfd75ff381dab03ed4d4d8445866ecf7f366eaa7fde545cfec2dc53bcca8a81",
+          "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+          "crates/benches/examples/profile_allocations.rs": "d1452e82e000a9b4ac785ce491ce895235fe9f9115ff2e5703e5504b83cc822f",
+          "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+          "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+          "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+          "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+          "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+          "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+        },
+        "source_scope": "current workspace; supplied baseline binary needs its original build manifest",
+        "runner_sha256": "8b926b2b6611849085398849268f93f1840615cceda566fa598d8d69fec2de61",
+        "build_command": "cargo build --workspace --all-targets --profile bench -j 20",
+        "features": "tokio v1.52.3\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   [dev-dependencies]\n\u2502   \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502       \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502       \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502       \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502           \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502       \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       [dev-dependencies]\n\u2502       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2514\u2500\u2500 tokio feature \"tokio-macros\"\n    \u2514\u2500\u2500 tokio feature \"macros\" (*)\n",
+        "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "kernel": [
+          "Linux",
+          "graphite",
+          "7.2.8",
+          "#1-NixOS SMP PREEMPT_DYNAMIC Fri Sep 25 14:37:14 UTC 2026",
+          "x86_64"
+        ],
+        "driver_cpu": 0,
+        "worker_cpus": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          3,
+          5,
+          7,
+          9,
+          11,
+          13,
+          15,
+          17,
+          19
+        ],
+        "configuration": {
+          "binary": "target/release/examples/steady_allocations",
+          "before": null,
+          "out": "target/planning-storage/diagnostics",
+          "cases": "purchases",
+          "workers": "1,8",
+          "slots": "1,1000",
+          "metrics": true,
+          "rounds": 5,
+          "warmup": 8,
+          "repetitions": 1
+        }
+      },
+      "summary": [
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1,
+          "median_us_per_operation": 72.636,
+          "process_median_us": [
+            72.636
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 609.0,
+            "alloc_requested_bytes": 81379.0,
+            "dealloc_calls": 609.0,
+            "dealloc_requested_bytes": 82635.0,
+            "realloc_calls": 38.0,
+            "realloc_old_bytes": 4344.0,
+            "realloc_new_bytes": 5600.0
+          },
+          "storage_metrics_sum": {
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 31,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0
+          }
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 1,
+          "slots": 1000,
+          "median_us_per_operation": 31.777298,
+          "process_median_us": [
+            31.777298
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 167.775,
+            "alloc_requested_bytes": 23261.567,
+            "dealloc_calls": 167.77,
+            "dealloc_requested_bytes": 30616.567,
+            "realloc_calls": 2.437,
+            "realloc_old_bytes": 7112.544,
+            "realloc_new_bytes": 14324.776
+          },
+          "storage_metrics_sum": {
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 30801,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0
+          }
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1,
+          "median_us_per_operation": 69.561,
+          "process_median_us": [
+            69.561
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 609.0,
+            "alloc_requested_bytes": 81379.0,
+            "dealloc_calls": 609.0,
+            "dealloc_requested_bytes": 82635.0,
+            "realloc_calls": 38.0,
+            "realloc_old_bytes": 4344.0,
+            "realloc_new_bytes": 5600.0
+          },
+          "storage_metrics_sum": {
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 32,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0
+          }
+        },
+        {
+          "label": "after",
+          "case": "purchases",
+          "workers": 8,
+          "slots": 1000,
+          "median_us_per_operation": 36.968593999999996,
+          "process_median_us": [
+            36.968593999999996
+          ],
+          "median_engine_allocation_metrics_per_operation": {
+            "alloc_calls": 156.815,
+            "alloc_requested_bytes": 22273.051,
+            "dealloc_calls": 156.815,
+            "dealloc_requested_bytes": 28906.459,
+            "realloc_calls": 2.124,
+            "realloc_old_bytes": 6538.8,
+            "realloc_new_bytes": 13172.208
+          },
+          "storage_metrics_sum": {
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 30000,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0
+          }
+        }
+      ]
+    }
+  },
+  "heap_profile": {
+    "provenance": {
+      "base_commit": "4acd2a437041dbfd8c7738778d6cd57f7ab5915c",
+      "binary_sha256": "d6c7beb6f5be0c48261267ca64433ba6c2285dcb4f309f74218f79a58fa862d8",
+      "driver_cpu": 0,
+      "worker_cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19
+      ],
+      "source_sha256": {
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "0ded38d0686bbe8ad0e117c719142bd56857e29becc8041fb300fc784bca5130",
+        "crates/bowl/src/system.rs": "7a0bbb6e5d03db219c6a002b581ae0c6012c606272d43b06f34a842bc0910316",
+        "crates/bowl/src/world.rs": "0b640e6dace9097fd77f83b5cd4381bac034b6d7646213e651c2abe62b827244",
+        "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+        "crates/bowl/src/bowl.rs": "da3a638c39399371a1a72c15cc4a03d1c5500de6fd7ebb6c6a3cff3b5b7348d7",
+        "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+        "crates/bowl/src/lib.rs": "4bd531c49d3a7264f3365e2e1964aca5f70805cf91a91c5f75338bb404850019",
+        "crates/bowl/src/prepared.rs": "8baab8adbce158fc7d4506bb5251935abcddeca91aa7eb2a49a810e6be228961",
+        "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+        "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+        "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+        "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+        "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+        "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+        "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+        "crates/benches/src/stateful/steady.rs": "d3e6cd84e491a69a161a7a5b1b0bc083001a9ce78205010c3e0492a914d15061",
+        "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+        "crates/benches/examples/steady_allocations.rs": "5dfd75ff381dab03ed4d4d8445866ecf7f366eaa7fde545cfec2dc53bcca8a81",
+        "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+        "crates/benches/examples/profile_allocations.rs": "d1452e82e000a9b4ac785ce491ce895235fe9f9115ff2e5703e5504b83cc822f",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+        "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+        "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+        "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+        "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+        "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+      },
+      "counts_include_reallocations": true,
+      "reallocations_attributed_to_original_allocation": true,
+      "configuration": {
+        "workers": [
+          1,
+          8
+        ],
+        "slots": 1000,
+        "rounds": 1,
+        "warmup": 8
+      },
+      "runner_sha256": "5d4a15f2a508fcf9697716725648a2247990c4d371f0066fc5a02f6e170cf09d"
+    },
+    "raw_report_sha256": "70df90193f7706a21b3ab0dd6a838de43195e6302a267cf5b5662f9a3556ec69",
+    "records": [
+      {
+        "workers": 1,
+        "requests": 1000,
+        "calls": 167710,
+        "calls_per_request": 167.71,
+        "metrics": {
+          "plan_calls": 21,
+          "candidate_rows": 10354,
+          "memo_hits": 5177,
+          "dependency_records": 59770,
+          "access_records": 29885,
+          "admission_ns": 105616111,
+          "admission_candidates": 5177,
+          "already_running": 177,
+          "conflict_deferrals": 0,
+          "admitted_rows": 5000,
+          "dispatch_batches": 318,
+          "enqueue_to_first_poll_ns": 29999152578,
+          "started_rows": 5000,
+          "completed_row_polls": 5000,
+          "publication_ns": 65148059,
+          "publication_calls": 5003,
+          "stale_publications": 0,
+          "accepted_output_groups": 5000,
+          "buffered_commands": 2000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 6177,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 29000,
+          "reconciled_writes": 4000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        },
+        "origins": [
+          {
+            "origin": "other pipeline",
+            "calls": 88551,
+            "calls_per_request": 88.551,
+            "percent": 52.800071552083956
+          },
+          {
+            "origin": "planning: other",
+            "calls": 51274,
+            "calls_per_request": 51.274,
+            "percent": 30.57301293900185
+          },
+          {
+            "origin": "planning: join candidates",
+            "calls": 22885,
+            "calls_per_request": 22.885,
+            "percent": 13.645578677478982
+          },
+          {
+            "origin": "command producer handles",
+            "calls": 5000,
+            "calls_per_request": 5.0,
+            "percent": 2.9813368314352156
+          }
+        ],
+        "profile_sha256": "98c986390b76cfad3fd1658dc105d8757b305383243695ff5cd41077f66bdb61",
+        "top_sites": [
+          {
+            "calls": 4177,
+            "calls_per_request": 4.177,
+            "percent": 2.490608788980979,
+            "requested_bytes": 66832,
+            "stack": [
+              "0x5c55a7190ad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x5c55a717d800: <alloc::vec::Vec<bowl::entity::Entity> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bowl::entity::Entity, core::iter::adapters::copied::Copied<alloc::collections::btree::set::Iter<bowl::entity::Entity>>>>::from_iter (???:0:0)",
+              "0x5c55a71811ad: <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::fingerprint_entities (???:0:0)",
+              "0x5c55a71e9a0d: <bowl::world::World>::fingerprint_candidates (???:0:0)",
+              "0x5c55a710c64e: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Inventory, bowl::world::ResolvedStore<benches::stateful::purchases::Inventory>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x5c55a716f0ed: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x5c55a7180170: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x5c55a714dabc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x5c55a71523b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x5c55a71498c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x5c55a7146ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x5c55a71467ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 4177,
+            "calls_per_request": 4.177,
+            "percent": 2.490608788980979,
+            "requested_bytes": 66832,
+            "stack": [
+              "0x5c55a7190ad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x5c55a717d800: <alloc::vec::Vec<bowl::entity::Entity> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bowl::entity::Entity, core::iter::adapters::copied::Copied<alloc::collections::btree::set::Iter<bowl::entity::Entity>>>>::from_iter (???:0:0)",
+              "0x5c55a71811ad: <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::fingerprint_entities (???:0:0)",
+              "0x5c55a71e9a0d: <bowl::world::World>::fingerprint_candidates (???:0:0)",
+              "0x5c55a710a18e: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Wallet, bowl::world::ResolvedStore<benches::stateful::purchases::Wallet>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x5c55a716edad: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_wallet, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x5c55a717f9a0: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_wallet, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x5c55a714dabc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x5c55a71523b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x5c55a71498c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x5c55a7146ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x5c55a71467ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 4177,
+            "calls_per_request": 4.177,
+            "percent": 2.490608788980979,
+            "requested_bytes": 66832,
+            "stack": [
+              "0x5c55a7190ad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x5c55a717d800: <alloc::vec::Vec<bowl::entity::Entity> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bowl::entity::Entity, core::iter::adapters::copied::Copied<alloc::collections::btree::set::Iter<bowl::entity::Entity>>>>::from_iter (???:0:0)",
+              "0x5c55a71811ad: <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::fingerprint_entities (???:0:0)",
+              "0x5c55a71e9a0d: <bowl::world::World>::fingerprint_candidates (???:0:0)",
+              "0x5c55a710eb11: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Debit>, bowl::world::ResolvedStore<benches::stateful::purchases::Grant>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Wallet>, bowl::world::ResolvedStore<benches::stateful::purchases::Inventory>, bowl::world::ResolvedStore<benches::stateful::purchases::Sequence>)>>)> (???:0:0)",
+              "0x5c55a716f424: <bowl::system::FunctionSystem<benches::stateful::purchases::apply, fn(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>)>>::plan_rows (???:0:0)",
+              "0x5c55a7180940: <bowl::system::FunctionSystem<benches::stateful::purchases::apply, fn(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x5c55a714dabc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x5c55a71523b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x5c55a71498c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x5c55a7146ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x5c55a71467ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 3995,
+            "calls_per_request": 3.995,
+            "percent": 2.382088128316737,
+            "requested_bytes": 351560,
+            "stack": [
+              "0x5c55a7190ad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x5c55a71ef175: <bowl::dispatch::Queue as futures_core::stream::Stream>::poll_next (???:0:0)",
+              "0x5c55a714e2cb: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x5c55a71523b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x5c55a71498c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x5c55a7146ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x5c55a71467ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 3177,
+            "calls_per_request": 3.177,
+            "percent": 1.894341422693936,
+            "requested_bytes": 101664,
+            "stack": [
+              "0x5c55a7190ad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x5c55a710ce6f: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Inventory, bowl::world::ResolvedStore<benches::stateful::purchases::Inventory>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x5c55a716f0ed: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x5c55a7180170: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x5c55a714dabc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x5c55a71523b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x5c55a71498c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x5c55a7146ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x5c55a71467ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 3177,
+            "calls_per_request": 3.177,
+            "percent": 1.894341422693936,
+            "requested_bytes": 101664,
+            "stack": [
+              "0x5c55a7190ad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x5c55a710cebe: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Inventory, bowl::world::ResolvedStore<benches::stateful::purchases::Inventory>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x5c55a716f0ed: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x5c55a7180170: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x5c55a714dabc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x5c55a71523b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x5c55a71498c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x5c55a7146ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x5c55a71467ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          }
+        ]
+      },
+      {
+        "workers": 8,
+        "requests": 1000,
+        "calls": 158939,
+        "calls_per_request": 158.939,
+        "metrics": {
+          "plan_calls": 12,
+          "candidate_rows": 10000,
+          "memo_hits": 5000,
+          "dependency_records": 58000,
+          "access_records": 29000,
+          "admission_ns": 323948654,
+          "admission_candidates": 5000,
+          "already_running": 0,
+          "conflict_deferrals": 0,
+          "admitted_rows": 5000,
+          "dispatch_batches": 315,
+          "enqueue_to_first_poll_ns": 6784493997,
+          "started_rows": 5000,
+          "completed_row_polls": 5000,
+          "publication_ns": 42533240,
+          "publication_calls": 5003,
+          "stale_publications": 0,
+          "accepted_output_groups": 5000,
+          "buffered_commands": 2000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 6000,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 29000,
+          "reconciled_writes": 4000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        },
+        "origins": [
+          {
+            "origin": "other pipeline",
+            "calls": 82553,
+            "calls_per_request": 82.553,
+            "percent": 51.94005247296133
+          },
+          {
+            "origin": "planning: other",
+            "calls": 49386,
+            "calls_per_request": 49.386,
+            "percent": 31.072298177288143
+          },
+          {
+            "origin": "planning: join candidates",
+            "calls": 22000,
+            "calls_per_request": 22.0,
+            "percent": 13.84178835905599
+          },
+          {
+            "origin": "command producer handles",
+            "calls": 5000,
+            "calls_per_request": 5.0,
+            "percent": 3.145860990694543
+          }
+        ],
+        "profile_sha256": "30dae64fc1b55c3740137a9ca0695515cb566036fcb20bfec06583d0417c7dcb",
+        "top_sites": [
+          {
+            "calls": 4000,
+            "calls_per_request": 4.0,
+            "percent": 2.5166887925556347,
+            "requested_bytes": 64000,
+            "stack": [
+              "0x60675d63bad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x60675d628800: <alloc::vec::Vec<bowl::entity::Entity> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bowl::entity::Entity, core::iter::adapters::copied::Copied<alloc::collections::btree::set::Iter<bowl::entity::Entity>>>>::from_iter (???:0:0)",
+              "0x60675d62c1ad: <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::fingerprint_entities (???:0:0)",
+              "0x60675d694a0d: <bowl::world::World>::fingerprint_candidates (???:0:0)",
+              "0x60675d5b764e: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Inventory, bowl::world::ResolvedStore<benches::stateful::purchases::Inventory>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x60675d61a0ed: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x60675d62b170: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x60675d5f8abc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x60675d5fd3b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x60675d5f48c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x60675d5f1ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x60675d5f17ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 4000,
+            "calls_per_request": 4.0,
+            "percent": 2.5166887925556347,
+            "requested_bytes": 64000,
+            "stack": [
+              "0x60675d63bad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x60675d628800: <alloc::vec::Vec<bowl::entity::Entity> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bowl::entity::Entity, core::iter::adapters::copied::Copied<alloc::collections::btree::set::Iter<bowl::entity::Entity>>>>::from_iter (???:0:0)",
+              "0x60675d62c1ad: <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::fingerprint_entities (???:0:0)",
+              "0x60675d694a0d: <bowl::world::World>::fingerprint_candidates (???:0:0)",
+              "0x60675d5b9b11: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Debit>, bowl::world::ResolvedStore<benches::stateful::purchases::Grant>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Wallet>, bowl::world::ResolvedStore<benches::stateful::purchases::Inventory>, bowl::world::ResolvedStore<benches::stateful::purchases::Sequence>)>>)> (???:0:0)",
+              "0x60675d61a424: <bowl::system::FunctionSystem<benches::stateful::purchases::apply, fn(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>)>>::plan_rows (???:0:0)",
+              "0x60675d62b940: <bowl::system::FunctionSystem<benches::stateful::purchases::apply, fn(bowl::query::Query<(bowl::entity::Entity, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Debit, &benches::stateful::purchases::Grant, bowl::query::MutRef<benches::stateful::purchases::Outcome>)>, bowl::query::Query<(bowl::entity::Entity, bowl::query::MutRef<benches::stateful::purchases::Wallet>, bowl::query::MutRef<benches::stateful::purchases::Inventory>, bowl::query::MutRef<benches::stateful::purchases::Sequence>), bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x60675d5f8abc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x60675d5fd3b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x60675d5f48c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x60675d5f1ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x60675d5f17ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 4000,
+            "calls_per_request": 4.0,
+            "percent": 2.5166887925556347,
+            "requested_bytes": 64000,
+            "stack": [
+              "0x60675d63bad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x60675d628800: <alloc::vec::Vec<bowl::entity::Entity> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bowl::entity::Entity, core::iter::adapters::copied::Copied<alloc::collections::btree::set::Iter<bowl::entity::Entity>>>>::from_iter (???:0:0)",
+              "0x60675d62c1ad: <bowl::world::Store<benches::stateful::purchases::Debit> as bowl::world::StoreDyn>::fingerprint_entities (???:0:0)",
+              "0x60675d694a0d: <bowl::world::World>::fingerprint_candidates (???:0:0)",
+              "0x60675d5b518e: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Wallet, bowl::world::ResolvedStore<benches::stateful::purchases::Wallet>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x60675d619dad: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_wallet, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x60675d62a9a0: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_wallet, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x60675d5f8abc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x60675d5fd3b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x60675d5f48c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x60675d5f1ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x60675d5f17ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 3998,
+            "calls_per_request": 3.998,
+            "percent": 2.5154304481593566,
+            "requested_bytes": 351824,
+            "stack": [
+              "0x60675d63bad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x60675d69a175: <bowl::dispatch::Queue as futures_core::stream::Stream>::poll_next (???:0:0)",
+              "0x60675d5f92cb: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x60675d5fd3b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x60675d5f48c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x60675d5f1ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x60675d5f17ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 3000,
+            "calls_per_request": 3.0,
+            "percent": 1.8875165944167258,
+            "requested_bytes": 96000,
+            "stack": [
+              "0x60675d63bad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x60675d5b7ebe: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Inventory, bowl::world::ResolvedStore<benches::stateful::purchases::Inventory>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x60675d61a0ed: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x60675d62b170: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_inventory, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Inventory, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x60675d5f8abc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x60675d5fd3b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x60675d5f48c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x60675d5f1ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x60675d5f17ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          },
+          {
+            "calls": 3000,
+            "calls_per_request": 3.0,
+            "percent": 1.8875165944167258,
+            "requested_bytes": 96000,
+            "stack": [
+              "0x60675d63bad4: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+              "0x60675d5b59fe: bowl::system::plan_prepared_with_scratch::<(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>), (bowl::prepared::Filtered<bowl::prepared::EntityParts<(bowl::world::ResolvedStore<benches::stateful::purchases::Owner>, bowl::world::ResolvedStore<benches::stateful::purchases::Purchase>, bowl::world::ResolvedStore<benches::stateful::purchases::Outcome>)>>, bowl::prepared::Filtered<bowl::prepared::Scalar<benches::stateful::purchases::Wallet, bowl::world::ResolvedStore<benches::stateful::purchases::Wallet>>>, bowl::prepared::Fallback<bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>>)> (???:0:0)",
+              "0x60675d619dad: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_wallet, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)>>::plan_rows (???:0:0)",
+              "0x60675d62a9a0: <bowl::system::FunctionSystem<benches::stateful::purchases::validate_wallet, fn(bowl::query::Query<(bowl::entity::Entity<(benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>)>, &benches::stateful::purchases::Owner, &benches::stateful::purchases::Purchase, &benches::stateful::purchases::Outcome)>, bowl::query::Query<&benches::stateful::purchases::Wallet, bowl::query::Where<bowl::query::Eq<benches::stateful::purchases::Owner>>>, bowl::commands::Commands<((benches::stateful::purchases::Owner, benches::stateful::purchases::Purchase, benches::stateful::purchases::Outcome, core::option::Option<benches::stateful::purchases::Debit>, core::option::Option<benches::stateful::purchases::Grant>),)>)> as bowl::system::Runnable>::plan_runs (???:0:0)",
+              "0x60675d5f8abc: <bowl::bowl::Bowl>::run_evaluation::{closure#0} (???:0:0)",
+              "0x60675d5fd3b9: <bowl::bowl::Bowl>::settle::{closure#0} (???:0:0)",
+              "0x60675d5f48c0: <bowl::bowl::ScoopBuilder<bowl::query::Query<&benches::stateful::purchases::Outcome>>>::materialize::{closure#0} (???:0:0)",
+              "0x60675d5f1ed0: <benches::stateful::steady::Purchases>::round::{closure#0} (???:0:0)",
+              "0x60675d5f17ff: profile_allocations::main::{closure#0} (???:0:0)"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
