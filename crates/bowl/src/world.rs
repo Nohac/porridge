@@ -34,6 +34,9 @@ pub(crate) struct Revision(pub(crate) u64);
 #[doc(hidden)]
 pub struct SystemId(pub(crate) usize);
 
+/// Common one/two-query identities stay inline; wider products spill normally.
+pub(crate) type InvocationKeys = smallvec::SmallVec<[Entity; 2]>;
+
 /// Identity of one memoized system invocation.
 ///
 /// ```text
@@ -46,7 +49,7 @@ pub struct SystemId(pub(crate) usize);
 #[doc(hidden)]
 pub struct SystemInvocation {
     pub(crate) system: SystemId,
-    pub(crate) keys: Vec<Entity>,
+    pub(crate) keys: InvocationKeys,
 }
 
 /// Whether a component was inserted by a caller or derived by a system.
@@ -1903,3 +1906,7 @@ fn bump(revision: &mut Revision) {
 #[cfg(test)]
 #[path = "world/candidates_tests.rs"]
 mod candidates_tests;
+
+#[cfg(test)]
+#[path = "world/invocation_tests.rs"]
+mod invocation_tests;

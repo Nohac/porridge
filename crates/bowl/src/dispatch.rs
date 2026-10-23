@@ -93,7 +93,7 @@ mod tests {
         (
             SystemInvocation {
                 system: SystemId(0),
-                keys: vec![Entity::from_raw(id)],
+                keys: vec![Entity::from_raw(id)].into(),
             },
             SystemRun {
                 completed: true,

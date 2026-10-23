@@ -112,6 +112,7 @@ dependencies = [
  "bump-scope",
  "futures",
  "macros",
+ "smallvec",
  "tokio",
  "tracing",
  "variadics_please",

@@ -1543,7 +1543,7 @@ where
         .filter(|state| {
             let owner = SystemInvocation {
                 system,
-                keys: Params::keys(state),
+                keys: Params::keys(state).into(),
             };
             let deps = Params::deps(snapshot, state);
             !Params::always_run() && memo.get(&owner).is_some_and(|entry| entry.deps == deps)
@@ -2034,7 +2034,7 @@ where
             let start_commands = has_work.then(|| {
                 let owner = SystemInvocation {
                     system: self.id,
-                    keys: Vec::new(),
+                    keys: Default::default(),
                 };
                 let commands =
                     Commands::new(snapshot.spawn_slots(&owner), snapshot.entity_allocator());
@@ -2075,7 +2075,7 @@ where
 
         let owner = SystemInvocation {
             system: self.id,
-            keys: Vec::new(),
+            keys: Default::default(),
         };
         let hook_owner = owner.clone();
         let callback = Arc::clone(&self.callback);
@@ -2140,7 +2140,7 @@ where
             let mut run = self.system.run(bowl, snapshot, memo).await;
             let owner = SystemInvocation {
                 system: self.id,
-                keys: Vec::new(),
+                keys: Default::default(),
             };
 
             if !run.outputs.is_empty() {
@@ -2176,7 +2176,7 @@ where
 
         let owner = SystemInvocation {
             system: self.id,
-            keys: Vec::new(),
+            keys: Default::default(),
         };
         let hook_owner = owner.clone();
         let callback = Arc::clone(&self.callback);
@@ -2273,7 +2273,7 @@ where
             let run = self.system.run(bowl, snapshot, memo).await;
             let owner = SystemInvocation {
                 system: self.id,
-                keys: Vec::new(),
+                keys: Default::default(),
             };
             // Ownership lives with the live world, not snapshots; the settle
             // runner does not commit while settled hooks run, so this check

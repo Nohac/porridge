@@ -8,7 +8,7 @@ use std::sync::{
 fn owner() -> SystemInvocation {
     SystemInvocation {
         system: SystemId(0),
-        keys: Vec::new(),
+        keys: Default::default(),
     }
 }
 

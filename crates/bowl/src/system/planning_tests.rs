@@ -41,7 +41,7 @@ fn memo_hits_do_not_construct_access_but_new_and_always_run_rows_do() {
     let id = SystemId(0);
     let owner = SystemInvocation {
         system: id,
-        keys: vec![Entity::from_raw(1)],
+        keys: vec![Entity::from_raw(1)].into(),
     };
     let memo = HashMap::from([(
         owner,
@@ -123,12 +123,12 @@ fn scratch_reset_preserves_admitted_metadata_and_memo_invalidation() {
             &prepared,
             &mut scratch,
         );
-        assert_eq!(other.invocations[0].owner.keys, [b]);
+        assert_eq!(other.invocations[0].owner.keys.as_slice(), &[b]);
     }
     assert_eq!(scratch.arena.stats().allocated(), 0);
     assert_eq!(scratch.arena.stats().count(), chunks);
     assert_eq!(scratch.owner.keys.capacity(), keys_capacity);
-    assert_eq!(first.invocations[0].owner.keys, [a]);
+    assert_eq!(first.invocations[0].owner.keys.as_slice(), &[a]);
     assert_eq!(
         first.invocations[0].access,
         [Access::read::<Amount>(a), Access::read::<Flag>(a),]
@@ -146,7 +146,7 @@ fn scratch_reset_preserves_admitted_metadata_and_memo_invalidation() {
     let changed =
         plan_prepared_with_scratch::<Params>(id, &world, &memo, None, &prepared, &mut scratch);
     assert_eq!(changed.invocations.len(), 1);
-    assert_eq!(changed.invocations[0].owner.keys, [a]);
+    assert_eq!(changed.invocations[0].owner.keys.as_slice(), &[a]);
     assert!(!memo[&first.invocations[0].owner].is_current(&world));
 }
 

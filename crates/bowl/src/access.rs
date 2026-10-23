@@ -137,7 +137,7 @@ mod tests {
     fn owner(id: usize) -> SystemInvocation {
         SystemInvocation {
             system: SystemId(id % 3),
-            keys: vec![Entity::from_raw(id as u64)],
+            keys: vec![Entity::from_raw(id as u64)].into(),
         }
     }
 

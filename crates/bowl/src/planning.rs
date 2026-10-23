@@ -23,7 +23,7 @@ impl Default for Scratch {
             arena: Bump::new(),
             owner: SystemInvocation {
                 system: SystemId(0),
-                keys: Vec::new(),
+                keys: Default::default(),
             },
         }
     }

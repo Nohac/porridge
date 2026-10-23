@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bump-scope = "2.4.1"
+smallvec = { version = "1.15.2", features = ["union"] }
 async_fn_traits = "0.1.1"
 futures = "0.3.31"
 macros = { path = "../macros" }

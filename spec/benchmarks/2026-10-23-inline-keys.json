@@ -1,0 +1,690 @@
+{
+  "date": "2026-10-23",
+  "note": "Vec and inline-key variants use the same permanent smallvec union feature graph.",
+  "report": {
+    "recommendation": "keep: substantial allocation reduction, favorable throughput evidence, +1.1% retained heap with lower peak heap",
+    "provenance": {
+      "baseline": "../inline-keys-baseline/manifest.json",
+      "candidate": "../inline-keys-candidate/manifest.json",
+      "feature_graph_identical": true,
+      "Cargo_hashes_identical": true,
+      "all_frozen_binary_hashes_verified": true,
+      "layout": {
+        "keys": 24,
+        "Vec": 24,
+        "SystemInvocation": 32,
+        "Option_SystemInvocation_before": 32,
+        "Option_SystemInvocation_after": 40
+      }
+    },
+    "purchases": [
+      {
+        "workers": 1,
+        "slots": 1,
+        "before": {
+          "alloc_median": 592.0,
+          "alloc_range": [
+            592,
+            689
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            45
+          ],
+          "aggregate_timing_median_us": 63.53,
+          "process_timing_medians_us": [
+            63.3545,
+            65.288,
+            62.3875
+          ],
+          "round_timing_range_us": [
+            60.474,
+            79.871
+          ]
+        },
+        "after": {
+          "alloc_median": 557.0,
+          "alloc_range": [
+            557,
+            652
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            45
+          ],
+          "aggregate_timing_median_us": 63.3645,
+          "process_timing_medians_us": [
+            66.54050000000001,
+            63.284000000000006,
+            61.637
+          ],
+          "round_timing_range_us": [
+            59.332,
+            81.043
+          ]
+        }
+      },
+      {
+        "workers": 1,
+        "slots": 1000,
+        "before": {
+          "alloc_median": 109548.5,
+          "alloc_range": [
+            104117,
+            141628
+          ],
+          "realloc_median": 2407.5,
+          "realloc_range": [
+            2242,
+            3025
+          ],
+          "aggregate_timing_median_us": 24.05554,
+          "process_timing_medians_us": [
+            26.228532,
+            23.072765,
+            23.357778000000003
+          ],
+          "round_timing_range_us": [
+            22.085913,
+            30.559206
+          ]
+        },
+        "after": {
+          "alloc_median": 73099.0,
+          "alloc_range": [
+            68237,
+            98948
+          ],
+          "realloc_median": 2455.0,
+          "realloc_range": [
+            2231,
+            3288
+          ],
+          "aggregate_timing_median_us": 22.551902,
+          "process_timing_medians_us": [
+            25.334825000000002,
+            22.551902,
+            21.251763
+          ],
+          "round_timing_range_us": [
+            20.371767,
+            35.136343999999994
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1,
+        "before": {
+          "alloc_median": 592.0,
+          "alloc_range": [
+            592,
+            786
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            52
+          ],
+          "aggregate_timing_median_us": 101.8475,
+          "process_timing_medians_us": [
+            108.0685,
+            99.4125,
+            112.76750000000001
+          ],
+          "round_timing_range_us": [
+            66.055,
+            1086.881
+          ]
+        },
+        "after": {
+          "alloc_median": 557.0,
+          "alloc_range": [
+            557,
+            745
+          ],
+          "realloc_median": 38.0,
+          "realloc_range": [
+            38,
+            52
+          ],
+          "aggregate_timing_median_us": 98.025,
+          "process_timing_medians_us": [
+            94.9195,
+            92.029,
+            99.923
+          ],
+          "round_timing_range_us": [
+            62.047,
+            111.29
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1000,
+        "before": {
+          "alloc_median": 100857.0,
+          "alloc_range": [
+            100856,
+            104219
+          ],
+          "realloc_median": 2124.0,
+          "realloc_range": [
+            2124,
+            2246
+          ],
+          "aggregate_timing_median_us": 37.960636,
+          "process_timing_medians_us": [
+            36.459906000000004,
+            37.8521315,
+            38.4435115
+          ],
+          "round_timing_range_us": [
+            33.379904,
+            42.798486
+          ]
+        },
+        "after": {
+          "alloc_median": 65857.0,
+          "alloc_range": [
+            65856,
+            65857
+          ],
+          "realloc_median": 2124.0,
+          "realloc_range": [
+            2124,
+            2124
+          ],
+          "aggregate_timing_median_us": 32.876076,
+          "process_timing_medians_us": [
+            34.710925,
+            31.220728,
+            32.837492
+          ],
+          "round_timing_range_us": [
+            29.384793000000002,
+            42.680364999999995
+          ]
+        }
+      }
+    ],
+    "compiler_process_medians_us": {
+      "planner_gating/512": {
+        "before": [
+          29.67506975308642,
+          30.020187767094015,
+          30.45407059067788
+        ],
+        "after": [
+          30.416182901785717,
+          29.953042578125,
+          30.11083052039381
+        ]
+      },
+      "planner_gating/gated/512": {
+        "before": [
+          33.43145763952808,
+          33.43152424160347,
+          33.68296708494208
+        ],
+        "after": [
+          31.47744354365678,
+          33.20895727777778,
+          33.35834773445732
+        ]
+      },
+      "in_join_planning/16x64": {
+        "before": [
+          594.9680476190475,
+          626.077380952381,
+          614.2232388888889
+        ],
+        "after": [
+          551.8049796296297,
+          576.9855833333332,
+          590.7908407407408
+        ]
+      },
+      "in_join_planning/32x128": {
+        "before": [
+          3057.1073571428574,
+          3419.9365,
+          3080.6945
+        ],
+        "after": [
+          2895.385833333333,
+          2944.5074,
+          3120.5811666666664
+        ]
+      },
+      "incremental_settle/128": {
+        "before": [
+          88.74716025641025,
+          90.15283749999999,
+          95.08658234126983
+        ],
+        "after": [
+          74.94089743589744,
+          79.41417857142858,
+          76.2266311813187
+        ]
+      },
+      "cold_settle/128": {
+        "before": [
+          690.5466863636362,
+          639.6911261904761,
+          639.395566468254
+        ],
+        "after": [
+          612.188125925926,
+          618.3392806122448,
+          663.4688611111111
+        ]
+      }
+    },
+    "memory": {
+      "baseline": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            4987324,
+            4987828
+          ],
+          "first_last": [
+            4987324,
+            4987324
+          ],
+          "peak_bytes": 9814592
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            9954828,
+            9955332
+          ],
+          "first_last": [
+            9955332,
+            9954828
+          ],
+          "peak_bytes": 19589760
+        }
+      },
+      "candidate": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            5042340,
+            5042844
+          ],
+          "first_last": [
+            5042340,
+            5042340
+          ],
+          "peak_bytes": 9729008
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            10064364,
+            10064868
+          ],
+          "first_last": [
+            10064868,
+            10064364
+          ],
+          "peak_bytes": 19417856
+        }
+      }
+    },
+    "profile": {
+      "events_per_request": 67.98,
+      "origins": [
+        {
+          "origin": "dispatch and completion",
+          "calls": 19136,
+          "calls_per_request": 19.136,
+          "percent": 28.149455722271256
+        },
+        {
+          "origin": "row construction/execution",
+          "calls": 16027,
+          "calls_per_request": 16.027,
+          "percent": 23.576051779935273
+        },
+        {
+          "origin": "planning: other",
+          "calls": 10428,
+          "calls_per_request": 10.428,
+          "percent": 15.339805825242719
+        },
+        {
+          "origin": "command application/storage",
+          "calls": 7579,
+          "calls_per_request": 7.579,
+          "percent": 11.148867313915858
+        },
+        {
+          "origin": "guard buffers",
+          "calls": 6009,
+          "calls_per_request": 6.009,
+          "percent": 8.83936451897617
+        },
+        {
+          "origin": "command producer handles",
+          "calls": 5000,
+          "calls_per_request": 5.0,
+          "percent": 7.355104442483083
+        },
+        {
+          "origin": "publication",
+          "calls": 2589,
+          "calls_per_request": 2.589,
+          "percent": 3.8084730803177407
+        },
+        {
+          "origin": "unclassified",
+          "calls": 1172,
+          "calls_per_request": 1.172,
+          "percent": 1.7240364813180347
+        },
+        {
+          "origin": "structural cloning",
+          "calls": 40,
+          "calls_per_request": 0.04,
+          "percent": 0.05884083553986467
+        }
+      ],
+      "metrics": {
+        "plan_calls": 12,
+        "candidate_rows": 10000,
+        "memo_hits": 5000,
+        "dependency_records": 58000,
+        "access_records": 29000,
+        "admission_ns": 179421753,
+        "admission_candidates": 5000,
+        "already_running": 0,
+        "conflict_deferrals": 0,
+        "admitted_rows": 5000,
+        "dispatch_batches": 315,
+        "enqueue_to_first_poll_ns": 4991709668,
+        "started_rows": 5000,
+        "completed_row_polls": 5000,
+        "publication_ns": 27954093,
+        "publication_calls": 5003,
+        "stale_publications": 0,
+        "accepted_output_groups": 5000,
+        "buffered_commands": 2000,
+        "planning_arena_chunk_growth": 0,
+        "planning_key_growth": 0,
+        "command_storage_created": 0,
+        "command_storage_reused": 6000,
+        "command_arena_chunk_growth": 0,
+        "command_metadata_growth": 0,
+        "revision_checks": 29000,
+        "reconciled_writes": 4000,
+        "bound_cleanup_ns": 0,
+        "bound_cleanup_roots": 0,
+        "ambient_healing_ns": 0,
+        "ambient_healing_memo_entries": 0,
+        "ambient_healing_victims": 0
+      }
+    },
+    "checks": {
+      "root_engine_tests": 162,
+      "optimized_smokes": [
+        "engine",
+        "stateful",
+        "dispatch",
+        "command_buffers"
+      ],
+      "allocation_budget_failures": []
+    },
+    "limitations": [
+      "Three alternating process repetitions; overlapping process ranges support no universal speedup claim.",
+      "One-worker1000 allocations vary with scheduling; compare complete iteration ranges.",
+      "One matched lifetime/growth profile per binary; stable repeated plateaus, no DHAT throughput inference.",
+      "Root ordinary build/clippy/playground remains pending after benchmark window."
+    ]
+  },
+  "baseline": {
+    "base_commit": "1271b34fdb0befdda5e9353feba1347e22a54562",
+    "source_sha256": {
+      "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+      "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+      "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+      "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+      "crates/bowl/src/query.rs": "0cbf5558e0605284c2cf7730f8cdae76091a99effdfb4825f909e0f22db2c20e",
+      "crates/bowl/src/system.rs": "8ca6f87671e413ce5e399c44e0d8147a386959a5ba7572eaacd8a301b3a8debb",
+      "crates/bowl/src/world.rs": "730c9878a48dadd310b6f3561b9ae68bdf77a79dba6e8658fc42f028a9c8705e",
+      "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+      "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+      "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+      "crates/bowl/src/lib.rs": "7fca629e439b6b6744d22b553f81f29ef6e9531ea88e91521ee92e8f0adbc046",
+      "crates/bowl/src/prepared.rs": "ed5cc01ee3b8a2d8a868d4bf98ae8a4519dc0ee4449c1ac447b94a24734f2bdf",
+      "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+      "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+      "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+      "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+      "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+      "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+      "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+      "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+      "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+      "crates/bowl/src/prepared/rows.rs": "ce8bf61a784bc71b6b65e0b0f5957eeb7992df3e2bbaa9397c323ccdd0b5dd88",
+      "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+      "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+      "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+      "crates/bowl/src/prepared/rows/tests.rs": "0cd239913332adb1309564c3dc313e4bf2bfa0d784cc457e8562c80f645e12fe",
+      "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+      "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+      "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+      "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+      "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+      "crates/benches/src/stateful/steady.rs": "ecbf59f5edbec00c0b17879fb67e2a03fddb2eb12157ffe09eb3c0ceb0710ac6",
+      "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+      "crates/benches/examples/steady_allocations.rs": "9f4bcdf271c07b9223ae72e79a0e8ecaaca1757c7f17ff01364d7947276561bc",
+      "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+      "crates/benches/examples/profile_allocations.rs": "ab5b84d6581e173460174c7a63f7b0cdd80b39fd5dde90ad6f7a7f338e0af47f",
+      "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+      "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+      "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+      "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+      "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+      "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968",
+      "crates/macros/src/lib.rs": "66165412874d1211652f8d562bd67cca8bdbd0b3c6b9ec465ce45a492f3018bf"
+    },
+    "cargo_sha256": {
+      "Cargo.toml": "e42f8782b56e3bc746de28b3dbfda6592451e31faf0857ae6207d7179fc39b45",
+      "Cargo.lock": "638c57de536150be2fdd4a6e4a59aa36e952766dec52e70e63fd6b9bcac0ec6d",
+      "crates/bowl/Cargo.toml": "c04302a3129a8e982d95491901e780774a3cf5eeba7bc27de7925cfbf48f7690"
+    },
+    "feature_graph": "benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502   \u251c\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502   \u2502   \u251c\u2500\u2500 async_fn_traits feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 async_fn_traits v0.1.1\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 paste feature \"default\"\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 paste v1.0.15 (proc-macro)\n\u2502   \u2502   \u251c\u2500\u2500 bump-scope feature \"default\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 bump-scope v2.4.1\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 bump-scope feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 bump-scope v2.4.1\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 bump-scope feature \"panic-on-alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 bump-scope v2.4.1\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 bump-scope feature \"std\"\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 bump-scope v2.4.1\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 bump-scope feature \"alloc\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 futures feature \"default\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 futures v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-core v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-executor v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-core v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-task v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-core v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-macro v0.3.32 (proc-macro)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 proc-macro2 feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 proc-macro2 v1.0.106\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 unicode-ident feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502       \u2514\u2500\u2500 unicode-ident v1.0.24\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 proc-macro2 feature \"proc-macro\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u2514\u2500\u2500 proc-macro2 v1.0.106 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 quote feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 quote v1.0.46\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 proc-macro2 v1.0.106 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 quote feature \"proc-macro\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u251c\u2500\u2500 quote v1.0.46 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u2514\u2500\u2500 proc-macro2 feature \"proc-macro\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 syn feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 syn v2.0.118\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u251c\u2500\u2500 proc-macro2 v1.0.106 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u251c\u2500\u2500 quote v1.0.46 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 unicode-ident feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 syn feature \"clone-impls\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 syn feature \"derive\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 syn feature \"parsing\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 syn feature \"printing\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 syn feature \"proc-macro\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u251c\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u251c\u2500\u2500 proc-macro2 feature \"proc-macro\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u2514\u2500\u2500 quote feature \"proc-macro\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 syn feature \"full\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502       \u2514\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-sink v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-task v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 slab v0.4.12\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-channel feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 futures-channel v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 futures-core v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 futures-sink v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 futures-channel feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 futures-channel v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 futures-core feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u2514\u2500\u2500 futures-core v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 futures-core feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502       \u251c\u2500\u2500 futures-core v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502       \u2514\u2500\u2500 futures-core feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-io feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 futures-io v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 memchr feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 memchr v2.8.2\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 memchr feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502       \u251c\u2500\u2500 memchr v2.8.2\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502       \u2514\u2500\u2500 memchr feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502           \u2514\u2500\u2500 memchr v2.8.2\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 pin-project-lite feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 pin-project-lite v0.2.17\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-io v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-sink v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-task v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-channel feature \"sink\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-channel v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-channel feature \"futures-sink\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 futures-channel v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util feature \"sink\"\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 futures-util feature \"futures-sink\"\n\u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 futures feature \"async-await\"\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util feature \"async-await\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util feature \"async-await-macro\"\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-util feature \"async-await\" (*)\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 futures-util feature \"futures-macro\"\n\u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 futures feature \"executor\"\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures feature \"futures-executor\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-channel feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-core feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-sink feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-sink v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-task feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-task v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-core feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-task feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 futures-util feature \"slab\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-core feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-sink feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-sink v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-sink feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-task feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-task v0.3.32\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-task feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util feature \"channel\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util feature \"futures-channel\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-core feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-task feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-util feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-util feature \"slab\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 slab feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 slab v0.4.12\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util feature \"io\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util feature \"futures-io\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util feature \"memchr\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-util feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 futures-util feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-io feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 futures-executor feature \"std\"\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-executor v0.3.32 (*)\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-core feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 futures-task feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 futures-util feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 futures feature \"std\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 macros feature \"default\" (command-line)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 macros v0.1.0 (proc-macro) (/home/jonas/Development/Rust/porridge/crates/macros)\n\u2502   \u2502   \u251c\u2500\u2500 smallvec feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 smallvec v1.15.2\n\u2502   \u2502   \u251c\u2500\u2500 smallvec feature \"union\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 smallvec v1.15.2\n\u2502   \u2502   \u251c\u2500\u2500 tokio feature \"rt\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 tokio v1.52.3\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 pin-project-lite feature \"default\" (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 tokio-macros feature \"default\"\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 tokio-macros v2.7.0 (proc-macro)\n\u2502   \u2502   \u2502               \u251c\u2500\u2500 proc-macro2 feature \"default\" (*)\n\u2502   \u2502   \u2502               \u251c\u2500\u2500 quote feature \"default\" (*)\n\u2502   \u2502   \u2502               \u251c\u2500\u2500 syn feature \"default\" (*)\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 syn feature \"full\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 tracing feature \"default\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing v0.1.44\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-core v0.1.36\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 once_cell feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 once_cell v1.21.4\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 once_cell feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 once_cell v1.21.4\n\u2502   \u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 once_cell feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502               \u251c\u2500\u2500 once_cell v1.21.4\n\u2502   \u2502   \u2502   \u2502   \u2502               \u2514\u2500\u2500 once_cell feature \"race\"\n\u2502   \u2502   \u2502   \u2502   \u2502                   \u2514\u2500\u2500 once_cell v1.21.4\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 pin-project-lite feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing-attributes feature \"default\"\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 tracing-attributes v0.1.31 (proc-macro)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 proc-macro2 feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 quote feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"clone-impls\" (*)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"extra-traits\"\n\u2502   \u2502   \u2502   \u2502           \u2502   \u2514\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"full\" (*)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"parsing\" (*)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"printing\" (*)\n\u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"proc-macro\" (*)\n\u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 syn feature \"visit-mut\"\n\u2502   \u2502   \u2502   \u2502               \u2514\u2500\u2500 syn v2.0.118 (*)\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing feature \"attributes\"\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing v0.1.44 (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing feature \"tracing-attributes\"\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 tracing v0.1.44 (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing feature \"std\"\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 tracing v0.1.44 (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 tracing-core feature \"std\"\n\u2502   \u2502   \u2502           \u251c\u2500\u2500 tracing-core v0.1.36 (*)\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 tracing-core feature \"once_cell\"\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 tracing-core v0.1.36 (*)\n\u2502   \u2502   \u2514\u2500\u2500 variadics_please feature \"default\"\n\u2502   \u2502       \u251c\u2500\u2500 variadics_please v2.0.0 (proc-macro)\n\u2502   \u2502       \u2502   \u251c\u2500\u2500 quote feature \"default\" (*)\n\u2502   \u2502       \u2502   \u2514\u2500\u2500 unsynn feature \"default\"\n\u2502   \u2502       \u2502       \u251c\u2500\u2500 unsynn v0.3.0\n\u2502   \u2502       \u2502       \u2502   \u251c\u2500\u2500 proc-macro2 feature \"default\" (*)\n\u2502   \u2502       \u2502       \u2502   \u251c\u2500\u2500 proc-macro2 feature \"proc-macro\" (*)\n\u2502   \u2502       \u2502       \u2502   \u251c\u2500\u2500 proc-macro2 feature \"span-locations\"\n\u2502   \u2502       \u2502       \u2502   \u2502   \u2514\u2500\u2500 proc-macro2 v1.0.106 (*)\n\u2502   \u2502       \u2502       \u2502   \u251c\u2500\u2500 mutants feature \"default\"\n\u2502   \u2502       \u2502       \u2502   \u2502   \u2514\u2500\u2500 mutants v0.0.3 (proc-macro)\n\u2502   \u2502       \u2502       \u2502   \u2514\u2500\u2500 rustc-hash feature \"default\"\n\u2502   \u2502       \u2502       \u2502       \u251c\u2500\u2500 rustc-hash v2.1.2\n\u2502   \u2502       \u2502       \u2502       \u2514\u2500\u2500 rustc-hash feature \"std\"\n\u2502   \u2502       \u2502       \u2502           \u2514\u2500\u2500 rustc-hash v2.1.2\n\u2502   \u2502       \u2502       \u251c\u2500\u2500 unsynn feature \"docgen\"\n\u2502   \u2502       \u2502       \u2502   \u2514\u2500\u2500 unsynn v0.3.0 (*)\n\u2502   \u2502       \u2502       \u251c\u2500\u2500 unsynn feature \"extra_asserts\"\n\u2502   \u2502       \u2502       \u2502   \u2514\u2500\u2500 unsynn v0.3.0 (*)\n\u2502   \u2502       \u2502       \u251c\u2500\u2500 unsynn feature \"extra_tests\"\n\u2502   \u2502       \u2502       \u2502   \u2514\u2500\u2500 unsynn v0.3.0 (*)\n\u2502   \u2502       \u2502       \u251c\u2500\u2500 unsynn feature \"hash_keywords\"\n\u2502   \u2502       \u2502       \u2502   \u2514\u2500\u2500 unsynn v0.3.0 (*)\n\u2502   \u2502       \u2502       \u251c\u2500\u2500 unsynn feature \"nonparseable\"\n\u2502   \u2502       \u2502       \u2502   \u2514\u2500\u2500 unsynn v0.3.0 (*)\n\u2502   \u2502       \u2502       \u251c\u2500\u2500 unsynn feature \"proc_macro2\"\n\u2502   \u2502       \u2502       \u2502   \u2514\u2500\u2500 unsynn v0.3.0 (*)\n\u2502   \u2502       \u2502       \u2514\u2500\u2500 unsynn feature \"trait_methods_track_caller\"\n\u2502   \u2502       \u2502           \u2514\u2500\u2500 unsynn v0.3.0 (*)\n\u2502   \u2502       \u2514\u2500\u2500 variadics_please feature \"alloc\"\n\u2502   \u2502           \u2514\u2500\u2500 variadics_please v2.0.0 (proc-macro) (*)\n\u2502   \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502       \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl) (*)\n\u2514\u2500\u2500 futures feature \"default\" (*)\n[dev-dependencies]\n\u251c\u2500\u2500 bump-scope feature \"default\" (*)\n\u251c\u2500\u2500 tokio feature \"default\"\n\u2502   \u2514\u2500\u2500 tokio v1.52.3 (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\"\n\u2502   \u251c\u2500\u2500 tokio v1.52.3 (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"rt\" (*)\n\u251c\u2500\u2500 criterion feature \"default\"\n\u2502   \u251c\u2500\u2500 criterion v0.5.1\n\u2502   \u2502   \u251c\u2500\u2500 once_cell feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 anes feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 anes v0.1.6\n\u2502   \u2502   \u251c\u2500\u2500 cast feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 cast v0.3.0\n\u2502   \u2502   \u251c\u2500\u2500 ciborium feature \"default\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 ciborium v0.2.2\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 ciborium-io feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 ciborium-io v0.2.2\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 ciborium-io feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 ciborium-io v0.2.2\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 ciborium-ll feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 ciborium-ll v0.2.2\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 half v2.7.1\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 cfg-if feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 cfg-if v1.0.4\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 zerocopy feature \"derive\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u251c\u2500\u2500 zerocopy v0.8.52\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502   \u2514\u2500\u2500 zerocopy-derive feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502       \u2514\u2500\u2500 zerocopy-derive v0.8.52 (proc-macro)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502           \u251c\u2500\u2500 proc-macro2 feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502           \u251c\u2500\u2500 quote feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2502           \u2514\u2500\u2500 syn feature \"full\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 zerocopy feature \"zerocopy-derive\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2502       \u2514\u2500\u2500 zerocopy v0.8.52 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 zerocopy feature \"simd\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2502       \u2514\u2500\u2500 zerocopy v0.8.52 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 ciborium-io feature \"default\" (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 serde feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 serde v1.0.228\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 serde_core feature \"result\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 serde_core v1.0.228\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 serde_derive feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 serde_derive v1.0.228 (proc-macro)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 proc-macro2 feature \"proc-macro\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 quote feature \"proc-macro\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"clone-impls\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"derive\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"parsing\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u251c\u2500\u2500 syn feature \"printing\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 syn feature \"proc-macro\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 serde_core feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 serde_core v1.0.228\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 serde feature \"derive\"\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 serde v1.0.228 (*)\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 serde feature \"serde_derive\"\n\u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 serde v1.0.228 (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 ciborium feature \"std\"\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 ciborium v0.2.2 (*)\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 ciborium-io feature \"std\"\n\u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 ciborium-io v0.2.2\n\u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 ciborium-io feature \"alloc\" (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 serde feature \"std\"\n\u2502   \u2502   \u2502           \u251c\u2500\u2500 serde v1.0.228 (*)\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 serde_core feature \"std\"\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 serde_core v1.0.228\n\u2502   \u2502   \u251c\u2500\u2500 serde feature \"default\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 serde v1.0.228 (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 serde feature \"std\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 serde_derive feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 clap feature \"std\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 clap v4.6.1\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 clap_builder v4.6.0\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 anstyle feature \"default\"\n\u2502   \u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 anstyle v1.0.14\n\u2502   \u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 anstyle feature \"std\"\n\u2502   \u2502   \u2502   \u2502       \u2502       \u2514\u2500\u2500 anstyle v1.0.14\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 clap_lex feature \"default\"\n\u2502   \u2502   \u2502   \u2502           \u2514\u2500\u2500 clap_lex v1.1.0\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 clap_builder feature \"std\"\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 clap_builder v4.6.0 (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 anstyle feature \"std\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 criterion-plot feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 criterion-plot v0.5.0\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 cast feature \"default\" (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 itertools feature \"default\"\n\u2502   \u2502   \u2502           \u251c\u2500\u2500 itertools v0.10.5\n\u2502   \u2502   \u2502           \u2502   \u2514\u2500\u2500 either v1.16.0\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 itertools feature \"use_std\"\n\u2502   \u2502   \u2502               \u251c\u2500\u2500 itertools v0.10.5 (*)\n\u2502   \u2502   \u2502               \u251c\u2500\u2500 itertools feature \"use_alloc\"\n\u2502   \u2502   \u2502               \u2502   \u2514\u2500\u2500 itertools v0.10.5 (*)\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 either feature \"use_std\"\n\u2502   \u2502   \u2502                   \u251c\u2500\u2500 either v1.16.0\n\u2502   \u2502   \u2502                   \u2514\u2500\u2500 either feature \"std\"\n\u2502   \u2502   \u2502                       \u2514\u2500\u2500 either v1.16.0\n\u2502   \u2502   \u251c\u2500\u2500 itertools feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 is-terminal feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 is-terminal v0.4.17\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 libc feature \"default\"\n\u2502   \u2502   \u2502           \u251c\u2500\u2500 libc v0.2.186\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 libc feature \"std\"\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 libc v0.2.186\n\u2502   \u2502   \u251c\u2500\u2500 num-traits feature \"std\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 num-traits v0.2.19\n\u2502   \u2502   \u2502       [build-dependencies]\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 autocfg feature \"default\"\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 autocfg v1.5.1\n\u2502   \u2502   \u251c\u2500\u2500 oorandom feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 oorandom v11.1.5\n\u2502   \u2502   \u251c\u2500\u2500 plotters feature \"area_series\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 plotters v0.3.7\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 num-traits feature \"default\"\n\u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 num-traits v0.2.19 (*)\n\u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 num-traits feature \"std\" (*)\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 plotters-backend feature \"default\"\n\u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 plotters-backend v0.3.7\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 plotters-svg feature \"default\"\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 plotters-svg v0.3.7\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 plotters-backend feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 plotters feature \"line_series\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 plotters v0.3.7 (*)\n\u2502   \u2502   \u251c\u2500\u2500 plotters feature \"svg_backend\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 plotters v0.3.7 (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 plotters feature \"plotters-svg\"\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 plotters v0.3.7 (*)\n\u2502   \u2502   \u251c\u2500\u2500 rayon feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 rayon v1.12.0\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 either v1.16.0\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 rayon-core feature \"default\"\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 rayon-core v1.13.0\n\u2502   \u2502   \u2502               \u251c\u2500\u2500 crossbeam-deque feature \"default\"\n\u2502   \u2502   \u2502               \u2502   \u251c\u2500\u2500 crossbeam-deque v0.8.6\n\u2502   \u2502   \u2502               \u2502   \u2502   \u251c\u2500\u2500 crossbeam-epoch v0.9.18\n\u2502   \u2502   \u2502               \u2502   \u2502   \u2502   \u2514\u2500\u2500 crossbeam-utils v0.8.21\n\u2502   \u2502   \u2502               \u2502   \u2502   \u2514\u2500\u2500 crossbeam-utils v0.8.21\n\u2502   \u2502   \u2502               \u2502   \u2514\u2500\u2500 crossbeam-deque feature \"std\"\n\u2502   \u2502   \u2502               \u2502       \u251c\u2500\u2500 crossbeam-deque v0.8.6 (*)\n\u2502   \u2502   \u2502               \u2502       \u251c\u2500\u2500 crossbeam-epoch feature \"std\"\n\u2502   \u2502   \u2502               \u2502       \u2502   \u251c\u2500\u2500 crossbeam-epoch v0.9.18 (*)\n\u2502   \u2502   \u2502               \u2502       \u2502   \u251c\u2500\u2500 crossbeam-epoch feature \"alloc\"\n\u2502   \u2502   \u2502               \u2502       \u2502   \u2502   \u2514\u2500\u2500 crossbeam-epoch v0.9.18 (*)\n\u2502   \u2502   \u2502               \u2502       \u2502   \u2514\u2500\u2500 crossbeam-utils feature \"std\"\n\u2502   \u2502   \u2502               \u2502       \u2502       \u2514\u2500\u2500 crossbeam-utils v0.8.21\n\u2502   \u2502   \u2502               \u2502       \u2514\u2500\u2500 crossbeam-utils feature \"std\" (*)\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 crossbeam-utils feature \"default\"\n\u2502   \u2502   \u2502                   \u251c\u2500\u2500 crossbeam-utils v0.8.21\n\u2502   \u2502   \u2502                   \u2514\u2500\u2500 crossbeam-utils feature \"std\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 regex feature \"std\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 regex v1.12.4\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata v0.4.14\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"meta\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"nfa-pikevm\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 regex-automata feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"syntax\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 regex-automata feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"nfa-pikevm\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"syntax\" (*)\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"alloc\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-syntax feature \"std\"\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-syntax feature \"std\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 serde_json feature \"default\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 serde_json v1.0.150\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 memchr v2.8.2\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 serde_core v1.0.228\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 itoa feature \"default\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 itoa v1.0.18\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 zmij feature \"default\"\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 zmij v1.0.21\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 serde_json feature \"std\"\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 serde_json v1.0.150 (*)\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 memchr feature \"std\" (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 serde_core feature \"std\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 tinytemplate feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 tinytemplate v1.2.1\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 serde feature \"default\" (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 serde_json feature \"default\" (*)\n\u2502   \u2502   \u2514\u2500\u2500 walkdir feature \"default\"\n\u2502   \u2502       \u2514\u2500\u2500 walkdir v2.5.0\n\u2502   \u2502           \u2514\u2500\u2500 same-file feature \"default\"\n\u2502   \u2502               \u2514\u2500\u2500 same-file v1.0.6\n\u2502   \u251c\u2500\u2500 criterion feature \"cargo_bench_support\"\n\u2502   \u2502   \u2514\u2500\u2500 criterion v0.5.1 (*)\n\u2502   \u251c\u2500\u2500 criterion feature \"plotters\"\n\u2502   \u2502   \u2514\u2500\u2500 criterion v0.5.1 (*)\n\u2502   \u2514\u2500\u2500 criterion feature \"rayon\"\n\u2502       \u2514\u2500\u2500 criterion v0.5.1 (*)\n\u2514\u2500\u2500 dhat feature \"default\"\n    \u2514\u2500\u2500 dhat v0.3.3\n        \u251c\u2500\u2500 serde feature \"default\" (*)\n        \u251c\u2500\u2500 serde feature \"derive\" (*)\n        \u251c\u2500\u2500 serde_json feature \"default\" (*)\n        \u251c\u2500\u2500 backtrace feature \"default\"\n        \u2502   \u251c\u2500\u2500 backtrace v0.3.76\n        \u2502   \u2502   \u251c\u2500\u2500 addr2line v0.25.1\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 gimli feature \"read\"\n        \u2502   \u2502   \u2502       \u251c\u2500\u2500 gimli v0.32.3\n        \u2502   \u2502   \u2502       \u2514\u2500\u2500 gimli feature \"read-core\"\n        \u2502   \u2502   \u2502           \u2514\u2500\u2500 gimli v0.32.3\n        \u2502   \u2502   \u251c\u2500\u2500 libc v0.2.186\n        \u2502   \u2502   \u251c\u2500\u2500 miniz_oxide v0.8.9\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 adler2 v2.0.1\n        \u2502   \u2502   \u251c\u2500\u2500 cfg-if feature \"default\" (*)\n        \u2502   \u2502   \u251c\u2500\u2500 object feature \"archive\"\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 object v0.37.3\n        \u2502   \u2502   \u2502       \u2514\u2500\u2500 memchr v2.8.2\n        \u2502   \u2502   \u251c\u2500\u2500 object feature \"elf\"\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 object v0.37.3 (*)\n        \u2502   \u2502   \u251c\u2500\u2500 object feature \"macho\"\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 object v0.37.3 (*)\n        \u2502   \u2502   \u251c\u2500\u2500 object feature \"pe\"\n        \u2502   \u2502   \u2502   \u251c\u2500\u2500 object v0.37.3 (*)\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 object feature \"coff\"\n        \u2502   \u2502   \u2502       \u2514\u2500\u2500 object v0.37.3 (*)\n        \u2502   \u2502   \u251c\u2500\u2500 object feature \"read_core\"\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 object v0.37.3 (*)\n        \u2502   \u2502   \u251c\u2500\u2500 object feature \"unaligned\"\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 object v0.37.3 (*)\n        \u2502   \u2502   \u251c\u2500\u2500 object feature \"xcoff\"\n        \u2502   \u2502   \u2502   \u2514\u2500\u2500 object v0.37.3 (*)\n        \u2502   \u2502   \u2514\u2500\u2500 rustc-demangle feature \"default\"\n        \u2502   \u2502       \u2514\u2500\u2500 rustc-demangle v0.1.28\n        \u2502   \u2514\u2500\u2500 backtrace feature \"std\"\n        \u2502       \u2514\u2500\u2500 backtrace v0.3.76 (*)\n        \u251c\u2500\u2500 lazy_static feature \"default\"\n        \u2502   \u2514\u2500\u2500 lazy_static v1.5.0\n        \u251c\u2500\u2500 mintex feature \"default\"\n        \u2502   \u2514\u2500\u2500 mintex v0.1.4\n        \u251c\u2500\u2500 parking_lot feature \"default\"\n        \u2502   \u2514\u2500\u2500 parking_lot v0.12.5\n        \u2502       \u251c\u2500\u2500 lock_api feature \"default\"\n        \u2502       \u2502   \u251c\u2500\u2500 lock_api v0.4.14\n        \u2502       \u2502   \u2502   \u2514\u2500\u2500 scopeguard v1.2.0\n        \u2502       \u2502   \u2514\u2500\u2500 lock_api feature \"atomic_usize\"\n        \u2502       \u2502       \u2514\u2500\u2500 lock_api v0.4.14 (*)\n        \u2502       \u2514\u2500\u2500 parking_lot_core feature \"default\"\n        \u2502           \u2514\u2500\u2500 parking_lot_core v0.9.12\n        \u2502               \u251c\u2500\u2500 smallvec feature \"default\" (*)\n        \u2502               \u251c\u2500\u2500 cfg-if feature \"default\" (*)\n        \u2502               \u2514\u2500\u2500 libc feature \"default\" (*)\n        \u251c\u2500\u2500 rustc-hash feature \"default\"\n        \u2502   \u251c\u2500\u2500 rustc-hash v1.1.0\n        \u2502   \u2514\u2500\u2500 rustc-hash feature \"std\"\n        \u2502       \u2514\u2500\u2500 rustc-hash v1.1.0\n        \u2514\u2500\u2500 thousands feature \"default\"\n            \u2514\u2500\u2500 thousands v0.2.0\n\nbowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl) (*)\n\nmacros v0.1.0 (proc-macro) (/home/jonas/Development/Rust/porridge/crates/macros)\n\nplayground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u251c\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u251c\u2500\u2500 futures feature \"default\" (*)\n\u251c\u2500\u2500 tokio feature \"default\" (*)\n\u251c\u2500\u2500 tokio feature \"macros\"\n\u2502   \u251c\u2500\u2500 tokio v1.52.3 (*)\n\u2502   \u2514\u2500\u2500 tokio feature \"tokio-macros\"\n\u2502       \u2514\u2500\u2500 tokio v1.52.3 (*)\n\u251c\u2500\u2500 tokio feature \"rt-multi-thread\" (*)\n\u251c\u2500\u2500 tokio feature \"time\"\n\u2502   \u2514\u2500\u2500 tokio v1.52.3 (*)\n\u251c\u2500\u2500 tracing feature \"default\" (*)\n\u251c\u2500\u2500 codespan-reporting feature \"default\"\n\u2502   \u251c\u2500\u2500 codespan-reporting v0.13.1\n\u2502   \u2502   \u251c\u2500\u2500 termcolor feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 termcolor v1.4.1\n\u2502   \u2502   \u2514\u2500\u2500 unicode-width feature \"default\"\n\u2502   \u2502       \u251c\u2500\u2500 unicode-width v0.2.2\n\u2502   \u2502       \u2514\u2500\u2500 unicode-width feature \"cjk\"\n\u2502   \u2502           \u2514\u2500\u2500 unicode-width v0.2.2\n\u2502   \u251c\u2500\u2500 codespan-reporting feature \"std\"\n\u2502   \u2502   \u2514\u2500\u2500 codespan-reporting v0.13.1 (*)\n\u2502   \u2514\u2500\u2500 codespan-reporting feature \"termcolor\"\n\u2502       \u251c\u2500\u2500 codespan-reporting v0.13.1 (*)\n\u2502       \u2514\u2500\u2500 codespan-reporting feature \"std\" (*)\n\u251c\u2500\u2500 logos feature \"default\"\n\u2502   \u251c\u2500\u2500 logos v0.16.1\n\u2502   \u2502   \u2514\u2500\u2500 logos-derive feature \"default\"\n\u2502   \u2502       \u2514\u2500\u2500 logos-derive v0.16.1 (proc-macro)\n\u2502   \u2502           \u2514\u2500\u2500 logos-codegen feature \"default\"\n\u2502   \u2502               \u2514\u2500\u2500 logos-codegen v0.16.1\n\u2502   \u2502                   \u251c\u2500\u2500 proc-macro2 feature \"default\" (*)\n\u2502   \u2502                   \u251c\u2500\u2500 quote feature \"default\" (*)\n\u2502   \u2502                   \u251c\u2500\u2500 syn feature \"default\" (*)\n\u2502   \u2502                   \u251c\u2500\u2500 syn feature \"full\" (*)\n\u2502   \u2502                   \u251c\u2500\u2500 fnv feature \"default\"\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 fnv v1.0.7\n\u2502   \u2502                   \u2502   \u2514\u2500\u2500 fnv feature \"std\"\n\u2502   \u2502                   \u2502       \u2514\u2500\u2500 fnv v1.0.7\n\u2502   \u2502                   \u251c\u2500\u2500 regex-automata feature \"default\"\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 aho-corasick v1.1.4\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2514\u2500\u2500 memchr v2.8.2\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 memchr v2.8.2\n\u2502   \u2502                   \u2502   \u2502   \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata feature \"dfa\"\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"dfa-build\"\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"dfa-search\"\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\"\n\u2502   \u2502                   \u2502   \u2502   \u2502       \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2502       \u2514\u2500\u2500 regex-automata feature \"alloc\"\n\u2502   \u2502                   \u2502   \u2502   \u2502           \u2514\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"dfa-onepass\"\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\" (*)\n\u2502   \u2502                   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"dfa-search\" (*)\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata feature \"hybrid\"\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"alloc\" (*)\n\u2502   \u2502                   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\" (*)\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata feature \"meta\"\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"nfa-pikevm\"\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\" (*)\n\u2502   \u2502                   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"syntax\"\n\u2502   \u2502                   \u2502   \u2502       \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502       \u2514\u2500\u2500 regex-automata feature \"alloc\" (*)\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata feature \"nfa\"\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"nfa-backtrack\"\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\" (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"nfa-pikevm\" (*)\n\u2502   \u2502                   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\" (*)\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata feature \"perf\"\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"perf-inline\"\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2514\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2514\u2500\u2500 regex-automata feature \"perf-literal\"\n\u2502   \u2502                   \u2502   \u2502       \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502       \u251c\u2500\u2500 regex-automata feature \"perf-literal-multisubstring\"\n\u2502   \u2502                   \u2502   \u2502       \u2502   \u2514\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502       \u2514\u2500\u2500 regex-automata feature \"perf-literal-substring\"\n\u2502   \u2502                   \u2502   \u2502           \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502           \u2514\u2500\u2500 aho-corasick feature \"perf-literal\"\n\u2502   \u2502                   \u2502   \u2502               \u2514\u2500\u2500 aho-corasick v1.1.4 (*)\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata feature \"std\"\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"alloc\" (*)\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 aho-corasick feature \"std\"\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u251c\u2500\u2500 aho-corasick v1.1.4 (*)\n\u2502   \u2502                   \u2502   \u2502   \u2502   \u2514\u2500\u2500 memchr feature \"std\"\n\u2502   \u2502                   \u2502   \u2502   \u2502       \u251c\u2500\u2500 memchr v2.8.2\n\u2502   \u2502                   \u2502   \u2502   \u2502       \u2514\u2500\u2500 memchr feature \"alloc\"\n\u2502   \u2502                   \u2502   \u2502   \u2502           \u2514\u2500\u2500 memchr v2.8.2\n\u2502   \u2502                   \u2502   \u2502   \u251c\u2500\u2500 memchr feature \"std\" (*)\n\u2502   \u2502                   \u2502   \u2502   \u2514\u2500\u2500 regex-syntax feature \"std\"\n\u2502   \u2502                   \u2502   \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502   \u251c\u2500\u2500 regex-automata feature \"syntax\" (*)\n\u2502   \u2502                   \u2502   \u2514\u2500\u2500 regex-automata feature \"unicode\"\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-age\"\n\u2502   \u2502                   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-syntax feature \"unicode-age\"\n\u2502   \u2502                   \u2502       \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-bool\"\n\u2502   \u2502                   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-syntax feature \"unicode-bool\"\n\u2502   \u2502                   \u2502       \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-case\"\n\u2502   \u2502                   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-syntax feature \"unicode-case\"\n\u2502   \u2502                   \u2502       \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-gencat\"\n\u2502   \u2502                   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-syntax feature \"unicode-gencat\"\n\u2502   \u2502                   \u2502       \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-perl\"\n\u2502   \u2502                   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-syntax feature \"unicode-perl\"\n\u2502   \u2502                   \u2502       \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-script\"\n\u2502   \u2502                   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-syntax feature \"unicode-script\"\n\u2502   \u2502                   \u2502       \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-segment\"\n\u2502   \u2502                   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-syntax feature \"unicode-segment\"\n\u2502   \u2502                   \u2502       \u2502       \u2514\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502       \u251c\u2500\u2500 regex-automata feature \"unicode-word-boundary\"\n\u2502   \u2502                   \u2502       \u2502   \u2514\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502                   \u2502       \u2514\u2500\u2500 regex-syntax feature \"unicode\"\n\u2502   \u2502                   \u2502           \u251c\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                   \u2502           \u251c\u2500\u2500 regex-syntax feature \"unicode-age\" (*)\n\u2502   \u2502                   \u2502           \u251c\u2500\u2500 regex-syntax feature \"unicode-bool\" (*)\n\u2502   \u2502                   \u2502           \u251c\u2500\u2500 regex-syntax feature \"unicode-case\" (*)\n\u2502   \u2502                   \u2502           \u251c\u2500\u2500 regex-syntax feature \"unicode-gencat\" (*)\n\u2502   \u2502                   \u2502           \u251c\u2500\u2500 regex-syntax feature \"unicode-perl\" (*)\n\u2502   \u2502                   \u2502           \u251c\u2500\u2500 regex-syntax feature \"unicode-script\" (*)\n\u2502   \u2502                   \u2502           \u2514\u2500\u2500 regex-syntax feature \"unicode-segment\" (*)\n\u2502   \u2502                   \u2514\u2500\u2500 regex-syntax feature \"default\"\n\u2502   \u2502                       \u251c\u2500\u2500 regex-syntax v0.8.11\n\u2502   \u2502                       \u251c\u2500\u2500 regex-syntax feature \"std\" (*)\n\u2502   \u2502                       \u2514\u2500\u2500 regex-syntax feature \"unicode\" (*)\n\u2502   \u251c\u2500\u2500 logos feature \"export_derive\"\n\u2502   \u2502   \u251c\u2500\u2500 logos v0.16.1 (*)\n\u2502   \u2502   \u2514\u2500\u2500 logos feature \"logos-derive\"\n\u2502   \u2502       \u2514\u2500\u2500 logos v0.16.1 (*)\n\u2502   \u2514\u2500\u2500 logos feature \"std\"\n\u2502       \u2514\u2500\u2500 logos v0.16.1 (*)\n\u251c\u2500\u2500 rand feature \"default\"\n\u2502   \u251c\u2500\u2500 rand v0.9.4\n\u2502   \u2502   \u251c\u2500\u2500 rand_chacha v0.9.0\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 ppv-lite86 feature \"simd\"\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 ppv-lite86 v0.2.21\n\u2502   \u2502   \u2502   \u2502       \u251c\u2500\u2500 zerocopy feature \"default\"\n\u2502   \u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 zerocopy v0.8.52 (*)\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 zerocopy feature \"simd\" (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 rand_core feature \"default\"\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 rand_core v0.9.5\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 getrandom feature \"default\"\n\u2502   \u2502   \u2502               \u2514\u2500\u2500 getrandom v0.3.4\n\u2502   \u2502   \u2502                   \u251c\u2500\u2500 libc v0.2.186\n\u2502   \u2502   \u2502                   \u2514\u2500\u2500 cfg-if feature \"default\" (*)\n\u2502   \u2502   \u2514\u2500\u2500 rand_core v0.9.5 (*)\n\u2502   \u251c\u2500\u2500 rand feature \"os_rng\"\n\u2502   \u2502   \u251c\u2500\u2500 rand v0.9.4 (*)\n\u2502   \u2502   \u2514\u2500\u2500 rand_core feature \"os_rng\"\n\u2502   \u2502       \u2514\u2500\u2500 rand_core v0.9.5 (*)\n\u2502   \u251c\u2500\u2500 rand feature \"small_rng\"\n\u2502   \u2502   \u2514\u2500\u2500 rand v0.9.4 (*)\n\u2502   \u251c\u2500\u2500 rand feature \"std\"\n\u2502   \u2502   \u251c\u2500\u2500 rand v0.9.4 (*)\n\u2502   \u2502   \u251c\u2500\u2500 rand feature \"alloc\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 rand v0.9.4 (*)\n\u2502   \u2502   \u251c\u2500\u2500 rand_chacha feature \"std\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 rand_chacha v0.9.0 (*)\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 ppv-lite86 feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 ppv-lite86 v0.2.21 (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 rand_core feature \"std\"\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 rand_core v0.9.5 (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 getrandom feature \"std\"\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 getrandom v0.3.4 (*)\n\u2502   \u2502   \u2514\u2500\u2500 rand_core feature \"std\" (*)\n\u2502   \u251c\u2500\u2500 rand feature \"std_rng\"\n\u2502   \u2502   \u2514\u2500\u2500 rand v0.9.4 (*)\n\u2502   \u2514\u2500\u2500 rand feature \"thread_rng\"\n\u2502       \u251c\u2500\u2500 rand v0.9.4 (*)\n\u2502       \u251c\u2500\u2500 rand feature \"os_rng\" (*)\n\u2502       \u251c\u2500\u2500 rand feature \"std\" (*)\n\u2502       \u2514\u2500\u2500 rand feature \"std_rng\" (*)\n\u251c\u2500\u2500 tracing-subscriber feature \"default\"\n\u2502   \u251c\u2500\u2500 tracing-subscriber v0.3.23\n\u2502   \u2502   \u251c\u2500\u2500 tracing v0.1.44 (*)\n\u2502   \u2502   \u251c\u2500\u2500 tracing-core v0.1.36 (*)\n\u2502   \u2502   \u251c\u2500\u2500 smallvec feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 once_cell feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 regex-automata feature \"std\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 matchers feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 matchers v0.2.0\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 regex-automata feature \"dfa-build\"\n\u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 regex-automata feature \"dfa-search\"\n\u2502   \u2502   \u2502       \u2502   \u2502   \u2514\u2500\u2500 regex-automata v0.4.14 (*)\n\u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 regex-automata feature \"nfa-thompson\" (*)\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 regex-automata feature \"dfa-search\" (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 regex-automata feature \"syntax\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 nu-ansi-term feature \"default\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 nu-ansi-term v0.50.3\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 nu-ansi-term feature \"std\"\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 nu-ansi-term v0.50.3\n\u2502   \u2502   \u251c\u2500\u2500 sharded-slab feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 sharded-slab v0.1.7\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 lazy_static feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 thread_local feature \"default\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 thread_local v1.1.9\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 cfg-if feature \"default\" (*)\n\u2502   \u2502   \u251c\u2500\u2500 tracing-log feature \"log-tracer\"\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing-log v0.2.0\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 tracing-core feature \"default\"\n\u2502   \u2502   \u2502       \u2502   \u251c\u2500\u2500 tracing-core v0.1.36 (*)\n\u2502   \u2502   \u2502       \u2502   \u2514\u2500\u2500 tracing-core feature \"std\" (*)\n\u2502   \u2502   \u2502       \u251c\u2500\u2500 once_cell feature \"default\" (*)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 log feature \"default\"\n\u2502   \u2502   \u2502           \u2514\u2500\u2500 log v0.4.33\n\u2502   \u2502   \u2514\u2500\u2500 tracing-log feature \"std\"\n\u2502   \u2502       \u251c\u2500\u2500 tracing-log v0.2.0 (*)\n\u2502   \u2502       \u2514\u2500\u2500 log feature \"std\"\n\u2502   \u2502           \u2514\u2500\u2500 log v0.4.33\n\u2502   \u251c\u2500\u2500 tracing-subscriber feature \"ansi\"\n\u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber feature \"fmt\"\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber feature \"registry\"\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber feature \"sharded-slab\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber feature \"std\"\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 tracing-core feature \"std\" (*)\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"alloc\"\n\u2502   \u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"thread_local\"\n\u2502   \u2502   \u2502   \u2502       \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"std\" (*)\n\u2502   \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"nu-ansi-term\"\n\u2502   \u2502       \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u251c\u2500\u2500 tracing-subscriber feature \"fmt\" (*)\n\u2502   \u251c\u2500\u2500 tracing-subscriber feature \"smallvec\"\n\u2502   \u2502   \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2502   \u251c\u2500\u2500 tracing-subscriber feature \"std\" (*)\n\u2502   \u2514\u2500\u2500 tracing-subscriber feature \"tracing-log\"\n\u2502       \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n\u2514\u2500\u2500 tracing-subscriber feature \"env-filter\"\n    \u251c\u2500\u2500 tracing-subscriber v0.3.23 (*)\n    \u251c\u2500\u2500 tracing-subscriber feature \"matchers\"\n    \u2502   \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n    \u251c\u2500\u2500 tracing-subscriber feature \"once_cell\"\n    \u2502   \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n    \u251c\u2500\u2500 tracing-subscriber feature \"std\" (*)\n    \u251c\u2500\u2500 tracing-subscriber feature \"thread_local\" (*)\n    \u2514\u2500\u2500 tracing-subscriber feature \"tracing\"\n        \u2514\u2500\u2500 tracing-subscriber v0.3.23 (*)\n[build-dependencies]\n\u2514\u2500\u2500 lelwel feature \"default\"\n    \u2514\u2500\u2500 lelwel v0.10.4\n        \u251c\u2500\u2500 rustc-hash feature \"default\" (*)\n        \u251c\u2500\u2500 codespan-reporting feature \"default\" (*)\n        \u2514\u2500\u2500 logos feature \"default\" (*)\n",
+    "build": "cargo build --workspace --all-targets --profile bench -j 20",
+    "binaries": {
+      "command_buffers": {
+        "path": "/home/jonas/Development/Rust/porridge/target/optimization-o2/inline-keys-baseline/command_buffers",
+        "sha256": "16e9da88bb9c41dd083d6cc27c82d34165758fb6937ad3d92455cb554db5253b"
+      },
+      "dispatch": {
+        "path": "/home/jonas/Development/Rust/porridge/target/optimization-o2/inline-keys-baseline/dispatch",
+        "sha256": "1bc78e9243144962a7594d20c90a714953ee9e4f69b44b59c7a6b2afcc628cf5"
+      },
+      "profile_allocations": {
+        "path": "/home/jonas/Development/Rust/porridge/target/optimization-o2/inline-keys-baseline/profile_allocations",
+        "sha256": "823fa38d57c01d99e9a5a8a6e4e3cc5f84920b2e8a6bde1370e8c8e59747df56"
+      },
+      "steady_allocations": {
+        "path": "/home/jonas/Development/Rust/porridge/target/optimization-o2/inline-keys-baseline/steady_allocations",
+        "sha256": "a49b26c3f0ffbdc5a7ded82992abbb83d00b919d7ead94d024e11826ced7d891"
+      },
+      "stateful": {
+        "path": "/home/jonas/Development/Rust/porridge/target/optimization-o2/inline-keys-baseline/stateful",
+        "sha256": "1bec0fc3efda1b20d2a1e3da64dfad577d1697dd1c1916a4551fffad8c00bec1"
+      },
+      "engine": {
+        "path": "/home/jonas/Development/Rust/porridge/target/optimization-o2/inline-keys-baseline/engine",
+        "sha256": "5cff5432309af6226eefdd7577646f2f58cdb71a9a9368500e056187785cdc2c"
+      }
+    }
+  },
+  "candidate": {
+    "binaries": {
+      "command_buffers": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/command_buffers-ddf35d58327ef98f",
+        "sha256": "625fbdc62f52ec3fc53b236269d835da43a76c4b341a5bc25e2562b9a58b26e3",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      },
+      "dispatch": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/dispatch-89804af3994d8885",
+        "sha256": "1bc78e9243144962a7594d20c90a714953ee9e4f69b44b59c7a6b2afcc628cf5",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      },
+      "profile_allocations": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/examples/profile_allocations",
+        "sha256": "01da5193f0d4287cab8dc55c33ee6b789e4fe8a6bf1646b4e110a798bad9e829",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        }
+      },
+      "steady_allocations": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+        "sha256": "a5834ab5324c390ab1f12e906f38d22a1bbe4f2db6af7d485be48f89da8d0fe7",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": false
+        }
+      },
+      "stateful": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/stateful-2e968e27e63c4fe3",
+        "sha256": "2cb1608d2bf7b9f71a77df0a8b72a74cf137f0e059a35641fa99ce8f311db054",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      },
+      "engine": {
+        "original": "/home/jonas/Development/Rust/porridge/target/release/deps/engine-636ae662ebb969e0",
+        "sha256": "dee8716f32e22c5d1ad619444ea1779817e6f1bd5ff79ff7e6b8b15d8e3f92d1",
+        "features": [],
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        }
+      }
+    },
+    "source_sha256": {
+      "crates/playground/build.rs": "a7d22b5d2df3e8f2d219b91493849efcf9e141b481105c516d6c62927c4bbbdf",
+      "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+      "crates/benches/benches/engine.rs": "19224f5df3ca5ba68008cc7bbaf63109ea78b038d2dd2f3c70f64e032cfa7c8e",
+      "crates/benches/benches/stateful.rs": "18574c42216a6daf6232d808533d29a971d62d04b10424783e54194ed06da9ee",
+      "crates/benches/benches/dispatch.rs": "f9a8af00901aa0d9f95fb320600bc26dc983ddcc1a706dd54430e9947f53468d",
+      "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+      "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+      "crates/benches/examples/steady_allocations.rs": "9f4bcdf271c07b9223ae72e79a0e8ecaaca1757c7f17ff01364d7947276561bc",
+      "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+      "crates/benches/examples/profile_allocations.rs": "ab5b84d6581e173460174c7a63f7b0cdd80b39fd5dde90ad6f7a7f338e0af47f",
+      "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+      "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+      "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+      "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+      "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+      "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968",
+      "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+      "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+      "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+      "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+      "crates/benches/src/stateful/steady.rs": "ecbf59f5edbec00c0b17879fb67e2a03fddb2eb12157ffe09eb3c0ceb0710ac6",
+      "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+      "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+      "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+      "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+      "crates/bowl/src/query.rs": "0cbf5558e0605284c2cf7730f8cdae76091a99effdfb4825f909e0f22db2c20e",
+      "crates/bowl/src/system.rs": "d0179c85f6c6a6b07ad54eded9f3b12e209b9bb5466fccb546f2c076c2b875e4",
+      "crates/bowl/src/world.rs": "f88b0a698746da782262e6473d65cf95b25dfc200590cec2113c5e5e772b6a0d",
+      "crates/bowl/src/access.rs": "31ccdff47f601965c5c7d2601e026861195d8d0b03307713007890768db7a9ba",
+      "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+      "crates/bowl/src/dispatch.rs": "ada6bf1103e52258819f6719dc6dc579d060c9bd0e245b9915d54c5a4d120b1d",
+      "crates/bowl/src/lib.rs": "7fca629e439b6b6744d22b553f81f29ef6e9531ea88e91521ee92e8f0adbc046",
+      "crates/bowl/src/prepared.rs": "ed5cc01ee3b8a2d8a868d4bf98ae8a4519dc0ee4449c1ac447b94a24734f2bdf",
+      "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+      "crates/bowl/src/planning.rs": "73188ecf08f39a1bbf0719825137c207a559a465c779ce0c1cedb956688b2516",
+      "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+      "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+      "crates/bowl/src/system/planning_tests.rs": "2bd0b2880dbef5da67e206841d78b26f1498a25d144ff89e0bd41119443aadbb",
+      "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+      "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+      "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+      "crates/bowl/src/world/invocation_tests.rs": "2db5f893a514682316283af90fb383171c99efa4d017078daf39c7922301c0f4",
+      "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+      "crates/bowl/src/prepared/rows.rs": "ce8bf61a784bc71b6b65e0b0f5957eeb7992df3e2bbaa9397c323ccdd0b5dd88",
+      "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+      "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+      "crates/bowl/src/commands/arena/tests.rs": "3cc3690e402c30048b5e3cfe394864bfb7dcc14296df3aecc210049d1687a884",
+      "crates/bowl/src/prepared/rows/tests.rs": "0cd239913332adb1309564c3dc313e4bf2bfa0d784cc457e8562c80f645e12fe",
+      "crates/macros/src/lib.rs": "66165412874d1211652f8d562bd67cca8bdbd0b3c6b9ec465ce45a492f3018bf",
+      "crates/playground/src/tests.rs": "63f7d0898fefb25e8b456a2a6cb9d91bed13aa1bfa6fae48bc54d2ac7ad80e25",
+      "crates/playground/src/replication.rs": "7fa007b5166bab6b9973fa30bbf58336958b263a3f8a662168eb8010b5c484e5",
+      "crates/playground/src/main.rs": "60074f02a266fdb207daaa1a6326e14c57d282ea7330e9ab23f0a95496c26989",
+      "crates/playground/src/lang/entity.rs": "47ab9803de29a7ee03b0ac970771358b0b72b07c1b575c4618dddec5b207f815",
+      "crates/playground/src/lang/facts.rs": "d6eb0d5cf739663efb83309b3f805e5489a1497b1004d19c462933f6bcb2ff66",
+      "crates/playground/src/lang/schema.rs": "8bd0737550286defbc0aced238de7ba4f2c4a3c7a86df2b22d4b275106ccde2c",
+      "crates/playground/src/lang/mod.rs": "219477327d483515936c11a5b39725cf04ed11941e117b87b2d1b9d24f2fa56b",
+      "crates/playground/src/lang/grammar/parser.rs": "48b084de2b108fc63013a778a489f27f922bc0e9cd6305f5fffa32ca9ed1d1f3",
+      "crates/playground/src/lang/grammar/mod.rs": "197151ddbccbe728832111ddae440928405b807713164fe54567f3da8fbcad75",
+      "crates/playground/src/lang/grammar/lexer.rs": "f6593474990ee511ac3c1896ac6644eb9555f2d48879562fbba5407aeeb77db4",
+      "crates/playground/src/lang/service/mod.rs": "163249bd48834fc9810c99225d464bb7e376135d9b80e3cfe35af4472dc5d996",
+      "crates/playground/src/lang/service/hover.rs": "e6d17b7c62d08c1920123e141cf2ff0b22d40d9aece714a7aedc5a1d72280c8a",
+      "crates/playground/src/lang/entities/mod.rs": "115c05a95635d74d5605d12e5d382a511bf19f73dc4a022bb4e403c92cd5aa9f",
+      "crates/playground/src/lang/entities/document.rs": "9851e0a7233aa3df12b46327780c4c5a232f7f8b5183b709cc599eb6a3aea55c",
+      "crates/playground/src/lang/entities/namespace.rs": "ad8289b7039a3ea37f543e9a63b1310028f6e61836eb42e4d5330abc183b3b1e",
+      "crates/playground/src/lang/entities/import.rs": "c92dfaa2e5309f17ddca103f9f1a7860a55cd363e021e683d8c0bfa93b4faa3c",
+      "crates/playground/src/lang/entities/definition.rs": "cce8d5d8948b600a63425948207fdafe19cc0493a0deb4b911f66813fc0736f7",
+      "Cargo.lock": "638c57de536150be2fdd4a6e4a59aa36e952766dec52e70e63fd6b9bcac0ec6d",
+      "Cargo.toml": "e42f8782b56e3bc746de28b3dbfda6592451e31faf0857ae6207d7179fc39b45",
+      "crates/playground/Cargo.toml": "18a46e2c22783df9d83afff1eaead8becc86af36acac08c124b06b7159bc4d1f",
+      "crates/macros/Cargo.toml": "48d22b9b6bd09f2e838fdb2c719e2428d93f6f8255e5a1e931461e55af8dfa88",
+      "crates/bowl/Cargo.toml": "c04302a3129a8e982d95491901e780774a3cf5eeba7bc27de7925cfbf48f7690",
+      "crates/benches/Cargo.toml": "e54694166d2025149fbc05f53683569e1ebecec29632abcccd6b2c9e1ab1f8f2"
+    },
+    "features": "smallvec v1.15.2\n\u251c\u2500\u2500 smallvec feature \"default\"\n\u2502   \u251c\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl)\n\u2502   \u2502   \u251c\u2500\u2500 bowl feature \"default\" (command-line)\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches)\n\u2502   \u2502   \u2502   \u2502   \u2514\u2500\u2500 benches feature \"default\" (command-line)\n\u2502   \u2502   \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground)\n\u2502   \u2502   \u2502       \u2514\u2500\u2500 playground feature \"default\" (command-line)\n\u2502   \u2502   \u2514\u2500\u2500 bowl feature \"parallel\"\n\u2502   \u2502       \u2514\u2500\u2500 bowl feature \"default\" (command-line) (*)\n\u2502   \u251c\u2500\u2500 parking_lot_core v0.9.12\n\u2502   \u2502   \u2514\u2500\u2500 parking_lot_core feature \"default\"\n\u2502   \u2502       \u2514\u2500\u2500 parking_lot v0.12.5\n\u2502   \u2502           \u2514\u2500\u2500 parking_lot feature \"default\"\n\u2502   \u2502               \u2514\u2500\u2500 dhat v0.3.3\n\u2502   \u2502                   \u2514\u2500\u2500 dhat feature \"default\"\n\u2502   \u2502                       [dev-dependencies]\n\u2502   \u2502                       \u2514\u2500\u2500 benches v0.1.0 (/home/jonas/Development/Rust/porridge/crates/benches) (*)\n\u2502   \u2514\u2500\u2500 tracing-subscriber v0.3.23\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"alloc\"\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"std\"\n\u2502       \u2502       \u251c\u2500\u2500 tracing-subscriber feature \"default\"\n\u2502       \u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2502       \u251c\u2500\u2500 tracing-subscriber feature \"env-filter\"\n\u2502       \u2502       \u2502   \u2514\u2500\u2500 playground v0.1.0 (/home/jonas/Development/Rust/porridge/crates/playground) (*)\n\u2502       \u2502       \u251c\u2500\u2500 tracing-subscriber feature \"fmt\"\n\u2502       \u2502       \u2502   \u251c\u2500\u2500 tracing-subscriber feature \"ansi\"\n\u2502       \u2502       \u2502   \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"default\" (*)\n\u2502       \u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"default\" (*)\n\u2502       \u2502       \u2514\u2500\u2500 tracing-subscriber feature \"registry\"\n\u2502       \u2502           \u2514\u2500\u2500 tracing-subscriber feature \"fmt\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"ansi\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"default\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"env-filter\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"fmt\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"matchers\"\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"env-filter\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"nu-ansi-term\"\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"ansi\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"once_cell\"\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"env-filter\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"registry\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"sharded-slab\"\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"registry\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"smallvec\"\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"default\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"std\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"thread_local\"\n\u2502       \u2502   \u251c\u2500\u2500 tracing-subscriber feature \"env-filter\" (*)\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"registry\" (*)\n\u2502       \u251c\u2500\u2500 tracing-subscriber feature \"tracing\"\n\u2502       \u2502   \u2514\u2500\u2500 tracing-subscriber feature \"env-filter\" (*)\n\u2502       \u2514\u2500\u2500 tracing-subscriber feature \"tracing-log\"\n\u2502           \u2514\u2500\u2500 tracing-subscriber feature \"default\" (*)\n\u2514\u2500\u2500 smallvec feature \"union\"\n    \u2514\u2500\u2500 bowl v0.1.0 (/home/jonas/Development/Rust/porridge/crates/bowl) (*)\n",
+    "base_commit": "1271b34fdb0befdda5e9353feba1347e22a54562"
+  },
+  "raw_sha256": {
+    "report": "07ac7a3f1210c6bd98853499e44a1e67b73520bfad5e491b97ead6af66d1a10a",
+    "baseline": "13a589615cc2f270a82fe16d3629f73771e8c9fe4ebe3ca7db705dcc6973969f",
+    "candidate": "31baae505918f2896f9fdcb8f5c1630bd168f4a5f9a842f632b8f83ec59286c2"
+  }
+}
