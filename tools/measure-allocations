@@ -145,7 +145,7 @@ def main():
                     per_op = [row["engine"]["alloc_calls"] / row["operations"] for row in iterations]
                     times = [s["wall_ns"] / s["operations"] / 1000 for r in records if not r["counting"] for s in r["samples"]]
                     print(f"{label:6} {case:9} workers={count} slots={size}: "
-                          f"{statistics.median(calls):.0f} alloc + {statistics.median(reallocs):.0f} realloc/iteration "
+                          f"median {statistics.median(calls):.1f} alloc + {statistics.median(reallocs):.1f} realloc/iteration "
                           f"(max {max(events)} events); {statistics.median(per_op):.3f} alloc/op; "
                           f"{statistics.median(times):.2f} us/op", flush=True)
     if failures:

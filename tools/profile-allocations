@@ -75,8 +75,13 @@ def main():
     parser.add_argument("--slots", type=int, default=1000)
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--warmup", type=int, default=8)
+    parser.add_argument("--lifetime", action="store_true", help="profile setup, warmup and per-round live heap; no timing or per-request attribution")
+    parser.add_argument("--grow-to", type=int, help="grow the same Bowl to this population, then repeat warmup/steady rounds; requires --lifetime")
     args = parser.parse_args()
     workers = list(map(int, args.workers.split(",")))
+    if args.grow_to is not None and (not args.lifetime or args.grow_to < args.slots):
+        parser.error("--grow-to requires --lifetime and cannot shrink the population")
+    grow_to = args.slots if args.grow_to is None else args.grow_to
     if min(*workers, args.slots, args.rounds, args.warmup) <= 0:
         parser.error("sizes must be positive")
     if args.out.exists() and any(args.out.iterdir()):
@@ -92,13 +97,13 @@ def main():
         binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(), driver_cpu=driver, worker_cpus=cpus,
         source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for directory in ["crates/bowl/src", "crates/benches/src", "crates/benches/examples"] for p in Path(directory).rglob("*.rs")},
         counts_include_reallocations=True, reallocations_attributed_to_original_allocation=True,
-        configuration=dict(workers=workers, slots=args.slots, rounds=args.rounds, warmup=args.warmup),
+        configuration=dict(workers=workers, slots=args.slots, rounds=args.rounds, warmup=args.warmup, lifetime=args.lifetime, grow_to=grow_to),
         runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), records=[])
     for count in workers:
         directory = root / f"workers-{count}"
         directory.mkdir()
         profile, ready = directory / "heap.json", directory / "ready"
-        env = os.environ | dict(HEAP_WORKERS=str(count), HEAP_SLOTS=str(args.slots), HEAP_ROUNDS=str(args.rounds), HEAP_WARMUP=str(args.warmup), HEAP_OUT=str(profile), HEAP_READY=str(ready))
+        env = os.environ | dict(HEAP_WORKERS=str(count), HEAP_SLOTS=str(args.slots), HEAP_ROUNDS=str(args.rounds), HEAP_WARMUP=str(args.warmup), HEAP_OUT=str(profile), HEAP_READY=str(ready), HEAP_LIFETIME=str(int(args.lifetime)), HEAP_GROW_TO=str(grow_to))
         with (directory / "stdout.log").open("w") as out, (directory / "stderr.log").open("w") as err:
             process = subprocess.Popen([str(binary)], env=env, stdout=out, stderr=err, stdin=subprocess.PIPE, text=True)
             try:
@@ -121,22 +126,37 @@ def main():
                     process.kill()
                     process.wait()
         data = json.loads(profile.read_text())
-        operations = args.slots * args.rounds
+        operations = None if args.lifetime else args.slots * args.rounds
         total = sum(point["tbk"] for point in data["pps"])
         sites = []
         for point in sorted(data["pps"], key=lambda point: point["tbk"], reverse=True):
             stack = [data["ftbl"][frame] for frame in point["fs"]]
-            sites.append(dict(calls=point["tbk"], calls_per_request=point["tbk"] / operations,
+            sites.append(dict(calls=point["tbk"], calls_per_request=None if operations is None else point["tbk"] / operations,
                 percent=100 * point["tbk"] / total, requested_bytes=point["tb"], stack=stack))
         metrics = {}
+        memory = []
         for line in (directory / "stdout.log").read_text().splitlines():
             if line.startswith("metric\t"):
                 _, key, value = line.split("\t")
                 metrics[key] = int(value)
-        record = dict(workers=count, requests=operations, calls=total, calls_per_request=total / operations,
-            metrics=metrics, sites=sites, origins=origin_totals(sites, operations), profile_sha256=hashlib.sha256(profile.read_bytes()).hexdigest())
+            elif line.startswith("memory\t"):
+                _, phase, iteration, slots, blocks, live, peak, events = line.split("\t")
+                memory.append(dict(phase=phase, iteration=int(iteration), slots=int(slots),
+                    live_blocks=int(blocks), live_bytes=int(live), peak_bytes=int(peak), allocation_events=int(events)))
+        record = dict(workers=count, requests=operations, calls=total, calls_per_request=None if operations is None else total / operations,
+            metrics=metrics, memory=memory, sites=sites, origins=[] if args.lifetime else origin_totals(sites, operations), profile_sha256=hashlib.sha256(profile.read_bytes()).hexdigest())
         report["records"].append(record)
         (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+        if args.lifetime:
+            for phase in ["steady", "grown-steady"]:
+                points = [point for point in memory if point["phase"] == phase]
+                if points:
+                    live = [point["live_bytes"] for point in points]
+                    print(f"{count} workers, {phase}, {points[0]['slots']} slots: live {min(live)}..{max(live)} bytes; "
+                          f"first→last {live[0]}→{live[-1]}; peak {points[-1]['peak_bytes']} bytes", flush=True)
+            if not memory:
+                raise RuntimeError("lifetime profiler returned no memory samples")
+            continue
         print(f"{count} workers: {total / operations:.2f} allocation/reallocation calls per request", flush=True)
         print("storage diagnostics:", {k: v for k, v in metrics.items() if k.startswith(("command_", "planning_"))}, flush=True)
         for origin in record["origins"]:

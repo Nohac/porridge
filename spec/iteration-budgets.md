@@ -1,7 +1,7 @@
 # Complete-iteration allocation budgets
 
-Status: O0 measurement foundation, 2026-10-23. Lifetime/growth profiling and the
-broader semantic audit remain open in the campaign roadmap.
+Status: O0 measurement baseline established, 2026-10-23. The current fixtures
+are constrained to tracked Query/MutRef; audits must expand with later paths.
 
 ## Boundary
 
@@ -92,7 +92,7 @@ required component query rather than assuming raw ID enumeration means liveness.
 
 ## Remaining O0 work
 
-- Lifetime heap snapshots and explicit grow-then-plateau measurements.
+- Expand lifetime/growth measurements to retained readers, churn and later pools.
 - Broader fixture budgets as more paths become bounded and reusable.
 - Audit ambient mutable views and Cow epoch boundaries before optimizing those
   paths. The current purchase fixtures use tracked Query/MutRef, not mutable View
@@ -107,3 +107,50 @@ The final idle/read budget matrix passes with the cleanup fix included.
 [Measured results and provenance](benchmarks/2026-10-23-iteration-budgets.json)
 retain complete-iteration totals; raw runs are in `target/optimization-o0/`.
 Formatting is deferred to the final campaign cleanup as requested.
+
+## Lifetime and growth measurements
+
+The profiler's --lifetime mode starts before fixture construction, records current
+live blocks/bytes after each verified iteration, and stops while the Bowl is still
+alive. An optional --grow-to expands the same Bowl, preserves old request IDs, then
+repeats warmup and steady rounds. New fixture accounts are initialized at the
+current sequence so the state invariant remains uniform.
+
+Reporting storage is allocated before profiling. The runtime is also constructed
+before profiling; this is not process RSS or all runtime memory. All Rust allocator
+activity after profiling starts is included, including setup and verification.
+Peak bytes therefore include those transient operations. Stack profiling overhead
+changes scheduling: these runs must never be used as throughput timings.
+Lifetime reports leave requests/calls_per_request null rather than normalizing
+setup and warmup allocations into a misleading request count.
+
+Twelve warmup + twelve measured rounds at each size, 1,000 → 2,000 slots:
+
+| Workers | Slots | Live bytes, measured range | Peak bytes through this phase |
+| --- | ---: | ---: | ---: |
+| 1 | 1,000 | 4,952,996–4,975,316 | 10,187,740 |
+| 1 | 2,000 | 9,888,980–9,928,204 | 20,093,044 |
+| 8 | 1,000 | 4,987,324–4,987,828 | 9,814,592 |
+| 8 | 2,000 | 9,954,828–9,955,332 | 19,589,760 |
+
+The eight-worker measured range is 504 bytes at each population; first→last live
+bytes do not increase. One-worker samples fluctuate more with scheduling, but
+remain in the recorded bounded range. The live footprint roughly doubles with
+population. This establishes a finite-run baseline, not a proof of bounded memory
+for all workloads.
+
+uv run tools/profile-allocations --out target/lifetime-growth --lifetime --slots 1000 --grow-to 2000 --warmup 12 --rounds 12 --workers 1,8
+
+[Live samples and provenance](benchmarks/2026-10-23-lifetime-growth.json) retain
+every warmup, growth and steady observation. Both lifetime and ordinary profiling
+modes pass smoke runs; workspace tests cover identity and state through growth.
+
+## Refreshed work accounting
+
+The retained O1a eight-worker 1,000-request profile records 12 plan calls,
+10,000 candidate rows, 5,000 memo hits, 5,000 admissions/completions, 315 dispatch
+batches, zero conflict deferrals, and zero stale publications. Every completed
+invocation is polled once. Five invocations per request include validation
+reruns/retraction; these are not five client requests or repeated polls of one
+suspended future. The roadmap's synchronous/dispatch experiments must preserve
+the observable contract while reducing this machinery's cost.

@@ -37,6 +37,26 @@ impl Purchases {
         }
     }
 
+    /// Increase the live population without recreating the Bowl. New accounts
+    /// start at the existing sequence so verification stays uniform.
+    pub async fn grow_to(&mut self, owners: usize) {
+        assert!(owners >= self.slots.len(), "grow_to cannot shrink");
+        for owner in self.slots.len()..owners {
+            self.bowl.insert((
+                Owner(owner),
+                Wallet(u64::MAX - self.sequence),
+                Inventory { units: self.sequence, capacity: u64::MAX },
+                Sequence(self.sequence),
+            )).await;
+            self.slots.push(self.bowl.insert((
+                Owner(owner),
+                Purchase { sequence: self.sequence, price: 1, work: 0 },
+                Outcome(Some(true)),
+            )).await.entity());
+        }
+        self.bowl.stir().await;
+    }
+
     /// Submit fresh revisions to the same entities, then settle and read replies.
     /// No world recreation or entity retirement; includes ordinary result materialization.
     pub async fn round(&mut self) -> usize {
@@ -159,5 +179,27 @@ mod drive_tests {
             .last_settled()
             .await;
         assert!(entities.collect().into_iter().all(|(id, _)| id != entity));
+    }
+}
+
+
+#[cfg(test)]
+mod growth_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn growth_preserves_prior_accounts_and_reaches_a_new_steady_population() {
+        let mut fixture = Purchases::new(2).await;
+        for _ in 0..3 { fixture.round().await; }
+        let old_slots = fixture.slots.clone();
+        fixture.grow_to(7).await;
+        fixture.verify().await;
+        assert_eq!(&fixture.slots[..old_slots.len()], old_slots.as_slice());
+        for _ in 0..4 {
+            assert_eq!(fixture.round().await, 7);
+            fixture.verify().await;
+        }
+        fixture.grow_to(7).await;
+        fixture.verify().await;
     }
 }

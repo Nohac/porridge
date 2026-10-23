@@ -106,7 +106,7 @@ Files: `crates/benches/src/stateful/steady.rs`, examples/support,
 - [x] Separate a drive-only measurement from result materialization. Prototype
   a public `stir().await` only if useful: it must use the same real settlement
   path, not a benchmark-only engine path. A blocking SyncBowl wrapper is separate.
-- [ ] Track high-water retained capacities, peak/live bytes, and growth after a
+- [x] Track high-water retained capacities, peak/live bytes, and growth after a
   deliberately larger batch. Existing requested-byte counters measure traffic,
   not memory residency.
 - [x] Extend attribution into the remaining “other pipeline” category. Distinguish
@@ -114,9 +114,9 @@ Files: `crates/benches/src/stateful/steady.rs`, examples/support,
   cleanup, waiters, and results. Keep diagnostics off during timing.
 - [x] Add repeatable allocation-budget checks for known bounded scenarios.
   Warmup must be finite and recorded; do not warm until a noisy pass happens.
-- [ ] Refresh operation accounting: candidates, admitted/executed rows, memo
+- [x] Refresh operation accounting: candidates, admitted/executed rows, memo
   hits, retries, polls, ready batches, publications, and useful requests.
-- [ ] Audit known semantic gaps that intersect the work: ambient mutable views,
+- [x] Audit known semantic gaps that intersect the work: ambient mutable views,
   external Cow epoch boundaries, and join collision handling. Fix or explicitly
   constrain affected experimental paths before optimizing them.
 
@@ -503,7 +503,7 @@ with a blocking public API.
 | ID | Status | Result/commit |
 | --- | --- | --- |
 | Baseline | Complete | `35247bc`; command + planning arena integration |
-| O0 | In progress | [Iteration budgets](iteration-budgets.md): kept; lifetime/growth measurements and broader audit remain |
+| O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
 | O1 | In progress | [O1a kept](join-candidate-storage.md): 12 fewer allocations/request; pair-row storage remains |
 | O2 | Planned | Owned metadata/guards/memo reuse |
 | O3 | Planned | Producers/publication/cleanup |

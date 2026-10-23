@@ -1,0 +1,1040 @@
+{
+  "date": "2026-10-23",
+  "scope": "Rust allocations after profiler start, including fixture setup/growth/verification; runtime was constructed earlier; not RSS and not timed throughput.",
+  "raw_report_sha256": "9d9f3e4872bdab19be20a344a48a7793d0f3ff38787a4c21278f30bc7bee5997",
+  "provenance": {
+    "base_commit": "2999d344808c90420b3c20511621ec66a09a38e4",
+    "binary_sha256": "8d94c9ea92efbbd658de369b06642eb001f14a321c4cc98410f563ddc9f384b9",
+    "driver_cpu": 0,
+    "worker_cpus": [
+      2,
+      4,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      18,
+      3,
+      5,
+      7,
+      9,
+      11,
+      13,
+      15,
+      17,
+      19
+    ],
+    "source_sha256": {
+      "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+      "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+      "crates/bowl/src/commands.rs": "91b7f148147b7a79f858c53dcce217cd8bf30c917506f676077ef3d91ac03d8e",
+      "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+      "crates/bowl/src/query.rs": "0f50e446e9376f7badf82adcf2c57abc99b863c3eaaac3ee9b5ffe994c918966",
+      "crates/bowl/src/system.rs": "7a0bbb6e5d03db219c6a002b581ae0c6012c606272d43b06f34a842bc0910316",
+      "crates/bowl/src/world.rs": "4e4cb3e7d6953cea2e6b55de72453d2fe79c2e9a7903aa48f319311094e0758d",
+      "crates/bowl/src/access.rs": "cdce4591d3f17134331460addc1f979a7ba9a1af52b649c930e52640c32e8beb",
+      "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+      "crates/bowl/src/dispatch.rs": "756ee1f6f9255669abe5af3dd8eca5f54fda34fc9299ef30466f72ef1fe4ed1c",
+      "crates/bowl/src/lib.rs": "4bd531c49d3a7264f3365e2e1964aca5f70805cf91a91c5f75338bb404850019",
+      "crates/bowl/src/prepared.rs": "8baab8adbce158fc7d4506bb5251935abcddeca91aa7eb2a49a810e6be228961",
+      "crates/bowl/src/metrics.rs": "c8d5ed1844f18b8f03aa52b0f2490876078d4fa89dc164a699168323860988fa",
+      "crates/bowl/src/planning.rs": "a493235446e6b2e5ac2520c4a80a793158a1d80f4c425dfc450b39131a6bf87d",
+      "crates/bowl/src/dispatch/plan.rs": "d1eabcfc007fc051855b68ea1bd2f7ce32e75c5220cd3f9f2423cfca605ccdb7",
+      "crates/bowl/src/dispatch/executor.rs": "b5ac12b890edc401cc337608d283adb6ccf8355746f7f74119b3b5038cd0b362",
+      "crates/bowl/src/system/planning_tests.rs": "402f4120c111928513fe3dbb5893eee16fdfa4bd723444fbeb863ddeda72f7a1",
+      "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+      "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+      "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+      "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+      "crates/bowl/src/query/guards.rs": "c7d6b3c06ea9d028e140af6a72e1d5c79c84a50e5cffc3b0b17d54127e4e21cf",
+      "crates/bowl/src/commands/arena.rs": "ee57d20f84fdcd585d07ffca44acf32063d61177381549733ded11d3cedffa7a",
+      "crates/bowl/src/commands/arena/tests.rs": "ab9a0401fc059359ec39222dd8f342c777795067914039fdb9dc206423da9b16",
+      "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+      "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+      "crates/benches/src/stateful/purchases.rs": "4c19ed6b6bee11a9104fc16421378685a0de32df8fdce8848b61e53aa3283d77",
+      "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+      "crates/benches/src/stateful/tests.rs": "4a5aeb31d1d29e4d33a9e4d9726f2b857f9004aebb7fd13445ae38c3d9a41e01",
+      "crates/benches/src/stateful/steady.rs": "ecbf59f5edbec00c0b17879fb67e2a03fddb2eb12157ffe09eb3c0ceb0710ac6",
+      "crates/benches/examples/profile_purchases.rs": "de6a9c198f7bdba486b95861cbc671624c39a9a5a6b8ddac8deb6e2a0086eb85",
+      "crates/benches/examples/steady_allocations.rs": "9f4bcdf271c07b9223ae72e79a0e8ecaaca1757c7f17ff01364d7947276561bc",
+      "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+      "crates/benches/examples/profile_allocations.rs": "ab5b84d6581e173460174c7a63f7b0cdd80b39fd5dde90ad6f7a7f338e0af47f",
+      "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+      "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+      "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+      "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+      "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+      "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968"
+    },
+    "counts_include_reallocations": true,
+    "reallocations_attributed_to_original_allocation": true,
+    "configuration": {
+      "workers": [
+        1,
+        8
+      ],
+      "slots": 1000,
+      "rounds": 12,
+      "warmup": 12,
+      "lifetime": true,
+      "grow_to": 2000
+    },
+    "runner_sha256": "ede3d81fd65688ad5b476be48ca8863c3c6c23cbb673b1ef8a7047b1fd73a79a"
+  },
+  "records": [
+    {
+      "workers": 1,
+      "memory": [
+        {
+          "phase": "setup",
+          "iteration": 0,
+          "slots": 1000,
+          "live_blocks": 14112,
+          "live_bytes": 3028028,
+          "peak_bytes": 5506172,
+          "allocation_events": 55311
+        },
+        {
+          "phase": "warmup",
+          "iteration": 0,
+          "slots": 1000,
+          "live_blocks": 22045,
+          "live_bytes": 4794724,
+          "peak_bytes": 9006032,
+          "allocation_events": 227880
+        },
+        {
+          "phase": "warmup",
+          "iteration": 1,
+          "slots": 1000,
+          "live_blocks": 22062,
+          "live_bytes": 4974812,
+          "peak_bytes": 9534500,
+          "allocation_events": 385313
+        },
+        {
+          "phase": "warmup",
+          "iteration": 2,
+          "slots": 1000,
+          "live_blocks": 22038,
+          "live_bytes": 4962716,
+          "peak_bytes": 10181580,
+          "allocation_events": 566390
+        },
+        {
+          "phase": "warmup",
+          "iteration": 3,
+          "slots": 1000,
+          "live_blocks": 22023,
+          "live_bytes": 4955156,
+          "peak_bytes": 10187740,
+          "allocation_events": 730328
+        },
+        {
+          "phase": "warmup",
+          "iteration": 4,
+          "slots": 1000,
+          "live_blocks": 22055,
+          "live_bytes": 4974484,
+          "peak_bytes": 10187740,
+          "allocation_events": 883684
+        },
+        {
+          "phase": "warmup",
+          "iteration": 5,
+          "slots": 1000,
+          "live_blocks": 22037,
+          "live_bytes": 4960228,
+          "peak_bytes": 10187740,
+          "allocation_events": 1040044
+        },
+        {
+          "phase": "warmup",
+          "iteration": 6,
+          "slots": 1000,
+          "live_blocks": 22056,
+          "live_bytes": 4974604,
+          "peak_bytes": 10187740,
+          "allocation_events": 1199492
+        },
+        {
+          "phase": "warmup",
+          "iteration": 7,
+          "slots": 1000,
+          "live_blocks": 22036,
+          "live_bytes": 4960492,
+          "peak_bytes": 10187740,
+          "allocation_events": 1359623
+        },
+        {
+          "phase": "warmup",
+          "iteration": 8,
+          "slots": 1000,
+          "live_blocks": 22063,
+          "live_bytes": 4975316,
+          "peak_bytes": 10187740,
+          "allocation_events": 1514915
+        },
+        {
+          "phase": "warmup",
+          "iteration": 9,
+          "slots": 1000,
+          "live_blocks": 22035,
+          "live_bytes": 4959604,
+          "peak_bytes": 10187740,
+          "allocation_events": 1668549
+        },
+        {
+          "phase": "warmup",
+          "iteration": 10,
+          "slots": 1000,
+          "live_blocks": 22051,
+          "live_bytes": 4973684,
+          "peak_bytes": 10187740,
+          "allocation_events": 1827019
+        },
+        {
+          "phase": "warmup",
+          "iteration": 11,
+          "slots": 1000,
+          "live_blocks": 22034,
+          "live_bytes": 4960700,
+          "peak_bytes": 10187740,
+          "allocation_events": 1981471
+        },
+        {
+          "phase": "steady",
+          "iteration": 0,
+          "slots": 1000,
+          "live_blocks": 22063,
+          "live_bytes": 4975316,
+          "peak_bytes": 10187740,
+          "allocation_events": 2139207
+        },
+        {
+          "phase": "steady",
+          "iteration": 1,
+          "slots": 1000,
+          "live_blocks": 22029,
+          "live_bytes": 4959396,
+          "peak_bytes": 10187740,
+          "allocation_events": 2294695
+        },
+        {
+          "phase": "steady",
+          "iteration": 2,
+          "slots": 1000,
+          "live_blocks": 22059,
+          "live_bytes": 4974516,
+          "peak_bytes": 10187740,
+          "allocation_events": 2451052
+        },
+        {
+          "phase": "steady",
+          "iteration": 3,
+          "slots": 1000,
+          "live_blocks": 22045,
+          "live_bytes": 4972260,
+          "peak_bytes": 10187740,
+          "allocation_events": 2611224
+        },
+        {
+          "phase": "steady",
+          "iteration": 4,
+          "slots": 1000,
+          "live_blocks": 22057,
+          "live_bytes": 4971908,
+          "peak_bytes": 10187740,
+          "allocation_events": 2762266
+        },
+        {
+          "phase": "steady",
+          "iteration": 5,
+          "slots": 1000,
+          "live_blocks": 22013,
+          "live_bytes": 4952996,
+          "peak_bytes": 10187740,
+          "allocation_events": 2946077
+        },
+        {
+          "phase": "steady",
+          "iteration": 6,
+          "slots": 1000,
+          "live_blocks": 22057,
+          "live_bytes": 4975108,
+          "peak_bytes": 10187740,
+          "allocation_events": 3100155
+        },
+        {
+          "phase": "steady",
+          "iteration": 7,
+          "slots": 1000,
+          "live_blocks": 22021,
+          "live_bytes": 4955364,
+          "peak_bytes": 10187740,
+          "allocation_events": 3254925
+        },
+        {
+          "phase": "steady",
+          "iteration": 8,
+          "slots": 1000,
+          "live_blocks": 22055,
+          "live_bytes": 4974100,
+          "peak_bytes": 10187740,
+          "allocation_events": 3412258
+        },
+        {
+          "phase": "steady",
+          "iteration": 9,
+          "slots": 1000,
+          "live_blocks": 22039,
+          "live_bytes": 4966420,
+          "peak_bytes": 10187740,
+          "allocation_events": 3587446
+        },
+        {
+          "phase": "steady",
+          "iteration": 10,
+          "slots": 1000,
+          "live_blocks": 22060,
+          "live_bytes": 4975020,
+          "peak_bytes": 10187740,
+          "allocation_events": 3744177
+        },
+        {
+          "phase": "steady",
+          "iteration": 11,
+          "slots": 1000,
+          "live_blocks": 22015,
+          "live_bytes": 4953940,
+          "peak_bytes": 10187740,
+          "allocation_events": 3987066
+        },
+        {
+          "phase": "growth",
+          "iteration": 0,
+          "slots": 2000,
+          "live_blocks": 36080,
+          "live_bytes": 7999276,
+          "peak_bytes": 11482088,
+          "allocation_events": 4051899
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 0,
+          "slots": 2000,
+          "live_blocks": 44003,
+          "live_bytes": 9602444,
+          "peak_bytes": 18321260,
+          "allocation_events": 4394080
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 1,
+          "slots": 2000,
+          "live_blocks": 43927,
+          "live_bytes": 9890732,
+          "peak_bytes": 19639764,
+          "allocation_events": 4716616
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 2,
+          "slots": 2000,
+          "live_blocks": 43924,
+          "live_bytes": 9890820,
+          "peak_bytes": 19881408,
+          "allocation_events": 5026746
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 3,
+          "slots": 2000,
+          "live_blocks": 43923,
+          "live_bytes": 9890316,
+          "peak_bytes": 20093044,
+          "allocation_events": 5363238
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 4,
+          "slots": 2000,
+          "live_blocks": 43933,
+          "live_bytes": 9892156,
+          "peak_bytes": 20093044,
+          "allocation_events": 5685577
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 5,
+          "slots": 2000,
+          "live_blocks": 43907,
+          "live_bytes": 9888268,
+          "peak_bytes": 20093044,
+          "allocation_events": 6031675
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 6,
+          "slots": 2000,
+          "live_blocks": 43901,
+          "live_bytes": 9888060,
+          "peak_bytes": 20093044,
+          "allocation_events": 6351878
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 7,
+          "slots": 2000,
+          "live_blocks": 43930,
+          "live_bytes": 9892628,
+          "peak_bytes": 20093044,
+          "allocation_events": 6660338
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 8,
+          "slots": 2000,
+          "live_blocks": 43888,
+          "live_bytes": 9885924,
+          "peak_bytes": 20093044,
+          "allocation_events": 6972754
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 9,
+          "slots": 2000,
+          "live_blocks": 43926,
+          "live_bytes": 9891060,
+          "peak_bytes": 20093044,
+          "allocation_events": 7303037
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 10,
+          "slots": 2000,
+          "live_blocks": 43934,
+          "live_bytes": 9893044,
+          "peak_bytes": 20093044,
+          "allocation_events": 7624936
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 11,
+          "slots": 2000,
+          "live_blocks": 43929,
+          "live_bytes": 9892124,
+          "peak_bytes": 20093044,
+          "allocation_events": 7938153
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 0,
+          "slots": 2000,
+          "live_blocks": 43930,
+          "live_bytes": 9893012,
+          "peak_bytes": 20093044,
+          "allocation_events": 8252004
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 1,
+          "slots": 2000,
+          "live_blocks": 43911,
+          "live_bytes": 9889068,
+          "peak_bytes": 20093044,
+          "allocation_events": 8602684
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 2,
+          "slots": 2000,
+          "live_blocks": 43906,
+          "live_bytes": 9888980,
+          "peak_bytes": 20093044,
+          "allocation_events": 8924528
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 3,
+          "slots": 2000,
+          "live_blocks": 43934,
+          "live_bytes": 9892276,
+          "peak_bytes": 20093044,
+          "allocation_events": 9243300
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 4,
+          "slots": 2000,
+          "live_blocks": 43912,
+          "live_bytes": 9889188,
+          "peak_bytes": 20093044,
+          "allocation_events": 9560067
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 5,
+          "slots": 2000,
+          "live_blocks": 43931,
+          "live_bytes": 9892748,
+          "peak_bytes": 20093044,
+          "allocation_events": 9874472
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 6,
+          "slots": 2000,
+          "live_blocks": 43931,
+          "live_bytes": 9893132,
+          "peak_bytes": 20093044,
+          "allocation_events": 10185813
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 7,
+          "slots": 2000,
+          "live_blocks": 43930,
+          "live_bytes": 9892628,
+          "peak_bytes": 20093044,
+          "allocation_events": 10504151
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 8,
+          "slots": 2000,
+          "live_blocks": 43909,
+          "live_bytes": 9889276,
+          "peak_bytes": 20093044,
+          "allocation_events": 10820351
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 9,
+          "slots": 2000,
+          "live_blocks": 43916,
+          "live_bytes": 9889220,
+          "peak_bytes": 20093044,
+          "allocation_events": 11165402
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 10,
+          "slots": 2000,
+          "live_blocks": 43987,
+          "live_bytes": 9928204,
+          "peak_bytes": 20093044,
+          "allocation_events": 11484639
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 11,
+          "slots": 2000,
+          "live_blocks": 43943,
+          "live_bytes": 9894380,
+          "peak_bytes": 20093044,
+          "allocation_events": 11793951
+        }
+      ],
+      "summary": [
+        {
+          "phase": "steady",
+          "slots": 1000,
+          "minimum_live_bytes": 4952996,
+          "maximum_live_bytes": 4975316,
+          "first_live_bytes": 4975316,
+          "last_live_bytes": 4953940,
+          "peak_bytes": 10187740
+        },
+        {
+          "phase": "grown-steady",
+          "slots": 2000,
+          "minimum_live_bytes": 9888980,
+          "maximum_live_bytes": 9928204,
+          "first_live_bytes": 9893012,
+          "last_live_bytes": 9894380,
+          "peak_bytes": 20093044
+        }
+      ],
+      "profile_sha256": "294a2cf6d64f41017e9221ad2b7745861f32cf7dfb50a7404f0d9507472f732e"
+    },
+    {
+      "workers": 8,
+      "memory": [
+        {
+          "phase": "setup",
+          "iteration": 0,
+          "slots": 1000,
+          "live_blocks": 14112,
+          "live_bytes": 3028028,
+          "peak_bytes": 5207444,
+          "allocation_events": 55311
+        },
+        {
+          "phase": "warmup",
+          "iteration": 0,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 208398
+        },
+        {
+          "phase": "warmup",
+          "iteration": 1,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 355369
+        },
+        {
+          "phase": "warmup",
+          "iteration": 2,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 502341
+        },
+        {
+          "phase": "warmup",
+          "iteration": 3,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 649312
+        },
+        {
+          "phase": "warmup",
+          "iteration": 4,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 796284
+        },
+        {
+          "phase": "warmup",
+          "iteration": 5,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 943255
+        },
+        {
+          "phase": "warmup",
+          "iteration": 6,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 1090227
+        },
+        {
+          "phase": "warmup",
+          "iteration": 7,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 1237198
+        },
+        {
+          "phase": "warmup",
+          "iteration": 8,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 1384170
+        },
+        {
+          "phase": "warmup",
+          "iteration": 9,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 1531142
+        },
+        {
+          "phase": "warmup",
+          "iteration": 10,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 1678113
+        },
+        {
+          "phase": "warmup",
+          "iteration": 11,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 1825085
+        },
+        {
+          "phase": "steady",
+          "iteration": 0,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 1972056
+        },
+        {
+          "phase": "steady",
+          "iteration": 1,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 2119028
+        },
+        {
+          "phase": "steady",
+          "iteration": 2,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 2265999
+        },
+        {
+          "phase": "steady",
+          "iteration": 3,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 2412971
+        },
+        {
+          "phase": "steady",
+          "iteration": 4,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 2559942
+        },
+        {
+          "phase": "steady",
+          "iteration": 5,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 2706914
+        },
+        {
+          "phase": "steady",
+          "iteration": 6,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 2853885
+        },
+        {
+          "phase": "steady",
+          "iteration": 7,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 3000857
+        },
+        {
+          "phase": "steady",
+          "iteration": 8,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 3147829
+        },
+        {
+          "phase": "steady",
+          "iteration": 9,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 3294800
+        },
+        {
+          "phase": "steady",
+          "iteration": 10,
+          "slots": 1000,
+          "live_blocks": 22091,
+          "live_bytes": 4987828,
+          "peak_bytes": 9814592,
+          "allocation_events": 3441772
+        },
+        {
+          "phase": "steady",
+          "iteration": 11,
+          "slots": 1000,
+          "live_blocks": 22090,
+          "live_bytes": 4987324,
+          "peak_bytes": 9814592,
+          "allocation_events": 3588743
+        },
+        {
+          "phase": "growth",
+          "iteration": 0,
+          "slots": 2000,
+          "live_blocks": 36087,
+          "live_bytes": 7999604,
+          "peak_bytes": 11237024,
+          "allocation_events": 3653574
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 0,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 3952680
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 1,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 4245683
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 2,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 4538687
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 3,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 4831690
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 4,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 5124693
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 5,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 5417696
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 6,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 5710699
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 7,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 6003702
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 8,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 6296705
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 9,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 6589708
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 10,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 6882711
+        },
+        {
+          "phase": "grown-warmup",
+          "iteration": 11,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 7175714
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 0,
+          "slots": 2000,
+          "live_blocks": 44052,
+          "live_bytes": 9955332,
+          "peak_bytes": 19589760,
+          "allocation_events": 7468718
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 1,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 7761721
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 2,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 8054724
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 3,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 8347727
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 4,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 8640730
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 5,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 8933733
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 6,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 9226736
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 7,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 9519739
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 8,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 9812742
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 9,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 10105745
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 10,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 10398748
+        },
+        {
+          "phase": "grown-steady",
+          "iteration": 11,
+          "slots": 2000,
+          "live_blocks": 44051,
+          "live_bytes": 9954828,
+          "peak_bytes": 19589760,
+          "allocation_events": 10691752
+        }
+      ],
+      "summary": [
+        {
+          "phase": "steady",
+          "slots": 1000,
+          "minimum_live_bytes": 4987324,
+          "maximum_live_bytes": 4987828,
+          "first_live_bytes": 4987324,
+          "last_live_bytes": 4987324,
+          "peak_bytes": 9814592
+        },
+        {
+          "phase": "grown-steady",
+          "slots": 2000,
+          "minimum_live_bytes": 9954828,
+          "maximum_live_bytes": 9955332,
+          "first_live_bytes": 9955332,
+          "last_live_bytes": 9954828,
+          "peak_bytes": 19589760
+        }
+      ],
+      "profile_sha256": "d7def59e4797a92506cf3e5407eef2a066b0c03c0367ee45d36f9c388bbb6951"
+    }
+  ]
+}
