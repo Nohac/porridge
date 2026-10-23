@@ -2602,9 +2602,9 @@ where
         } else {
             plan_prepared::<F::Param>(self.id, &snapshot, memo, hint, &prepared)
         };
-        // One shared context replaces the row's snapshot handle, avoiding an
-        // additional reference-count operation per admitted row.
-        let context = Arc::new((snapshot, prepared));
+        // Immutable plan context needs one shared handle per row. Keep the
+        // Bowl and callee here too, avoiding their per-row reference counts.
+        let context = Arc::new((bowl, snapshot, prepared, function));
         planned
             .invocations
             .into_iter()
@@ -2614,11 +2614,9 @@ where
                 // rows whose revisions must be reconciled after MutRef writes.
                 let access = invocation.access;
                 let writes = written_rows(&access);
-                let bowl = bowl.clone();
-                let function = Arc::clone(&function);
                 let context = Arc::clone(&context);
                 let run = async move {
-                    let (snapshot, prepared) = context.as_ref();
+                    let (bowl, snapshot, prepared, function) = context.as_ref();
                     let mut guards = invocation.commands.take_guards();
                     let commands = Commands::with_queue(
                         snapshot.spawn_slots(&invocation.owner),
@@ -2629,7 +2627,7 @@ where
                     // borrows handed to the system stay locked until the
                     // system function returns.
                     let params =
-                        prepared.fetch(&bowl, snapshot, &invocation.state, &commands, &mut guards);
+                        prepared.fetch(bowl, snapshot, &invocation.state, &commands, &mut guards);
                     function.run(params).await;
                     guards.clear();
 
