@@ -1,7 +1,6 @@
 # Reusable future-node storage for known worker batches
 
-Status: candidate O7b experiment; decide after completion-channel measurement.
-No dependency or engine change has been made for this proposal.
+Status: O7b inner worker collection kept; outer stream-merger experiment remains unimplemented.
 
 O3a attributes about 19 allocator events/request to dispatch/completion. Channel
 transport addresses only part of this. Each worker batch also builds a standard
@@ -38,3 +37,26 @@ streams back into future nodes per yielded result. A reusable stream merger may
 address that distinct cost. Do not combine both substitutions in the first
 measurement. Native synchronous kernels remain planned; eliminating async node
 allocation does not prove their direct batch loops have no additional benefit.
+
+## Result: keep the inner worker collection
+
+The engine and shared executor benchmark use pinned futures-buffered 0.2.13 with
+default features disabled. The unchanged executor was built and frozen with the
+same dependency/feature graph before switching the worker collection. Existing
+dependency versions were preserved; no new unsafe code was added to the engine.
+
+With 1,000 requests and eight workers, alloc calls fall **45,227→40,227** and realloc calls
+remain about 1,124. Total allocator events fall **46,351→41,351 (-10.79%) per whole
+iteration**, not per request. Requested allocation traffic falls 298,096 bytes per
+iteration, with reallocation-new bytes unchanged. Clean diagnostics execute the
+same 5,000 rows in 315 batches, no already-running/stale rows, and 41.355 events/request.
+
+Ready/suspended dispatch microbenchmarks generally improve, especially at widths
+32 and 64. End-to-end 1/4/8/16-worker timing remains mixed and overlapping: keep for
+allocation, requested-byte and peak reduction, with no universal throughput or
+linear worker-scaling claim.
+
+Measured peaks fall 2.29–2.91%; retained ranges overlap or sit at stable nearby
+pool/memo bucket levels. There is no new long-lived buffer pool. All 169 engine
+tests, workspace build/playground, four optimized smokes and eight idle/read
+budgets pass. [Results and provenance](benchmarks/2026-10-24-batch-futures.json).

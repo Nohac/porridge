@@ -525,7 +525,7 @@ with a blocking public API.
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |
 | O6 | Planned | Native synchronous kernels |
-| O7 | In progress | [Readiness-preserving completion channel kept](worker-completion-channel.md): 45,227 alloc/iteration; [shared context kept](invocation-context.md), [future storage candidate](batch-future-storage.md) |
+| O7 | In progress | [Readiness-preserving completion channel kept](worker-completion-channel.md): 45,227 alloc/iteration; [shared context kept](invocation-context.md), [inner batch future storage kept](batch-future-storage.md): 40,227 alloc/iteration |
 | O8 | Planned | Wait/wakeup and idle overhead |
 | O9 | Conditional | Layout/SIMD/revision experiments after profiling |
 | O10 | Conditional | Worker-distributed scheduling after local bottlenecks |
@@ -533,3 +533,11 @@ with a blocking public API.
 
 Each result entry should link its hypothesis, exact change, baseline/candidate
 provenance, tests, allocations/CPU/timing/memory outcomes, and keep/reject decision.
+
+## Round checkpoint — 2026-10-24
+
+Paused at the user's request to wrap up this round. The campaign is not complete.
+See [the checkpoint](optimization-round-checkpoint.md) for retained/rejected
+changes, current measurements and the next starting point. Formatting/style and
+the broader final validation pass remain in O11; rustfmt stayed deferred during
+this round as requested.

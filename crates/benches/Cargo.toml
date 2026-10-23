@@ -9,6 +9,7 @@ bowl = { path = "../bowl" }
 futures = "0.3"
 
 [dev-dependencies]
+futures-buffered = { version = "=0.2.13", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 criterion = "0.5"
 bump-scope = "2.4.1"

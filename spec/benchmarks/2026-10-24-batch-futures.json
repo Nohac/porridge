@@ -1,0 +1,1187 @@
+{
+  "date": "2026-10-24",
+  "decision": "keep batch task storage for allocation/byte/peak reduction; no universal end-to-end throughput gain",
+  "report": {
+    "recommendation": "keep: 5000 fewer allocations per 1000 requests, lower requested bytes and measured peaks, favorable dispatch microbenchmarks; end-to-end multiworker timing mixed with overlapping ranges",
+    "provenance": {
+      "baseline": "../batch-futures-baseline/manifest.json",
+      "candidate": "../batch-futures-candidate/manifest.json",
+      "feature_and_Cargo_hashes_match": true,
+      "frozen_binary_hashes_verified": true,
+      "dependency": "futures-buffered =0.2.13, default features off, tokio-coop off, identical for control/candidate"
+    },
+    "checks": {
+      "root_engine_tests": 169,
+      "optimized_smokes": [
+        "engine",
+        "stateful",
+        "dispatch",
+        "command_buffers"
+      ],
+      "budget_failures": []
+    },
+    "scaling": [
+      {
+        "workers": 1,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 51000.0,
+              "range": [
+                46981,
+                91473
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 19798479.0,
+              "range": [
+                18115523,
+                41463515
+              ]
+            },
+            "dealloc_calls": {
+              "median": 51013.5,
+              "range": [
+                46994,
+                91494
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 26619939.0,
+              "range": [
+                24655651,
+                48108907
+              ]
+            },
+            "realloc_calls": {
+              "median": 1428.5,
+              "range": [
+                1243,
+                2848
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6617264.0,
+              "range": [
+                6339600,
+                7179184
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 13338360.0,
+              "range": [
+                12776904,
+                14461760
+              ]
+            },
+            "allocation_events": {
+              "median": 52359.5,
+              "range": [
+                48292,
+                94321
+              ]
+            }
+          },
+          "timing_median_us": 20.8278485,
+          "process_medians_us": [
+            20.463165500000002,
+            21.7184755,
+            21.036845
+          ],
+          "round_range_us": [
+            19.386715,
+            27.806134999999998
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 44717.5,
+              "range": [
+                41806,
+                82757
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 18925143.0,
+              "range": [
+                17907251,
+                38724223
+              ]
+            },
+            "dealloc_calls": {
+              "median": 44702.5,
+              "range": [
+                41790,
+                82761
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 25683459.0,
+              "range": [
+                24491611,
+                45377287
+              ]
+            },
+            "realloc_calls": {
+              "median": 1392.5,
+              "range": [
+                1268,
+                2875
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6561664.0,
+              "range": [
+                6065976,
+                7031168
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 13222152.0,
+              "range": [
+                12225616,
+                14170744
+              ]
+            },
+            "allocation_events": {
+              "median": 46083.0,
+              "range": [
+                43110,
+                85632
+              ]
+            }
+          },
+          "timing_median_us": 21.903261,
+          "process_medians_us": [
+            22.7730345,
+            21.734980999999998,
+            22.075379
+          ],
+          "round_range_us": [
+            19.487255,
+            31.775885
+          ]
+        }
+      },
+      {
+        "workers": 4,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 45227.0,
+              "range": [
+                45226,
+                51040
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 18024251.0,
+              "range": [
+                17795495,
+                20532131
+              ]
+            },
+            "dealloc_calls": {
+              "median": 45227.0,
+              "range": [
+                45166,
+                51022
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 24090179.0,
+              "range": [
+                24024567,
+                26866203
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.0,
+              "range": [
+                1124,
+                1318
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5956672,
+                6248728
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                12007704,
+                12590656
+              ]
+            },
+            "allocation_events": {
+              "median": 46351.5,
+              "range": [
+                46350,
+                52358
+              ]
+            }
+          },
+          "timing_median_us": 22.971708,
+          "process_medians_us": [
+            22.6178855,
+            22.574709,
+            24.384553
+          ],
+          "round_range_us": [
+            21.084906,
+            38.832657
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40222,
+                43183
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 17726155.0,
+              "range": [
+                17724851,
+                18775667
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40163,
+                43243
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 23792083.0,
+              "range": [
+                23759827,
+                25105779
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.0,
+              "range": [
+                1124,
+                1294
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5966952,
+                6240104
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                12027984,
+                12574016
+              ]
+            },
+            "allocation_events": {
+              "median": 41351.0,
+              "range": [
+                41346,
+                44455
+              ]
+            }
+          },
+          "timing_median_us": 23.223083000000003,
+          "process_medians_us": [
+            34.732211,
+            23.065709,
+            22.413138
+          ],
+          "round_range_us": [
+            21.049830999999998,
+            38.024012
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 45227.0,
+              "range": [
+                45219,
+                48224
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 18024251.0,
+              "range": [
+                18022947,
+                18876275
+              ]
+            },
+            "dealloc_calls": {
+              "median": 45227.0,
+              "range": [
+                45146,
+                48232
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 24090179.0,
+              "range": [
+                24055755,
+                24973403
+              ]
+            },
+            "realloc_calls": {
+              "median": 1125.0,
+              "range": [
+                1124,
+                1474
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5941928,
+                6127672
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                11980688,
+                12348608
+              ]
+            },
+            "allocation_events": {
+              "median": 46351.0,
+              "range": [
+                46343,
+                49485
+              ]
+            }
+          },
+          "timing_median_us": 25.4601375,
+          "process_medians_us": [
+            25.213185,
+            25.4601375,
+            25.763656
+          ],
+          "round_range_us": [
+            23.718518,
+            30.400015
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40226,
+                43365
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 17726155.0,
+              "range": [
+                17725651,
+                19038203
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40166,
+                43373
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 23792083.0,
+              "range": [
+                23761339,
+                25142107
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.0,
+              "range": [
+                1124,
+                1356
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5956152,
+                6733368
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                12006528,
+                13560960
+              ]
+            },
+            "allocation_events": {
+              "median": 41351.0,
+              "range": [
+                41350,
+                44606
+              ]
+            }
+          },
+          "timing_median_us": 25.193333499999998,
+          "process_medians_us": [
+            24.9702105,
+            25.185799,
+            25.836467499999998
+          ],
+          "round_range_us": [
+            23.942427,
+            29.742984
+          ]
+        }
+      },
+      {
+        "workers": 16,
+        "slots": 1000,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 45227.0,
+              "range": [
+                45167,
+                54269
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 18024251.0,
+              "range": [
+                17914703,
+                22328295
+              ]
+            },
+            "dealloc_calls": {
+              "median": 45227.0,
+              "range": [
+                45077,
+                54324
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 24090179.0,
+              "range": [
+                23966775,
+                29895575
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.0,
+              "range": [
+                1124,
+                1816
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5957016,
+                7459048
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                12008760,
+                15026736
+              ]
+            },
+            "allocation_events": {
+              "median": 46351.0,
+              "range": [
+                46291,
+                56085
+              ]
+            }
+          },
+          "timing_median_us": 26.114354499999997,
+          "process_medians_us": [
+            25.159475999999998,
+            26.114354499999997,
+            34.606080500000004
+          ],
+          "round_range_us": [
+            23.078362000000002,
+            42.863748
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40226,
+                43707
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 17726155.0,
+              "range": [
+                17725651,
+                18514875
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40227.0,
+              "range": [
+                40226,
+                43738
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 23792083.0,
+              "range": [
+                23767755,
+                24734019
+              ]
+            },
+            "realloc_calls": {
+              "median": 1124.0,
+              "range": [
+                1124,
+                1302
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5971320.0,
+              "range": [
+                5971320,
+                6096016
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12037248.0,
+              "range": [
+                12037248,
+                12287120
+              ]
+            },
+            "allocation_events": {
+              "median": 41351.0,
+              "range": [
+                41350,
+                45009
+              ]
+            }
+          },
+          "timing_median_us": 27.0519095,
+          "process_medians_us": [
+            26.530127,
+            28.613653,
+            25.321585499999998
+          ],
+          "round_range_us": [
+            23.13106,
+            38.071818
+          ]
+        }
+      }
+    ],
+    "tiny": [
+      {
+        "workers": 1,
+        "slots": 1,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                636
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 75955.0,
+              "range": [
+                75955,
+                83211
+              ]
+            },
+            "dealloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                636
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 77115.0,
+              "range": [
+                77115,
+                84139
+              ]
+            },
+            "realloc_calls": {
+              "median": 37.0,
+              "range": [
+                37,
+                44
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 4248.0,
+              "range": [
+                4248,
+                7320
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5408.0,
+              "range": [
+                5408,
+                11552
+              ]
+            },
+            "allocation_events": {
+              "median": 579.0,
+              "range": [
+                579,
+                680
+              ]
+            }
+          },
+          "timing_median_us": 43.561499999999995,
+          "process_medians_us": [
+            40.6565,
+            49.3725,
+            44.433499999999995
+          ],
+          "round_range_us": [
+            40.055,
+            345.978
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                635
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 75955.0,
+              "range": [
+                75955,
+                82707
+              ]
+            },
+            "dealloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                635
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 77115.0,
+              "range": [
+                77115,
+                83635
+              ]
+            },
+            "realloc_calls": {
+              "median": 37.0,
+              "range": [
+                37,
+                45
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 4248.0,
+              "range": [
+                4248,
+                8096
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5408.0,
+              "range": [
+                5408,
+                12096
+              ]
+            },
+            "allocation_events": {
+              "median": 579.0,
+              "range": [
+                579,
+                680
+              ]
+            }
+          },
+          "timing_median_us": 43.121,
+          "process_medians_us": [
+            44.8235,
+            44.5135,
+            42.0035
+          ],
+          "round_range_us": [
+            40.045,
+            66.254
+          ]
+        }
+      },
+      {
+        "workers": 8,
+        "slots": 1,
+        "before": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                728
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 75955.0,
+              "range": [
+                75955,
+                89459
+              ]
+            },
+            "dealloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                728
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 77115.0,
+              "range": [
+                77115,
+                90155
+              ]
+            },
+            "realloc_calls": {
+              "median": 37.0,
+              "range": [
+                37,
+                51
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 4248.0,
+              "range": [
+                4248,
+                7416
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5408.0,
+              "range": [
+                5408,
+                11744
+              ]
+            },
+            "allocation_events": {
+              "median": 579.5,
+              "range": [
+                579,
+                779
+              ]
+            }
+          },
+          "timing_median_us": 91.376,
+          "process_medians_us": [
+            93.35,
+            85.55000000000001,
+            93.916
+          ],
+          "round_range_us": [
+            63.86,
+            646.761
+          ]
+        },
+        "after": {
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                729
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 75955.0,
+              "range": [
+                75955,
+                89963
+              ]
+            },
+            "dealloc_calls": {
+              "median": 542.0,
+              "range": [
+                542,
+                729
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 77115.0,
+              "range": [
+                77115,
+                90659
+              ]
+            },
+            "realloc_calls": {
+              "median": 37.0,
+              "range": [
+                37,
+                51
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 4248.0,
+              "range": [
+                4248,
+                8096
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5408.0,
+              "range": [
+                5408,
+                12096
+              ]
+            },
+            "allocation_events": {
+              "median": 579.0,
+              "range": [
+                579,
+                780
+              ]
+            }
+          },
+          "timing_median_us": 94.98249999999999,
+          "process_medians_us": [
+            100.2375,
+            92.6035,
+            94.527
+          ],
+          "round_range_us": [
+            89.888,
+            138.329
+          ]
+        }
+      }
+    ],
+    "diagnostic_totals": {
+      "before": {
+        "plan_calls": 36,
+        "candidate_rows": 30000,
+        "memo_hits": 15000,
+        "dependency_records": 174000,
+        "access_records": 87000,
+        "admission_ns": 16804286,
+        "admission_candidates": 15000,
+        "already_running": 0,
+        "conflict_deferrals": 0,
+        "admitted_rows": 15000,
+        "dispatch_batches": 945,
+        "enqueue_to_first_poll_ns": 765777596,
+        "started_rows": 15000,
+        "completed_row_polls": 15000,
+        "publication_ns": 27270225,
+        "publication_calls": 15009,
+        "stale_publications": 0,
+        "accepted_output_groups": 15000,
+        "buffered_commands": 6000,
+        "planning_arena_chunk_growth": 0,
+        "planning_key_growth": 0,
+        "command_storage_created": 0,
+        "command_storage_reused": 18000,
+        "command_arena_chunk_growth": 0,
+        "command_metadata_growth": 0,
+        "revision_checks": 87000,
+        "reconciled_writes": 12000,
+        "bound_cleanup_ns": 0,
+        "bound_cleanup_roots": 0,
+        "ambient_healing_ns": 0,
+        "ambient_healing_memo_entries": 0,
+        "ambient_healing_victims": 0
+      },
+      "after": {
+        "plan_calls": 36,
+        "candidate_rows": 30000,
+        "memo_hits": 15000,
+        "dependency_records": 174000,
+        "access_records": 87000,
+        "admission_ns": 15603637,
+        "admission_candidates": 15000,
+        "already_running": 0,
+        "conflict_deferrals": 0,
+        "admitted_rows": 15000,
+        "dispatch_batches": 945,
+        "enqueue_to_first_poll_ns": 715447022,
+        "started_rows": 15000,
+        "completed_row_polls": 15000,
+        "publication_ns": 27772653,
+        "publication_calls": 15009,
+        "stale_publications": 0,
+        "accepted_output_groups": 15000,
+        "buffered_commands": 6000,
+        "planning_arena_chunk_growth": 0,
+        "planning_key_growth": 0,
+        "command_storage_created": 0,
+        "command_storage_reused": 18000,
+        "command_arena_chunk_growth": 0,
+        "command_metadata_growth": 0,
+        "revision_checks": 87000,
+        "reconciled_writes": 12000,
+        "bound_cleanup_ns": 0,
+        "bound_cleanup_roots": 0,
+        "ambient_healing_ns": 0,
+        "ambient_healing_memo_entries": 0,
+        "ambient_healing_victims": 0
+      }
+    },
+    "dispatch_micro_process_medians_us": {
+      "dispatch/boxed/rows=1000_workers=8_batch=16_work=0_suspend=false": {
+        "before": [
+          1051.394546296296,
+          1048.3573472222222,
+          1051.0412129629628
+        ],
+        "after": [
+          964.509087654321,
+          971.1403988888889,
+          1050.4957944444445
+        ]
+      },
+      "dispatch/boxed/rows=1000_workers=8_batch=16_work=0_suspend=true": {
+        "before": [
+          1027.3034325396825,
+          989.8469749999999,
+          931.49794375
+        ],
+        "after": [
+          921.6931541666667,
+          953.3846777777778,
+          979.8144321428572
+        ]
+      },
+      "dispatch/boxed/rows=1000_workers=8_batch=32_work=0_suspend=false": {
+        "before": [
+          1011.6862416666667,
+          982.4977592592593,
+          948.3625895833334
+        ],
+        "after": [
+          850.0029271284272,
+          888.4376045454545,
+          882.0332857142856
+        ]
+      },
+      "dispatch/boxed/rows=1000_workers=8_batch=32_work=0_suspend=true": {
+        "before": [
+          948.6738625,
+          910.7283874999999,
+          894.00301875
+        ],
+        "after": [
+          796.7309226190475,
+          809.6962490740741,
+          862.6571136363636
+        ]
+      },
+      "dispatch/boxed/rows=1000_workers=8_batch=64_work=0_suspend=false": {
+        "before": [
+          881.5674375,
+          915.09858875,
+          897.8504722222223
+        ],
+        "after": [
+          775.5018666666667,
+          827.0516458333333,
+          834.276904040404
+        ]
+      },
+      "dispatch/boxed/rows=1000_workers=8_batch=64_work=0_suspend=true": {
+        "before": [
+          824.8337045454546,
+          771.6512071428572,
+          857.212090909091
+        ],
+        "after": [
+          736.3584256410256,
+          773.0375961538462,
+          805.9332329545454
+        ]
+      }
+    },
+    "memory": {
+      "baseline": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            5530652,
+            5563828
+          ],
+          "first_last": [
+            5531572,
+            5531068
+          ],
+          "peak_bytes": 11370648
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            11040684,
+            11106828
+          ],
+          "first_last": [
+            11042220,
+            11042316
+          ],
+          "peak_bytes": 22443224
+        }
+      },
+      "candidate": {
+        "steady": {
+          "slots": 1000,
+          "live_bytes_range": [
+            5563324,
+            5563828
+          ],
+          "first_last": [
+            5563828,
+            5563828
+          ],
+          "peak_bytes": 11039392
+        },
+        "grown-steady": {
+          "slots": 2000,
+          "live_bytes_range": [
+            11106828,
+            11107332
+          ],
+          "first_last": [
+            11106828,
+            11106828
+          ],
+          "peak_bytes": 21929688
+        }
+      }
+    },
+    "profile": {
+      "events_per_request": 41.355,
+      "origins": [
+        {
+          "origin": "row construction/execution",
+          "calls": 11027,
+          "calls_per_request": 11.027,
+          "percent": 26.664248579373716
+        },
+        {
+          "origin": "planning: other",
+          "calls": 10428,
+          "calls_per_request": 10.428,
+          "percent": 25.215814290895903
+        },
+        {
+          "origin": "dispatch and completion",
+          "calls": 7876,
+          "calls_per_request": 7.876,
+          "percent": 19.044855519284248
+        },
+        {
+          "origin": "command application/storage",
+          "calls": 7579,
+          "calls_per_request": 7.579,
+          "percent": 18.326683593277718
+        },
+        {
+          "origin": "publication",
+          "calls": 2589,
+          "calls_per_request": 2.589,
+          "percent": 6.260428001450852
+        },
+        {
+          "origin": "unclassified",
+          "calls": 1802,
+          "calls_per_request": 1.802,
+          "percent": 4.357393301898199
+        },
+        {
+          "origin": "structural cloning",
+          "calls": 40,
+          "calls_per_request": 0.04,
+          "percent": 0.09672349171805102
+        },
+        {
+          "origin": "guard buffers",
+          "calls": 14,
+          "calls_per_request": 0.014,
+          "percent": 0.03385322210131786
+        }
+      ],
+      "metrics": {
+        "plan_calls": 12,
+        "candidate_rows": 10000,
+        "memo_hits": 5000,
+        "dependency_records": 58000,
+        "access_records": 29000,
+        "admission_ns": 65560863,
+        "admission_candidates": 5000,
+        "already_running": 0,
+        "conflict_deferrals": 0,
+        "admitted_rows": 5000,
+        "dispatch_batches": 315,
+        "enqueue_to_first_poll_ns": 1524672019,
+        "started_rows": 5000,
+        "completed_row_polls": 5000,
+        "publication_ns": 24700947,
+        "publication_calls": 5003,
+        "stale_publications": 0,
+        "accepted_output_groups": 5000,
+        "buffered_commands": 2000,
+        "planning_arena_chunk_growth": 0,
+        "planning_key_growth": 0,
+        "command_storage_created": 0,
+        "command_storage_reused": 6000,
+        "command_arena_chunk_growth": 0,
+        "command_metadata_growth": 0,
+        "revision_checks": 29000,
+        "reconciled_writes": 4000,
+        "bound_cleanup_ns": 0,
+        "bound_cleanup_roots": 0,
+        "ambient_healing_ns": 0,
+        "ambient_healing_memo_entries": 0,
+        "ambient_healing_victims": 0
+      }
+    },
+    "limits": [
+      "Three alternating process repetitions; no universal end-to-end throughput speedup claim.",
+      "Eight-worker aggregate timing 25.46 to 25.19 us/request; sixteen-worker 26.11 to 27.05, with broad overlapping process ranges and outliers.",
+      "Four-worker candidate has one high timing outlier; one-worker aggregate modestly slower, diagnostic rather than veto.",
+      "Dispatch micro boxed ready/suspended kernels, eight workers, widths16/32/64; no skew knob exposed.",
+      "Targeted diagnostics match plan calls, admitted rows, batching and stale counts exactly.",
+      "One matched lifetime/growth profile per binary; retained ranges show pool/memo bucket levels, not proven exact retained-memory improvement.",
+      "DHAT origins shift with library stack names; inspect raw sites as well as category totals. No DHAT throughput inference."
+    ]
+  },
+  "artifact_root": "target/optimization-o7/batch-futures-assessment"
+}

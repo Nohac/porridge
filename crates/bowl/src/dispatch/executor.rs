@@ -54,7 +54,10 @@ where
         // every row finishes before the evaluator polls this stream again.
         let (sender, receiver) = tokio::sync::mpsc::channel(runs.len());
         let handle = S::spawn(runtime, async move {
-            let mut pending: FuturesUnordered<_> = runs.into_iter().collect();
+            // Admission fixed this batch's size; allocate its pinned task
+            // storage together instead of one future-set node per row.
+            let mut pending: futures_buffered::FuturesUnorderedBounded<_> =
+                runs.into_iter().collect();
             while let Some(row) = pending.next().await {
                 match sender.try_send(row) {
                     Ok(()) => {}
