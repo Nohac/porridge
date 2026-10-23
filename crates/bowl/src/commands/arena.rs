@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::{BaseCommandOp, CommandOp};
-use crate::world::{SystemInvocation, World};
+use crate::{query::GuardStore, world::{SystemInvocation, World}};
 
 trait Operation: Send + 'static {
     fn apply(self, world: &mut World, owner: Option<&SystemInvocation>);
@@ -55,6 +55,8 @@ struct Storage {
     arena: Bump,
     entries: Vec<Entry>,
     cursor: usize,
+    // Empty capacity only; invocation lock tokens never enter the pool.
+    guards: GuardStore,
 }
 
 // SAFETY: only Send operations enter; allocations are owned and no references
@@ -105,6 +107,28 @@ pub(crate) struct CommandQueue {
 }
 
 impl CommandQueue {
+    fn storage(&mut self) -> &mut Storage {
+        self.storage.get_or_insert_with(|| {
+            crate::metrics::add(crate::metrics::Counter::CommandStorageCreated, 1);
+            Box::default()
+        })
+    }
+
+    pub(crate) fn take_guards(&mut self) -> GuardStore {
+        self.storage.as_mut().map_or_else(GuardStore::new, |storage| {
+            std::mem::take(&mut storage.guards)
+        })
+    }
+
+    /// The caller must have finished using every fetched item. Only empty
+    /// capacity travels with output storage through commit/discard and pooling.
+    pub(crate) fn recycle_guards(&mut self, mut guards: GuardStore) {
+        guards.clear();
+        if self.returns.is_some() && guards.capacity() != 0 {
+            self.storage().guards = guards;
+        }
+    }
+
     fn push_operation<C: Operation>(&mut self, value: C) {
         unsafe fn consume<C: Operation>(pointer: NonNull<u8>, action: Action<'_>) {
             // SAFETY: push pairs a live aligned C with this consumer exactly
@@ -117,10 +141,7 @@ impl CommandQueue {
             }
         }
 
-        let storage = self.storage.get_or_insert_with(|| {
-            crate::metrics::add(crate::metrics::Counter::CommandStorageCreated, 1);
-            Box::default()
-        });
+        let storage = self.storage();
         let trace = crate::metrics::enabled();
         let before_chunks = trace.then(|| storage.arena.stats().count());
         let before_capacity = storage.entries.capacity();

@@ -78,3 +78,28 @@ fn ownership_replacement_preserves_base_values_and_retained_snapshots() {
     assert!(world.get::<Left>(entity).is_none());
     assert_eq!(snapshot.get::<Left>(entity).unwrap().0, 10);
 }
+
+#[test]
+fn recycled_guard_capacity_holds_no_component_locks() {
+    let mut world = World::new();
+    let entity = world.spawn_empty();
+    world.insert_base(entity, Left(10));
+    let cell = Arc::clone(&world.store::<Left>().unwrap().entries[&entity].value);
+    let snapshot = world.clone();
+    let mut pool = crate::commands::Pool::default();
+    let mut queue = pool.take();
+    let mut guards = queue.take_guards();
+    guards.hold(world.get::<Left>(entity).unwrap().into_held());
+    assert!(cell.try_write().is_none());
+    queue.recycle_guards(guards);
+    assert!(cell.try_write().is_some());
+
+    let mut guards = queue.take_guards();
+    let mut value = world.get_mut::<Left>(entity).unwrap();
+    value.0 = 20;
+    guards.hold(value.into_held());
+    assert!(cell.try_write().is_none());
+    queue.recycle_guards(guards);
+    assert!(cell.try_write().is_some());
+    assert_eq!(snapshot.get::<Left>(entity).unwrap().0, 20);
+}

@@ -45,6 +45,15 @@ impl GuardStore {
         self.hold(HeldGuard::Custom(guard));
     }
 
+    /// Only after all fetched items are dead: release locks, retaining capacity.
+    pub(crate) fn clear(&mut self) {
+        self.guards.clear();
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.guards.capacity()
+    }
+
     pub(crate) fn hold(&mut self, guard: HeldGuard) {
         self.guards.push(guard);
     }

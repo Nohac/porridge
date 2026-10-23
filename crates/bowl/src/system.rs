@@ -2608,7 +2608,7 @@ where
         planned
             .invocations
             .into_iter()
-            .map(move |invocation| {
+            .map(move |mut invocation| {
                 let owner = invocation.owner.clone();
                 let access = invocation.access.clone();
                 let bowl = bowl.clone();
@@ -2617,6 +2617,7 @@ where
                 let run = async move {
                     let (snapshot, prepared) = context.as_ref();
                     let writes = written_rows(&invocation.access);
+                    let mut guards = invocation.commands.take_guards();
                     let commands = Commands::with_queue(
                         snapshot.spawn_slots(&invocation.owner),
                         snapshot.entity_allocator(),
@@ -2625,18 +2626,18 @@ where
                     // Read guards live here, in the invocation frame, so
                     // borrows handed to the system stay locked until the
                     // system function returns.
-                    let mut guards = GuardStore::new();
                     let params =
                         prepared.fetch(&bowl, snapshot, &invocation.state, &commands, &mut guards);
                     function.run(params).await;
-                    drop(guards);
+                    guards.clear();
 
-                    let (output, memo_update) = finish_invocation(
+                    let (mut output, memo_update) = finish_invocation(
                         invocation.owner,
                         invocation.deps,
                         snapshot.revision_raw(),
                         commands,
                     );
+                    output.commands.recycle_guards(guards);
 
                     SystemRun {
                         completed: true,

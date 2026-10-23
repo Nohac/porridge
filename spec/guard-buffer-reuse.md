@@ -1,6 +1,6 @@
 # Reuse invocation guard capacity
 
-Status: planned O2c experiment, after ownership metadata measurement.
+Status: O2c kept with an explicit retained-memory tradeoff.
 
 ## Problem and lifetime
 
@@ -50,3 +50,49 @@ and one/eight-worker timing against O2b. New pooled capacity is retained memory;
 report that cost. Check no-command and tiny cases too. The expected reduction is
 per-invocation guard Vec allocation, not all guard/command allocations. The pool's
 return-channel blocks remain an independently measured residual.
+
+## Following O2 experiment: move access metadata
+
+`FunctionSystem::plan_rows` clones each admitted candidate's access Vec into
+PlannedSystemRun for conflict reservation. The future retains the original only
+to extract its write rows. We can extract writes once, move the access Vec to the
+reservation descriptor, and keep just the write rows in the future. No shared Arc,
+new pool or changed reservation lifetime is required.
+
+This moves write-list construction before final conflict admission: rejected
+write candidates may build a write list that they never use. They also avoid the
+larger access-list clone. Measure independent and contended workloads, not just
+the best case. Read-only rows should require no write-list allocation. Preserve
+whole-store/custom access behavior and MutRef revision reconciliation. Existing
+reservation, stale-publication and preemption tests cover the critical boundary;
+add a focused regression only where a behavior is not already exercised.
+
+## Result and decision
+
+At 1,000 requests/eight workers, allocations fall 65,857→60,857 and reallocations
+2,124→1,124 per iteration: **6,000 fewer events (8.83%)**. DHAT guard-buffer events
+fall about 6.01→0.01 per request; remaining guards are external result storage.
+Combined requested allocation/reallocation-byte traffic falls 672,000 bytes per
+iteration. This is lower traffic, not lower retained memory.
+
+The pool retains about **432,024 additional bytes at 1,000 slots (+8.75%)** and
+about 864,000 at 2,000. Peak requested heap rises about 4.5%. Measured plateaus
+remain stable after warmup/growth. Empty capacity lives with existing command
+leases; there is no extra return queue or per-component box.
+
+Eight-worker timings are inconclusive: the targeted five-process recheck gives
+32.04→32.27 µs/request with overlapping ranges. One-worker initial results improve
+22.85→21.85 µs/request. Tiny cases are noisy; ordinary no-command gating is about
+2% slower, while gated and external-read cases improve. No universal throughput
+win is claimed.
+
+The benchmark reviewer recommended defer/reject unless the retained-memory cost
+is acceptable. The campaign decision is **keep**, because the explicit goal is
+near-zero warmed engine allocations through reusable storage. The finite retained
+capacity is an understood cost, and requested-byte traffic decreases. Revisit
+this tradeoff with future shared execution storage; do not treat fewer allocator
+calls as proof of higher throughput.
+
+Validation: 166 engine tests, workspace build, playground, clippy (existing
+warnings), four optimized benchmark smokes, and eight idle/read budgets pass.
+[Measured results and provenance](benchmarks/2026-10-23-guard-reuse.json).

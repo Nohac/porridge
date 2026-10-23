@@ -162,7 +162,9 @@ Files: `planning.rs`, `system.rs`, `access.rs`, `query/guards.rs`, `world.rs`.
   SystemRun, publication, and memo storage.
 - [ ] Prototype owned reusable row records or batch slabs with typed ranges.
   Keep memo data in a separate lifetime class from short-lived execution data.
-- [ ] Reuse guard collection capacity after all fetched borrows are dead.
+- [x] Reuse ordinary invocation guard capacity after fetched borrows are dead;
+  [kept with measured memory tradeoff](guard-buffer-reuse.md). External/hook paths
+  retain independent storage.
 - [ ] Reuse output, memo-update and written-row buffers; specialize ordinary
   one-row output without requiring one-element Vecs everywhere.
 - [ ] Reduce repeated invocation-key/access copies. Compare shared immutable
@@ -512,7 +514,7 @@ with a blocking public API.
 | Baseline | Complete | `35247bc`; command + planning arena integration |
 | O0 | Baseline complete | [Iteration budgets and lifetime growth](iteration-budgets.md); broaden fixtures/audits as new paths change |
 | O1 | Measured slices kept | [O1a/O1b](join-candidate-storage.md): 156,815 → 100,857 alloc/iteration; cross-pass layouts deferred to shared O5 registry, remaining row work tracked |
-| O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 65,857 alloc/iteration; [guard reuse next](guard-buffer-reuse.md), output/memo buffers remain |
+| O2 | In progress | [Inline keys and ownership layout kept](invocation-key-storage.md): 60,857 alloc/iteration after [guard reuse](guard-buffer-reuse.md); access copies and output/memo buffers remain |
 | O3 | Planned | Producers/publication/cleanup |
 | O4 | Planned | Snapshot/COW/cell reuse |
 | O5 | Planned | Schema consumer routing and ready sets |

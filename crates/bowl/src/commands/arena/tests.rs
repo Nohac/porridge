@@ -268,3 +268,77 @@ fn panicking_input_bundle_cannot_publish_partial_commands() {
         assert_eq!(values.collect()[0].0, 1);
     });
 }
+
+#[test]
+fn guard_capacity_returns_without_retaining_tokens_or_aliasing_leases() {
+    let mut pool = Pool::default();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let drops = Arc::new(AtomicUsize::new(0));
+    let mut first = pool.take();
+    let mut guards = first.take_guards();
+    guards.push(Box::new(record(1, &log, &drops)));
+    let capacity = guards.capacity();
+    let mut other = pool.take();
+    let mut held = other.take_guards();
+    held.push(Box::new(record(2, &log, &drops)));
+
+    first.recycle_guards(guards);
+    assert_eq!(drops.load(SeqCst), 1);
+    std::thread::spawn(move || drop(first)).join().unwrap();
+    let mut recycled = pool.take();
+    let mut guards = recycled.take_guards();
+    assert_eq!(guards.capacity(), capacity);
+    assert_eq!(drops.load(SeqCst), 1, "other lease must remain live");
+    guards.push(Box::new(record(3, &log, &drops)));
+    recycled.recycle_guards(guards);
+    assert_eq!(drops.load(SeqCst), 2);
+    drop(held);
+    assert_eq!(drops.load(SeqCst), 3);
+    drop(recycled);
+    drop(other);
+    assert_eq!(drops.load(SeqCst), 3);
+
+    let mut empty = CommandQueue::default();
+    empty.recycle_guards(GuardStore::new());
+    assert!(empty.storage.is_none(), "empty buffers need no storage allocation");
+    let mut guards = GuardStore::new();
+    guards.push(Box::new(record(4, &log, &drops)));
+    empty.recycle_guards(guards);
+    assert_eq!(drops.load(SeqCst), 4);
+    assert!(empty.storage.is_none(), "unpooled paths cannot reuse retained capacity");
+}
+
+#[test]
+fn panic_and_cancellation_drop_live_guards_before_queue_reuse() {
+    use futures::{FutureExt, task::noop_waker};
+    use std::task::Context;
+    let mut pool = Pool::default();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let drops = Arc::new(AtomicUsize::new(0));
+    let mut queue = pool.take();
+    let mut guards = queue.take_guards();
+    guards.push(Box::new(record(1, &log, &drops)));
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guards = guards;
+        panic!("invocation failed");
+    }));
+    assert!(failure.is_err());
+    assert_eq!(drops.load(SeqCst), 1);
+
+    let mut guards = queue.take_guards();
+    guards.push(Box::new(record(2, &log, &drops)));
+    let mut waiting = async move {
+        let _guards = guards;
+        futures::future::pending::<()>().await;
+    }.boxed();
+    let waker = noop_waker();
+    assert!(waiting.as_mut().poll(&mut Context::from_waker(&waker)).is_pending());
+    drop(waiting);
+    assert_eq!(drops.load(SeqCst), 2);
+    let mut guards = queue.take_guards();
+    guards.push(Box::new(record(3, &log, &drops)));
+    queue.recycle_guards(guards);
+    drop(queue);
+    assert_eq!(drops.load(SeqCst), 3);
+    assert!(pool.take().take_guards().capacity() > 0);
+}
