@@ -171,13 +171,23 @@ pub async fn create(owners: usize, balance: u64, capacity: u64) -> Bowl {
 }
 
 pub async fn create_with_mode(owners: usize, balance: u64, capacity: u64, mode: KernelMode) -> Bowl {
+    let bowl = builder(mode).build();
+    populate(&bowl, owners, balance, capacity).await;
+    bowl
+}
+
+/// Reuse the purchase pipeline in mixed-world benchmarks.
+pub fn builder(mode: KernelMode) -> bowl::BowlBuilder {
     let builder = Bowl::builder().schema::<PurchaseSchema>();
-    let bowl = match mode {
+    match mode {
         KernelMode::Async => builder
             .system(validate_wallet_async).system(validate_inventory_async).system(apply_async),
         KernelMode::Sync => builder
             .system(validate_wallet).system(validate_inventory).system(apply),
-    }.build();
+    }
+}
+
+pub async fn populate(bowl: &Bowl, owners: usize, balance: u64, capacity: u64) {
     // Workload sizes must not silently trip the engine's application guardrail.
     bowl.set_commit_limit(CommitLimit::None);
     for owner in 0..owners {
@@ -190,7 +200,6 @@ pub async fn create_with_mode(owners: usize, balance: u64, capacity: u64, mode: 
         .await;
     }
     bowl.scoop::<Query<&Wallet>>().await;
-    bowl
 }
 
 pub async fn submit(bowl: &Bowl, owner: usize, request: Purchase) {

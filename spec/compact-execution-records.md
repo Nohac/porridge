@@ -141,5 +141,6 @@ Optimized engine benchmark smoke and standalone playground also pass.
 
 Persistent memo/derived-output IDs, component-to-consumer dirty routing, compact
 single-row result containers, and batching publication remain separate changes.
-The next profile should identify which of these now dominates; do not assume the
-old CPU percentages remain exact after this admission/transport change.
+The [post-change profile and worker-planning proposal](worker-planning-experiment.md)
+now identify the remaining costs. Do not assume the older CPU percentages remain
+exact after this admission/transport change.

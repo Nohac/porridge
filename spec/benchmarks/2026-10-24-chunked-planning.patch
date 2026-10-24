@@ -1,0 +1,1093 @@
+diff --git a/crates/benches/examples/steady_allocations.rs b/crates/benches/examples/steady_allocations.rs
+index 728485ad4af04222afaf82c7d33e5a0cc8c18f9b..db8c3ab7b930f381b88a37f2ff131b06c991a957 100644
+--- a/crates/benches/examples/steady_allocations.rs
++++ b/crates/benches/examples/steady_allocations.rs
+@@ -48,6 +48,7 @@ fn main() {
+         "off" => false,
+         _ => panic!("ALLOC_SYSTEM_STATS must be on or off"),
+     };
++    let planning_chunk = number("ALLOC_PLANNING_CHUNK", 0);
+     let counting = number("ALLOC_COUNT", 1) != 0;
+     let metrics = number("ALLOC_METRICS", 0) != 0;
+     let case = env::var("ALLOC_CASE").unwrap_or_else(|_| "purchases".into());
+@@ -64,7 +65,7 @@ fn main() {
+         .build()
+         .unwrap();
+     println!(
+-        "config\tcase={case}\tworkers={workers}\tslots={slots}\twarmup={warmup}\trounds={rounds}\tcounting={counting}\tkernels={mode:?}\tsystem_stats={system_stats}"
++        "config\tcase={case}\tworkers={workers}\tslots={slots}\twarmup={warmup}\trounds={rounds}\tcounting={counting}\tkernels={mode:?}\tsystem_stats={system_stats}\tplanning_chunk={planning_chunk}"
+     );
+     if let Some(path) = env::var_os("ALLOC_READY") {
+         std::fs::write(path, std::process::id().to_string()).unwrap();
+@@ -77,12 +78,14 @@ fn main() {
+         let mut purchases = Purchases::new_with_mode(if case == "probe" { 0 } else { slots }, mode).await;
+         purchases.bowl.set_dispatch_batch_size(16);
+         purchases.bowl.set_system_profiling(system_stats);
++        purchases.bowl.set_planning_chunk_size(planning_chunk);
+         let probe = Bowl::builder()
+             .schema::<ProbeSchema>()
+             .system(allocating_probe)
+             .build();
+         probe.set_dispatch_batch_size(16);
+         probe.set_system_profiling(system_stats);
++        probe.set_planning_chunk_size(planning_chunk);
+         probe.set_commit_limit(bowl::CommitLimit::None);
+         let mut ids: Vec<Entity> = Vec::new();
+         if case == "probe" {
+diff --git a/crates/benches/src/stateful/tests.rs b/crates/benches/src/stateful/tests.rs
+index 6b114e4df16ac3f17232e2c7b793414c07b5b351..57a91db49fd974787c6856f762c1fe2cb8e9c1bb 100644
+--- a/crates/benches/src/stateful/tests.rs
++++ b/crates/benches/src/stateful/tests.rs
+@@ -13,8 +13,10 @@ fn runtime(workers: usize) -> tokio::runtime::Runtime {
+ fn purchases_preserve_order_and_state_after_response_retirement() {
+     for workers in [1, 4] {
+         for mode in [purchases::KernelMode::Async, purchases::KernelMode::Sync] {
++        for chunk in [0, 2] {
+         runtime(workers).block_on(async {
+             let bowl = purchases::create_with_mode(8, 20, 20, mode).await;
++            bowl.set_planning_chunk_size(chunk);
+             let mut responses = purchases::batch(&bowl, 32, 4, 0).await;
+             responses.sort_by_key(|response| (response.owner, response.sequence));
+             assert_eq!(responses.len(), 32);
+@@ -35,6 +37,7 @@ fn purchases_preserve_order_and_state_after_response_retirement() {
+             assert!(purchases::drain(&bowl).await.is_empty());
+         });
+         }
++        }
+     }
+ }
+ 
+diff --git a/crates/bowl/src/bowl.rs b/crates/bowl/src/bowl.rs
+index a48449a1405cab08b601a39ed82e6d1ec03a52fb..885da208c96893f02b87738234fad90983d1ab7e 100644
+--- a/crates/bowl/src/bowl.rs
++++ b/crates/bowl/src/bowl.rs
+@@ -25,7 +25,7 @@ use crate::{
+         RemoveComponentBaseCommand,
+     },
+     declare::{Schema, ShapeDesc},
+-    planning::Storage as PlanningStorage,
++    planning::{Storage as PlanningStorage, Memo as PlanningMemo},
+     query::{
+         ArgBundle, CowQueryParam, EntityMutResult, ExternalFilter,
+         ExternalQueryFilter, ExternalReadQueryParam, Mut, MutResult, Named, QueryArgs,
+@@ -112,6 +112,7 @@ struct Inner {
+     /// Maximum rows per worker task, captured once per evaluator phase.
+     dispatch_batch_size: atomic::AtomicUsize,
+     system_profiling_enabled: atomic::AtomicBool,
++    planning_chunk_size: atomic::AtomicUsize,
+     /// Derived from the sealed registry at construction: only non-Settle
+     /// systems with ambient view dependencies can require healing.
+     ambient_healing_enabled: atomic::AtomicBool,
+@@ -1160,6 +1161,7 @@ impl Bowl {
+                 commit_limit: StdMutex::new(CommitLimit::default()),
+                 dispatch_batch_size: atomic::AtomicUsize::new(16),
+                 system_profiling_enabled: atomic::AtomicBool::new(true),
++                planning_chunk_size: atomic::AtomicUsize::new(0),
+                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
+                 preempt_waiters: std::sync::atomic::AtomicUsize::new(0),
+                 preempt_signal: futures::task::AtomicWaker::new(),
+@@ -1218,6 +1220,17 @@ impl Bowl {
+         self.inner.system_profiling_enabled.load(atomic::Ordering::Relaxed)
+     }
+ 
++    /// Experimental maximum candidate rows per planning job. Zero (default)
++    /// keeps planning serial. Small plans, opaque parameters, one-worker and
++    /// no-runtime execution retain the serial path. Captured per phase.
++    pub fn set_planning_chunk_size(&self, rows: usize) {
++        self.inner.planning_chunk_size.store(rows, atomic::Ordering::Relaxed);
++    }
++
++    pub fn planning_chunk_size(&self) -> usize {
++        self.inner.planning_chunk_size.load(atomic::Ordering::Relaxed)
++    }
++
+     pub(crate) async fn with_component_original<T, F, R>(
+         &self,
+         entity: Entity,
+@@ -2159,7 +2172,7 @@ impl Bowl {
+         let mut guard = EvaluationGuard {
+             bowl: self.clone(),
+             generation,
+-            memo: Some(memo),
++            memo: Some(PlanningMemo::Owned(memo)),
+         };
+ 
+         let mut normal_phase_changed = false;
+@@ -2255,7 +2268,7 @@ impl Bowl {
+         &self,
+         systems: &[BoxedSystem],
+         phase: Phase,
+-        memo: &mut HashMap<SystemInvocation, MemoEntry>,
++        memo: &mut PlanningMemo,
+         commit_budget: &mut CommitBudget,
+         allow_preempt: bool,
+     ) -> PhaseRun {
+@@ -2268,6 +2281,7 @@ impl Bowl {
+         let mut write_runs = crate::dispatch::Queue::new();
+         let dispatch_maximum = self.dispatch_batch_size();
+         let profile_systems = self.system_profiling_enabled();
++        let planning_chunk = self.planning_chunk_size();
+         let mut needs_plan = true;
+         let mut deferred_conflicts = false;
+ 
+@@ -2284,7 +2298,7 @@ impl Bowl {
+                 while let Some((id, run)) = write_runs.next().await {
+                     assert!(running_access.contains(id), "completion belongs to an active invocation");
+                     let progress =
+-                        commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
++                        commit_system_run(memo.write(), &self.inner.state, run, Some(phase)).await;
+                     running_access.remove(id).expect("completed invocation");
+                     commit_budget.record(progress.commits);
+                     phase_changed |= progress.needs_followup;
+@@ -2336,7 +2350,7 @@ impl Bowl {
+                             for (id, run) in batch {
+                                 assert!(running_access.contains(id), "completion belongs to an active invocation");
+                                 let progress =
+-                                    commit_system_run(memo, &self.inner.state, run, Some(phase))
++                                    commit_system_run(memo.write(), &self.inner.state, run, Some(phase))
+                                         .await;
+                                 let owner = running_access.remove(id).expect("completed invocation");
+                                 commit_budget.record(progress.commits);
+@@ -2393,7 +2407,8 @@ impl Bowl {
+                         memo,
+                         hint.as_deref(),
+                         &mut planning_storage,
+-                    );
++                        planning_chunk,
++                    ).await;
+                     if system.delta_eligible {
+                         system
+                             .log_pos
+@@ -2447,7 +2462,7 @@ impl Bowl {
+             let mut stale = false;
+             for (id, run) in batch {
+                 assert!(running_access.contains(id), "completion belongs to an active invocation");
+-                let progress = commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
++                let progress = commit_system_run(memo.write(), &self.inner.state, run, Some(phase)).await;
+                 let owner = running_access.remove(id).expect("completed invocation");
+                 commit_budget.record(progress.commits);
+                 followup |= progress.needs_followup;
+@@ -2850,11 +2865,11 @@ fn promote_deferred_inputs(state: &mut State, watermark: u64) -> bool {
+ struct EvaluationGuard {
+     bowl: Bowl,
+     generation: u64,
+-    memo: Option<HashMap<SystemInvocation, MemoEntry>>,
++    memo: Option<PlanningMemo>,
+ }
+ 
+ impl EvaluationGuard {
+-    fn memo_mut(&mut self) -> &mut HashMap<SystemInvocation, MemoEntry> {
++    fn memo_mut(&mut self) -> &mut PlanningMemo {
+         self.memo
+             .as_mut()
+             .expect("evaluation guard already completed")
+@@ -2864,6 +2879,7 @@ impl EvaluationGuard {
+         self.memo
+             .take()
+             .expect("evaluation guard already completed")
++            .into_inner()
+     }
+ }
+ 
+@@ -2873,6 +2889,8 @@ impl Drop for EvaluationGuard {
+             return;
+         };
+ 
++        let memo = memo.into_inner();
++
+         // The state guard is never held across an await point anywhere in the
+         // crate, so at drop time the lock is either free or held by a task
+         // mid-poll on another thread for a short synchronous section.
+diff --git a/crates/bowl/src/metrics.rs b/crates/bowl/src/metrics.rs
+index 39c197b0e65332db071cc9664faa9907f4c3ea4d..0715ea4dd3970b0b24ecf48a953522e29932b995 100644
+--- a/crates/bowl/src/metrics.rs
++++ b/crates/bowl/src/metrics.rs
+@@ -19,6 +19,9 @@ macro_rules! counters {
+ 
+ counters! {
+     PlanCalls => "plan_calls",
++    PlanningWorkerJobs => "planning_worker_jobs",
++    PlanningWorkerRows => "planning_worker_rows",
++    PlanningMemoCopies => "planning_memo_copies",
+     CandidateRows => "candidate_rows",
+     MemoHits => "memo_hits",
+     DependencyRecords => "dependency_records",
+diff --git a/crates/bowl/src/planning.rs b/crates/bowl/src/planning.rs
+index 6b30c8cfb2e601bb0dbca8291d24d9247fde3f05..c9a3624ae0222121fd62a8ce1dadae9b54473f19 100644
+--- a/crates/bowl/src/planning.rs
++++ b/crates/bowl/src/planning.rs
+@@ -1,5 +1,7 @@
+-//! Reusable, driver-owned storage. Scratch never crosses a planning boundary.
++//! Reusable planning storage and cancellation-safe memo ownership.
+ use bump_scope::Bump;
++use std::{collections::HashMap, sync::Arc};
++use crate::system::MemoEntry;
+ 
+ use crate::{
+     commands::Pool,
+@@ -10,6 +12,7 @@ use crate::{
+ pub(crate) struct Storage {
+     pub(crate) commands: Pool,
+     pub(crate) scratch: Scratch,
++    pub(crate) workers: Vec<Scratch>,
+ }
+ 
+ pub(crate) struct Scratch {
+@@ -28,3 +31,58 @@ impl Default for Scratch {
+         }
+     }
+ }
++
++pub(crate) type MemoMap = HashMap<SystemInvocation, MemoEntry>;
++
++/// Serial execution owns the table directly. Planning readers share it only
++/// while preparing candidates; the guard always retains an authoritative owner.
++pub(crate) enum Memo {
++    Owned(MemoMap),
++    Shared(Arc<MemoMap>),
++}
++
++impl Memo {
++    pub(crate) fn read(&self) -> &MemoMap {
++        match self { Self::Owned(map) => map, Self::Shared(map) => map }
++    }
++
++    pub(crate) fn share(&mut self) -> Arc<MemoMap> {
++        if let Self::Owned(_) = self {
++            let Self::Owned(map) = std::mem::replace(self, Self::Owned(HashMap::new())) else { unreachable!() };
++            *self = Self::Shared(Arc::new(map));
++        }
++        match self { Self::Shared(map) => Arc::clone(map), Self::Owned(_) => unreachable!() }
++    }
++
++    pub(crate) fn write(&mut self) -> &mut MemoMap {
++        match self {
++            Self::Owned(map) => map,
++            Self::Shared(map) => {
++                if Arc::strong_count(map) > 1 {
++                    let copy = (**map).clone();
++                    crate::metrics::add(crate::metrics::Counter::PlanningMemoCopies, 1);
++                    *map = Arc::new(copy);
++                }
++                Arc::get_mut(map).expect("driver owns memo after planning readers finish")
++            }
++        }
++    }
++
++    pub(crate) fn into_inner(self) -> MemoMap {
++        match self {
++            Self::Owned(map) => map,
++            Self::Shared(map) => {
++                // A cancelled driver can leave bounded read-only jobs running.
++                // Recover independent memo state rather than lending freed memory.
++                match Arc::try_unwrap(map) {
++                    Ok(map) => map,
++                    Err(shared) => {
++                        let copy = (*shared).clone();
++                        crate::metrics::add(crate::metrics::Counter::PlanningMemoCopies, 1);
++                        copy
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/crates/bowl/src/query.rs b/crates/bowl/src/query.rs
+index 6dc532aa9933dc40fe230f6cfe064ca060efb641..eaaecbe1ab56e5c1129d98194c78e28dab365bbd 100644
+--- a/crates/bowl/src/query.rs
++++ b/crates/bowl/src/query.rs
+@@ -897,6 +897,11 @@ impl Dep {
+ /// `fetch` is safe because row states are produced from the same structural
+ /// snapshot and read guards are kept alive by the owning query/result.
+ pub trait QueryParam {
++    /// Opt-in: key/dependency/access metadata preparation may run concurrently
++    /// on owned row states against an immutable snapshot; it must be bounded,
++    /// deterministic and independent of driver-thread-local side effects.
++    fn parallel_planning() -> bool { false }
++
+     /// Prepares candidate matching for this snapshot without acquiring guards.
+     /// Custom queries keep their existing rows_hinted implementation by default.
+     fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedRows<Self> + use<Self>
+@@ -1123,6 +1128,8 @@ pub(crate) fn facet_rows<H: FacetKind>(snapshot: &Snapshot) -> Vec<Entity> {
+ }
+ 
+ impl<H: FacetKind> QueryParam for Entity<H> {
++    fn parallel_planning() -> bool { true }
++
+     type State = Entity;
+     type Item<'a> = Entity<H>;
+ 
+@@ -1181,6 +1188,8 @@ impl<H: FacetKind> QueryParam for Entity<H> {
+ impl<H: FacetKind> ExternalReadQueryParam for Entity<H> {}
+ 
+ impl<'q, T: Component> QueryParam for &'q T {
++    fn parallel_planning() -> bool { true }
++
+     fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedRows<Self> + use<'q, T> {
+         crate::prepared::rows::Scalar(snapshot.resolve_store::<T>())
+     }
+@@ -1288,6 +1297,8 @@ impl<'q, T: Component> QueryParam for &'q T {
+ impl<T: Component> ExternalReadQueryParam for &T {}
+ 
+ impl<'q, T: Component> QueryParam for (MutRef<'q, T>,) {
++    fn parallel_planning() -> bool { true }
++
+     fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedRows<Self> + use<'q, T> {
+         crate::prepared::rows::Scalar(snapshot.resolve_store::<T>())
+     }
+@@ -1382,6 +1393,11 @@ pub enum PresenceReq {
+ }
+ 
+ pub trait QueryPart {
++    /// Opt-in: key/dependency/access metadata preparation may run concurrently
++    /// on owned row states against an immutable snapshot; it must be bounded,
++    /// deterministic and independent of driver-thread-local side effects.
++    fn parallel_planning() -> bool { false }
++
+     /// Resolves snapshot-local lookup state once, without acquiring row guards.
+     /// The default preserves custom parameter behavior.
+     fn prepare(
+@@ -1482,6 +1498,8 @@ pub trait QueryPart {
+ pub trait ExternalReadQueryPart: QueryPart {}
+ 
+ impl<'q, T: Component> QueryPart for &'q T {
++    fn parallel_planning() -> bool { true }
++
+     fn prepare(
+         snapshot: &Snapshot,
+     ) -> impl crate::prepared::PreparedPart<Self> + 'static + use<'q, T>
+@@ -1578,6 +1596,8 @@ impl<'q, T: Component> QueryPart for &'q T {
+ impl<T: Component> ExternalReadQueryPart for &T {}
+ 
+ impl<'q, T: Component> QueryPart for Option<&'q T> {
++    fn parallel_planning() -> bool { true }
++
+     fn prepare(
+         snapshot: &Snapshot,
+     ) -> impl crate::prepared::PreparedPart<Self> + 'static + use<'q, T>
+@@ -1746,6 +1766,8 @@ impl<H: FacetKind> QueryPart for Tracked<H> {
+ }
+ 
+ impl<'q, T: Component> QueryPart for MutRef<'q, T> {
++    fn parallel_planning() -> bool { true }
++
+     fn prepare(
+         snapshot: &Snapshot,
+     ) -> impl crate::prepared::PreparedPart<Self> + 'static + use<'q, T>
+@@ -1846,6 +1868,8 @@ macro_rules! impl_entity_query_param {
+     ($($P:ident),*) => {
+         impl<FH: FacetKind, $($P: QueryPart),*> QueryParam for (Entity<FH>, $($P,)*)
+         {
++            fn parallel_planning() -> bool { true $(&& $P::parallel_planning())* }
++
+             type State = Entity;
+             type Item<'a> = (Entity<FH>, $(<$P as QueryPart>::Item<'a>,)*);
+ 
+@@ -2240,6 +2264,11 @@ impl EntityQueryState for Entity {
+ /// invalidated when a tracked marker component changes even though that marker
+ /// is not part of the returned item.
+ pub trait QueryFilter<Q: QueryParam> {
++    /// Opt-in: key/dependency/access metadata preparation may run concurrently
++    /// on owned row states against an immutable snapshot; it must be bounded,
++    /// deterministic and independent of driver-thread-local side effects.
++    fn parallel_planning() -> bool { false }
++
+     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool;
+     /// Component stores whose watermark movement can change this filter's
+     /// matching or bound pairs. `None` means unbounded.
+@@ -2315,6 +2344,8 @@ pub trait QueryFilter<Q: QueryParam> {
+ }
+ 
+ impl<Q: QueryParam> QueryFilter<Q> for () {
++    fn parallel_planning() -> bool { true }
++
+     fn matches(_snapshot: &Snapshot, _state: &Q::State) -> bool {
+         true
+     }
+@@ -2338,6 +2369,8 @@ where
+     Q::State: EntityQueryState,
+     T: Component,
+ {
++    fn parallel_planning() -> bool { true }
++
+     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+         snapshot.has::<T>(state.entity())
+     }
+@@ -2398,6 +2431,8 @@ where
+     Q::State: EntityQueryState,
+     T: Component,
+ {
++    fn parallel_planning() -> bool { true }
++
+     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+         snapshot.has::<T>(state.entity())
+     }
+@@ -2462,6 +2497,8 @@ where
+     Q::State: EntityQueryState,
+     T: RelationshipTarget,
+ {
++    fn parallel_planning() -> bool { true }
++
+     fn matches(_snapshot: &Snapshot, _state: &Q::State) -> bool {
+         // Membership pruning happens in the tuple binding pass, against the
+         // sibling-provided set.
+@@ -2516,6 +2553,8 @@ where
+     L: QueryFilter<Q>,
+     R: QueryFilter<Q>,
+ {
++    fn parallel_planning() -> bool { L::parallel_planning() && R::parallel_planning() }
++
+     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+         L::matches(snapshot, state) && R::matches(snapshot, state)
+     }
+@@ -2616,6 +2655,8 @@ where
+     Where<L>: QueryFilter<Q>,
+     Where<R>: QueryFilter<Q>,
+ {
++    fn parallel_planning() -> bool { <Where<L> as QueryFilter<Q>>::parallel_planning() && <Where<R> as QueryFilter<Q>>::parallel_planning() }
++
+     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+         <And<Where<L>, Where<R>> as QueryFilter<Q>>::matches(snapshot, state)
+     }
+@@ -2677,6 +2718,8 @@ where
+     Q::State: EntityQueryState,
+     T: Component,
+ {
++    fn parallel_planning() -> bool { true }
++
+     fn matches(snapshot: &Snapshot, state: &Q::State) -> bool {
+         !snapshot.has::<T>(state.entity())
+     }
+diff --git a/crates/bowl/src/system.rs b/crates/bowl/src/system.rs
+index 24caaf46132727b2819d9daff7408d983a121cdd..092072d09725abf2f13c7602f1b40f1bd4a8ec41 100644
+--- a/crates/bowl/src/system.rs
++++ b/crates/bowl/src/system.rs
+@@ -1,4 +1,5 @@
+ mod synchronous;
++mod parallel;
+ 
+ use std::{any::TypeId, collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
+ 
+@@ -207,6 +208,10 @@ pub enum DeltaShape {
+ }
+ 
+ pub trait SystemParam {
++    /// Opt-in for bounded, deterministic, read-only row metadata preparation on
++    /// worker threads. Custom parameters retain serial preparation by default.
++    fn parallel_planning() -> bool { false }
++
+     /// Snapshot-local pair matching; custom params keep their owned fallback.
+     fn prepare_rows(snapshot: &Snapshot) -> impl crate::prepared::rows::PreparedStates<Self> + use<Self>
+     where Self: Sized {
+@@ -414,6 +419,8 @@ where
+     Q: QueryParam,
+     Filter: QueryFilter<Q> + Send,
+ {
++    fn parallel_planning() -> bool { Q::parallel_planning() && Filter::parallel_planning() }
++
+     type State = Q::State;
+     type Item<'a> = Query<Q::Item<'a>, Filter>;
+ 
+@@ -879,6 +886,8 @@ impl<S> SystemParam for Commands<S>
+ where
+     S: DeclarationList + Send + Sync + 'static,
+ {
++    fn parallel_planning() -> bool { true }
++
+     type State = ();
+     type Item<'a> = Commands<S>;
+ 
+@@ -979,6 +988,8 @@ macro_rules! impl_system_param_tuple {
+     ($($P:ident),*) => {
+         impl<$($P: SystemParam),*> SystemParam for ($($P,)*)
+         {
++            fn parallel_planning() -> bool { true $(&& $P::parallel_planning())* }
++
+             type State = ($($P::State,)*);
+             type Item<'a> = ($($P::Item<'a>,)*);
+ 
+@@ -1462,6 +1473,18 @@ fn plan_prepared_with_scratch<Params: SystemParam>(
+         Some(hint) => Params::states_hinted(snapshot, hint),
+         None => Params::states(snapshot),
+     };
++    crate::metrics::add(crate::metrics::Counter::PlanCalls, 1);
++    plan_states::<Params>(system, snapshot, memo, states, prepared, scratch)
++}
++
++fn plan_states<Params: SystemParam>(
++    system: SystemId,
++    snapshot: &Snapshot,
++    memo: &HashMap<SystemInvocation, MemoEntry>,
++    states: Vec<Params::State>,
++    prepared: &impl PreparedParam<Params>,
++    scratch: &mut Scratch,
++) -> PlannedRun<Params::State> {
+     let trace = crate::metrics::enabled();
+     let candidates = states.len();
+     let (mut hits, mut dependencies, mut accesses) = (0, 0, 0);
+@@ -1517,7 +1540,6 @@ fn plan_prepared_with_scratch<Params: SystemParam>(
+         use crate::metrics::{add, Counter::*};
+         add(PlanningArenaGrowth, (arena.stats().count() - before_chunks) as u64);
+         add(PlanningKeyGrowth, u64::from(owner.keys.capacity() != before_keys));
+-        add(PlanCalls, 1);
+         add(CandidateRows, candidates as u64);
+         add(MemoHits, hits);
+         add(DependencyRecords, dependencies);
+@@ -1649,6 +1671,15 @@ pub(crate) trait Runnable: Send + Sync {
+         crate::dispatch::prepare(self.stream_runs(bowl, snapshot, memo, hint).into_iter())
+     }
+ 
++    fn parallel_planning(&self) -> bool { false }
++
++    fn plan_runs_parallel<'a>(
++        &'a self, bowl: Bowl, snapshot: Arc<Snapshot>, memo: Arc<crate::planning::MemoMap>,
++        hint: Option<&'a [Entity]>, buffers: &'a mut PlanningStorage, _chunk: usize,
++    ) -> BoxFuture<'a, Box<dyn crate::dispatch::RunPlan>> {
++        async move { self.plan_runs(bowl, snapshot, &memo, hint, buffers) }.boxed()
++    }
++
+     fn run_settled<'a>(
+         &'a self,
+         _bowl: Bowl,
+@@ -2261,7 +2292,7 @@ where
+         hint: Option<&[Entity]>,
+         buffers: &mut PlanningStorage,
+     ) -> Box<dyn crate::dispatch::RunPlan> {
+-        self.system.plan_runs(bowl, snapshot, memo, hint, buffers)
++        self.system.runnable.plan_runs(bowl, snapshot, memo, hint, buffers)
+     }
+ 
+     fn run_settled<'a>(
+@@ -2507,15 +2538,17 @@ impl BoxedSystem {
+         self.runnable.stream_runs(bowl, snapshot, memo, hint)
+     }
+ 
+-    pub(crate) fn plan_runs(
+-        &self,
+-        bowl: Bowl,
+-        snapshot: Arc<Snapshot>,
+-        memo: &HashMap<SystemInvocation, MemoEntry>,
+-        hint: Option<&[Entity]>,
+-        buffers: &mut PlanningStorage,
++    pub(crate) async fn plan_runs(
++        &self, bowl: Bowl, snapshot: Arc<Snapshot>, memo: &mut crate::planning::Memo,
++        hint: Option<&[Entity]>, buffers: &mut PlanningStorage, chunk: usize,
+     ) -> Box<dyn crate::dispatch::RunPlan> {
+-        self.runnable.plan_runs(bowl, snapshot, memo, hint, buffers)
++        #[cfg(feature = "parallel")]
++        if chunk > 0 && self.runnable.parallel_planning()
++            && tokio::runtime::Handle::try_current().is_ok_and(|runtime| runtime.metrics().num_workers() > 1)
++        {
++            return self.runnable.plan_runs_parallel(bowl, snapshot, memo.share(), hint, buffers, chunk).await;
++        }
++        self.runnable.plan_runs(bowl, snapshot, memo.read(), hint, buffers)
+     }
+ 
+     pub(crate) fn run_settled<'a>(
+@@ -2598,6 +2631,20 @@ where
+     F: SystemParamFunction<Marker>,
+     F::Param: Send + Sync + 'static,
+ {
++    async fn prepare_parallel(
++        &self, snapshot: Arc<Snapshot>, memo: Arc<crate::planning::MemoMap>,
++        hint: Option<&[Entity]>, buffers: &mut PlanningStorage, chunk: usize,
++    ) -> (impl PreparedParam<F::Param> + 'static, PlannedRun<<F::Param as SystemParam>::State>) {
++        let prepared = F::Param::prepare(&snapshot);
++        let (prepared, mut planned) = parallel::prepare::<F::Param, _>(
++            self.id, snapshot, memo, hint, prepared, buffers, chunk,
++        ).await;
++        for invocation in &mut planned.invocations {
++            invocation.commands = buffers.commands.take();
++        }
++        (prepared, planned)
++    }
++
+     fn plan_rows(
+         &self,
+         bowl: Bowl,
+@@ -2609,11 +2656,19 @@ where
+         Item = PlannedSystemRun<impl Future<Output = SystemRun> + Send + 'static>,
+     > + Send
+     + 'static {
+-        let function = Arc::clone(&self.function);
+         let prepared = F::Param::prepare(&snapshot);
+         let planned = prepare_invocations::<F::Param>(
+             self.id, &snapshot, memo, hint, &prepared, buffers,
+         );
++        self.rows_from_plan(bowl, snapshot, prepared, planned)
++    }
++
++    fn rows_from_plan(
++        &self, bowl: Bowl, snapshot: Arc<Snapshot>,
++        prepared: impl PreparedParam<F::Param> + 'static,
++        planned: PlannedRun<<F::Param as SystemParam>::State>,
++    ) -> impl ExactSizeIterator<Item = PlannedSystemRun<impl Future<Output = SystemRun> + Send + 'static>> + Send + 'static {
++        let function = Arc::clone(&self.function);
+         // Immutable plan context needs one shared handle per row. Keep the
+         // Bowl and callee here too, avoiding their per-row reference counts.
+         let context = Arc::new((bowl, snapshot, prepared, function));
+@@ -2751,6 +2806,15 @@ where
+             .collect()
+     }
+ 
++    fn parallel_planning(&self) -> bool { F::Param::parallel_planning() }
++
++    fn plan_runs_parallel<'a>(
++        &'a self, bowl: Bowl, snapshot: Arc<Snapshot>, memo: Arc<crate::planning::MemoMap>,
++        hint: Option<&'a [Entity]>, buffers: &'a mut PlanningStorage, chunk: usize,
++    ) -> BoxFuture<'a, Box<dyn crate::dispatch::RunPlan>> {
++        F::plan_execution_parallel(self, bowl, snapshot, memo, hint, buffers, chunk)
++    }
++
+     fn plan_runs(
+         &self,
+         bowl: Bowl,
+@@ -2777,6 +2841,19 @@ pub(crate) trait SystemParamFunction<Marker>: Send + Sync + 'static {
+         crate::dispatch::prepare(system.plan_rows(bowl, snapshot, memo, hint, Some(buffers)))
+     }
+ 
++    fn plan_execution_parallel<'a>(
++        system: &'a FunctionSystem<Self, Marker>, bowl: Bowl, snapshot: Arc<Snapshot>,
++        memo: Arc<crate::planning::MemoMap>, hint: Option<&'a [Entity]>,
++        buffers: &'a mut PlanningStorage, chunk: usize,
++    ) -> BoxFuture<'a, Box<dyn crate::dispatch::RunPlan>>
++    where Self: Sized, Marker: Send + Sync + 'static, Self::Param: Send + Sync + 'static,
++    {
++        async move {
++            let (prepared, planned) = system.prepare_parallel(Arc::clone(&snapshot), memo, hint, buffers, chunk).await;
++            crate::dispatch::prepare(system.rows_from_plan(bowl, snapshot, prepared, planned))
++        }.boxed()
++    }
++
+     fn run_sync<'a>(&'a self, _params: <Self::Param as SystemParam>::Item<'a>) {
+         unreachable!("asynchronous kernel dispatched as a synchronous call");
+     }
+diff --git a/crates/bowl/src/system/synchronous.rs b/crates/bowl/src/system/synchronous.rs
+index b99786e0eb2aee38e41e0818aa73dbdc5720d1d0..c384d7a24d01f5e702e9f56dd24f249f2faa3b87 100644
+--- a/crates/bowl/src/system/synchronous.rs
++++ b/crates/bowl/src/system/synchronous.rs
+@@ -53,6 +53,19 @@ where
+         crate::dispatch::prepare_calls(system.plan_sync_rows(bowl, snapshot, memo, hint, buffers))
+     }
+ 
++    fn plan_execution_parallel<'a>(
++        system: &'a FunctionSystem<Self, (SynchronousMarker, Marker)>, bowl: Bowl, snapshot: Arc<Snapshot>,
++        memo: Arc<crate::planning::MemoMap>, hint: Option<&'a [Entity]>,
++        buffers: &'a mut PlanningStorage, chunk: usize,
++    ) -> BoxFuture<'a, Box<dyn crate::dispatch::RunPlan>>
++    where (SynchronousMarker, Marker): Send + Sync + 'static, Self::Param: Send + Sync + 'static,
++    {
++        async move {
++            let (prepared, planned) = system.prepare_parallel(Arc::clone(&snapshot), memo, hint, buffers, chunk).await;
++            crate::dispatch::prepare_calls(system.calls_from_plan(bowl, snapshot, prepared, planned))
++        }.boxed()
++    }
++
+     fn run_sync<'a>(&'a self, params: <Self::Param as SystemParam>::Item<'a>) {
+         self.call(params);
+     }
+@@ -81,11 +94,19 @@ where
+         Item = PlannedSystemRun<impl FnOnce() -> SystemRun + Send + 'static>,
+     > + Send
+     + 'static {
+-        let function = Arc::clone(&self.function);
+         let prepared = F::Param::prepare(&snapshot);
+         let planned = prepare_invocations::<F::Param>(
+             self.id, &snapshot, memo, hint, &prepared, Some(buffers),
+         );
++        self.calls_from_plan(bowl, snapshot, prepared, planned)
++    }
++
++    fn calls_from_plan(
++        &self, bowl: Bowl, snapshot: Arc<Snapshot>,
++        prepared: impl PreparedParam<F::Param> + 'static,
++        planned: PlannedRun<<F::Param as SystemParam>::State>,
++    ) -> impl ExactSizeIterator<Item = PlannedSystemRun<impl FnOnce() -> SystemRun + Send + 'static>> + Send + 'static {
++        let function = Arc::clone(&self.function);
+         // Immutable plan context needs one shared handle per row. Keep the
+         // Bowl and callee here too, avoiding their per-row reference counts.
+         let context = Arc::new((bowl, snapshot, prepared, function));
+diff --git a/crates/bowl/src/system/synchronous/tests.rs b/crates/bowl/src/system/synchronous/tests.rs
+index aec6a0a547cc40411680f43573acfbb97a32e708..4c33a7bc5c86323cca152ef63351c68a41a9247c 100644
+--- a/crates/bowl/src/system/synchronous/tests.rs
++++ b/crates/bowl/src/system/synchronous/tests.rs
+@@ -76,8 +76,10 @@ fn sync_publication_progresses_while_an_async_sibling_is_pending() {
+         let bowl = Bowl::builder().system(wait_for_gate)
+             .system(derive).system(notify_after_publication).build();
+         bowl.set_system_profiling(profiling);
++        bowl.set_planning_chunk_size(1);
+         bowl.insert((Gate(gate.map(|result| result.unwrap()).boxed().shared()),)).await;
+         bowl.insert((Input(5), Signal(Some(signal)))).await;
++        for _ in 0..3 { bowl.insert((Input(5),)).await; }
+         let driver = Box::pin(bowl.stir());
+         let driver = match futures::future::select(driver, observed).await {
+             Either::Right((result, driver)) => { result.unwrap(); driver }
+diff --git a/tools/measure-allocations b/tools/measure-allocations
+index 946933e197da6c3e02c452a8e2c6e8373e94c3d6..85e03294a41300015be202250259e7c2833df4bd 100755
+--- a/tools/measure-allocations
++++ b/tools/measure-allocations
+@@ -52,6 +52,8 @@ def main():
+     parser.add_argument("--before-kernels", choices=("async", "sync"), help="baseline mode; defaults to --kernels")
+     parser.add_argument("--system-stats", choices=("on", "off"), default="on")
+     parser.add_argument("--before-system-stats", choices=("on", "off"), help="baseline collection mode; defaults to --system-stats")
++    parser.add_argument("--planning-chunk", type=int, default=0)
++    parser.add_argument("--before-planning-chunk", type=int, help="baseline max planning rows; defaults to --planning-chunk")
+     parser.add_argument("--out", type=Path, required=True)
+     parser.add_argument("--cases", default="purchases,read,probe")
+     parser.add_argument("--workers", default="1,8")
+@@ -62,6 +64,8 @@ def main():
+     parser.add_argument("--warmup", type=int, default=3)
+     parser.add_argument("--repetitions", type=int, default=3)
+     args = parser.parse_args()
++    if args.planning_chunk < 0 or (args.before_planning_chunk is not None and args.before_planning_chunk < 0):
++        parser.error("planning chunk sizes must be nonnegative")
+     cases, workers, slots = args.cases.split(","), list(map(int, args.workers.split(","))), list(map(int, args.slots.split(",")))
+     if set(cases) - {"purchases", "drive", "idle", "read", "probe"} or min(*workers, *slots, args.rounds, args.warmup, args.repetitions) <= 0:
+         parser.error("unknown case or nonpositive size")
+@@ -91,6 +95,7 @@ def main():
+         configuration=vars(args), records=[])
+     kernel_modes = {"after": args.kernels, "before": args.before_kernels or args.kernels}
+     stats_modes = {"after": args.system_stats, "before": args.before_system_stats or args.system_stats}
++    planning_modes = {"after": args.planning_chunk, "before": args.planning_chunk if args.before_planning_chunk is None else args.before_planning_chunk}
+     for case in cases:
+         for count in workers:
+             for size in slots:
+@@ -102,7 +107,7 @@ def main():
+                         for label in order:
+                             name = f"{label}-{case}-{count}-{size}-count{counting}-{repeat}"
+                             ready = root / f"{name}.ready"
+-                            settings = dict(ALLOC_SYSTEM_STATS=stats_modes[label], ALLOC_KERNELS=kernel_modes[label], ALLOC_CASE=case, ALLOC_WORKERS=str(count), ALLOC_SLOTS=str(size),
++                            settings = dict(ALLOC_PLANNING_CHUNK=str(planning_modes[label]), ALLOC_SYSTEM_STATS=stats_modes[label], ALLOC_KERNELS=kernel_modes[label], ALLOC_CASE=case, ALLOC_WORKERS=str(count), ALLOC_SLOTS=str(size),
+                                 ALLOC_COUNT=str(counting), ALLOC_METRICS=str(int(args.metrics and counting)), ALLOC_ROUNDS=str(args.rounds), ALLOC_WARMUP=str(args.warmup), ALLOC_READY=str(ready))
+                             with (root / f"{name}.tsv").open("w") as out, (root / f"{name}.err").open("w") as err:
+                                 proc = subprocess.Popen([str(binaries[label])], env=os.environ | settings, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True)
+@@ -135,7 +140,7 @@ def main():
+                                 elif parts[0] == "allocation":
+                                     allocations.append(dict(round=int(parts[1]), operation=parts[2], engine=int(parts[3]), kernel=int(parts[4])))
+                             assert len(samples) == args.rounds
+-                            record = dict(label=label, kernels=kernel_modes[label], system_stats=stats_modes[label], case=case, workers=count, slots=size, counting=bool(counting), repeat=repeat, samples=samples, allocations=allocations, metrics=metrics,
++                            record = dict(label=label, planning_chunk=planning_modes[label], kernels=kernel_modes[label], system_stats=stats_modes[label], case=case, workers=count, slots=size, counting=bool(counting), repeat=repeat, samples=samples, allocations=allocations, metrics=metrics,
+                                 iterations=iteration_totals(samples, allocations))
+                             report["records"].append(record)
+                             if budgets is not None:
+diff --git a/tools/profile-engine b/tools/profile-engine
+index 7eae448077ff470a43941f488077370b3db68d9c..a1ed5e7588c84b168bf758d71fd9a9a64b15223a 100755
+--- a/tools/profile-engine
++++ b/tools/profile-engine
+@@ -23,6 +23,8 @@ GROUPS = {
+ CASES = {
+     "independent-1": ("purchases", 1, 1000, 1, 0),
+     "independent-8": ("purchases", 8, 1000, 1, 0),
++    "independent-4": ("purchases", 4, 1000, 1, 0),
++    "independent-16": ("purchases", 16, 1000, 1, 0),
+     "contended-1": ("purchases", 1, 1000, 4, 0),
+     "contended-8": ("purchases", 8, 1000, 4, 0),
+     "compute-8": ("purchases", 8, 1000, 1, 10000),
+@@ -95,6 +97,8 @@ def main():
+     parser.add_argument("--perf", type=Path, default=shutil.which("perf") or (candidates[-1] if candidates else None))
+     parser.add_argument("--call-graph", choices=("dwarf", "fp"), default="dwarf", help="fp requires a binary built with force-frame-pointers")
+     parser.add_argument("--stack-bytes", type=int, default=16384, help="DWARF stack dump size for CPU samples")
++    parser.add_argument("--planning-chunk", type=int, default=0, help="maximum rows per planning job for steady workload; zero keeps serial")
++    parser.add_argument("--system-stats", choices=("on", "off"), default="on", help="per-system counters for the steady workload")
+     parser.add_argument("--steady", action="store_true", help="profile warmed independent purchases using steady_allocations")
+     parser.add_argument("--kernels", choices=("async", "sync"), default="async")
+     parser.add_argument("--out", type=Path, default=Path("target/hardware-profile") / time.strftime("%Y%m%d-%H%M%S"))
+@@ -114,9 +118,15 @@ def main():
+     cases, modes, groups = args.cases.split(","), args.modes.split(","), args.groups.split(",")
+     if set(cases) - CASES.keys() or set(groups) - GROUPS.keys() or set(modes) - {"counters", "diagnostics", "sample"}:
+         parser.error("unknown case, group, or mode")
++    if args.planning_chunk < 0:
++        parser.error("planning-chunk must be nonnegative")
++    if not args.steady and args.planning_chunk != 0:
++        parser.error("planning-chunk requires --steady")
++    if not args.steady and args.system_stats != "on":
++        parser.error("--system-stats off requires --steady")
+     if args.steady:
+-        if set(cases) - {"independent-1", "independent-8"}:
+-            parser.error("--steady supports independent-1 and independent-8")
++        if any(CASES[case][0] != "purchases" or CASES[case][3:] != (1, 0) for case in cases):
++            parser.error("--steady requires independent purchase cases")
+         if args.warmup < 1:
+             parser.error("--steady requires positive warmup")
+         if args.binary == Path("target/release/examples/profile_purchases"):
+@@ -157,7 +167,7 @@ def main():
+                     "PROFILE_ROUNDS": str(args.rounds), "PROFILE_WARMUP": str(args.warmup),
+                     "PROFILE_DISPATCH_BATCH": "16", "PROFILE_READY": str(ready), "PROFILE_METRICS": str(int(mode == "diagnostics"))}
+         if args.steady:
+-            settings |= {"ALLOC_KERNELS": args.kernels, "ALLOC_CASE": "purchases", "ALLOC_WORKERS": str(count),
++            settings |= {"ALLOC_PLANNING_CHUNK": str(args.planning_chunk), "ALLOC_SYSTEM_STATS": args.system_stats, "ALLOC_KERNELS": args.kernels, "ALLOC_CASE": "purchases", "ALLOC_WORKERS": str(count),
+                          "ALLOC_SLOTS": str(requests), "ALLOC_ROUNDS": str(args.rounds), "ALLOC_WARMUP": str(args.warmup),
+                          "ALLOC_COUNT": "0", "ALLOC_METRICS": str(int(mode == "diagnostics")), "ALLOC_READY": str(ready)}
+         command = [str(binary)]
+diff --git a/crates/bowl/src/system/parallel.rs b/crates/bowl/src/system/parallel.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb6adaf9a620cb217187d3b61742ba4a3499bab1
+--- /dev/null
++++ b/crates/bowl/src/system/parallel.rs
+@@ -0,0 +1,69 @@
++//! Bounded read-only candidate jobs. Admission and publication stay on the driver.
++use super::*;
++
++pub(super) async fn prepare<P, Prepared>(
++    id: SystemId, snapshot: Arc<Snapshot>, memo: Arc<crate::planning::MemoMap>,
++    hint: Option<&[Entity]>, prepared: Prepared, buffers: &mut PlanningStorage, maximum: usize,
++) -> (Prepared, PlannedRun<P::State>)
++where P: SystemParam + 'static, Prepared: PreparedParam<P> + 'static,
++{
++    let states = match hint {
++        Some(hint) => P::states_hinted(&snapshot, hint),
++        None => P::states(&snapshot),
++    };
++    crate::metrics::add(crate::metrics::Counter::PlanCalls, 1);
++
++    #[cfg(feature = "parallel")]
++    if maximum > 0 && states.len() / maximum >= 2 && P::parallel_planning()
++        && let Ok(runtime) = tokio::runtime::Handle::try_current()
++        && runtime.metrics().num_workers() > 1
++    {
++        let workers = runtime.metrics().num_workers();
++        // Keep the requested grain: forcing multiple jobs per worker made
++        // tiny metadata chunks pay more dispatch/merge cost than useful work.
++        // The active-job limit still bounds concurrency to the existing pool.
++        let grain = maximum;
++        let count = states.len().div_ceil(grain);
++        let context = Arc::new((snapshot, memo, prepared));
++        let mut states = states.into_iter();
++        let mut jobs = tokio::task::JoinSet::new();
++        let mut next = 0;
++        let mut results: Vec<_> = (0..count).map(|_| None).collect();
++        while next < count || !jobs.is_empty() {
++            while next < count && jobs.len() < workers {
++                let chunk: Vec<_> = states.by_ref().take(grain).collect();
++                let mut scratch = buffers.workers.pop().unwrap_or_default();
++                let context = Arc::clone(&context);
++                let index = next;
++                next += 1;
++                jobs.spawn_on(async move {
++                    crate::metrics::add(crate::metrics::Counter::PlanningWorkerJobs, 1);
++                    crate::metrics::add(crate::metrics::Counter::PlanningWorkerRows, chunk.len() as u64);
++                    let planned = plan_states::<P>(id, &context.0, &context.1, chunk, &context.2, &mut scratch);
++                    // Drop epoch readers before the join result becomes visible.
++                    drop(context);
++                    (index, planned, scratch)
++                }, &runtime);
++            }
++            let (index, planned, scratch) = jobs.join_next().await.expect("pending planning job")
++                .expect("candidate preparation panicked or was cancelled");
++            results[index] = Some(planned);
++            buffers.workers.push(scratch);
++        }
++        let (_, _, prepared) = match Arc::try_unwrap(context) {
++            Ok(context) => context,
++            Err(_) => panic!("planning epoch still has readers after all jobs completed"),
++        };
++        let mut invocations = Vec::new();
++        for result in results {
++            invocations.extend(result.expect("planning chunk completed").invocations);
++        }
++        return (prepared, PlannedRun { completed: true, invocations });
++    }
++
++    let planned = plan_states::<P>(id, &snapshot, &memo, states, &prepared, &mut buffers.scratch);
++    (prepared, planned)
++}
++
++#[cfg(all(test, feature = "parallel"))]
++mod tests;
+diff --git a/crates/bowl/src/system/parallel/tests.rs b/crates/bowl/src/system/parallel/tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..8c9e1e762a1bda6a7597c3898d0c551b784a454b
+--- /dev/null
++++ b/crates/bowl/src/system/parallel/tests.rs
+@@ -0,0 +1,191 @@
++use super::*;
++use crate::{Component, MutRef, Where, Eq as KeyEq, Without};
++use std::{fmt::Debug, sync::{Mutex, Condvar, mpsc, atomic::{AtomicBool, Ordering}}, time::Duration};
++
++struct A;
++struct B;
++struct Flag;
++impl Component for A {}
++impl Component for B {}
++impl Component for Flag {}
++
++#[derive(Hash)]
++struct Group(u64);
++impl Component for Group { fn fingerprint(&self) -> Option<u64> { Some(crate::hash_component(self)) } }
++
++fn runtime() -> tokio::runtime::Runtime {
++    tokio::runtime::Builder::new_multi_thread().worker_threads(2).build().unwrap()
++}
++
++async fn compare<P: SystemParam + 'static>(snapshot: Arc<Snapshot>, hint: Option<&[Entity]>)
++where P::State: Debug + PartialEq,
++{
++    let id = SystemId(0);
++    let prepared = P::prepare(&snapshot);
++    let first = plan_prepared_with_scratch::<P>(id, &snapshot, &HashMap::new(), hint, &prepared, &mut Scratch::default());
++    let memo = Arc::new(first.invocations.iter().step_by(2).map(|invocation| (
++        invocation.owner.clone(), MemoEntry { deps: invocation.deps.clone(), planned_revision: snapshot.revision_raw(), settle_epoch: 0 }
++    )).collect());
++    let expected = plan_prepared_with_scratch::<P>(id, &snapshot, &memo, hint, &prepared, &mut Scratch::default());
++    let mut buffers = PlanningStorage::default();
++    for _ in 0..2 {
++        let (_, actual) = prepare::<P, _>(id, Arc::clone(&snapshot), Arc::clone(&memo), hint, P::prepare(&snapshot), &mut buffers, 2).await;
++        assert_eq!(actual.completed, expected.completed);
++        assert_eq!(actual.invocations.len(), expected.invocations.len());
++        for (a, b) in actual.invocations.iter().zip(&expected.invocations) {
++            assert_eq!(a.owner, b.owner);
++            assert_eq!(a.state, b.state);
++            assert_eq!(a.deps, b.deps);
++            assert_eq!(a.access, b.access);
++        }
++        assert_eq!(Arc::strong_count(&memo), 1, "normal planning releases all memo readers");
++        assert!(!buffers.workers.is_empty(), "exercise worker preparation");
++        assert!(buffers.workers.len() <= 2);
++    }
++}
++
++#[test]
++fn chunks_match_serial_metadata_for_optional_filters_joins_and_dirty_hints() {
++    runtime().block_on(async {
++        let mut world = Snapshot::new();
++        world.init_presence(vec![TypeId::of::<A>(), TypeId::of::<B>(), TypeId::of::<Flag>(), TypeId::of::<Group>()]);
++        for raw in 0..32 {
++            let entity = Entity::from_raw(raw);
++            world.insert_base(entity, A);
++            world.insert_base(entity, Group(raw % 8));
++            if raw % 3 == 0 { world.insert_base(entity, B); }
++            if raw % 5 == 0 { world.insert_base(entity, Flag); }
++        }
++        let snapshot = Arc::new(world);
++        type Optional = Query<(Entity, &'static A, Option<&'static B>), Without<Flag>>;
++        compare::<Optional>(Arc::clone(&snapshot), None).await;
++        let hint: Vec<_> = (0..16).map(Entity::from_raw).collect();
++        compare::<Optional>(Arc::clone(&snapshot), Some(&hint)).await;
++        type Joined = (Query<(Entity, &'static A, &'static Group)>, Query<(Entity, &'static B), Where<KeyEq<Group>>>);
++        compare::<Joined>(snapshot, None).await;
++    });
++}
++
++struct LocalMetadata;
++impl SystemParam for LocalMetadata {
++    type State = (Entity, std::thread::ThreadId);
++    type Item<'a> = ();
++    fn states(_: &Snapshot) -> Vec<Self::State> {
++        (0..16).map(|id| (Entity::from_raw(id), std::thread::current().id())).collect()
++    }
++    fn keys(state: &Self::State) -> Vec<Entity> {
++        assert_eq!(state.1, std::thread::current().id());
++        vec![state.0]
++    }
++    fn deps(_: &Snapshot, _: &Self::State) -> Vec<Dep> { vec![] }
++    fn access(_: &Snapshot, _: &Self::State) -> Vec<Access> { vec![] }
++    fn fetch(_: &Bowl, _: &Snapshot, _: &Self::State, _: &Commands<Anything>, _: &mut GuardStore) {}
++}
++
++#[test]
++fn custom_metadata_keeps_serial_thread_affinity_by_default() {
++    runtime().block_on(async {
++        let snapshot = Arc::new(Snapshot::new());
++        let mut buffers = PlanningStorage::default();
++        let (_, plan) = prepare::<LocalMetadata, _>(SystemId(0), Arc::clone(&snapshot), Arc::new(HashMap::new()), None,
++            LocalMetadata::prepare(&snapshot), &mut buffers, 1).await;
++        assert_eq!(plan.invocations.len(), 16);
++        assert!(buffers.workers.is_empty());
++    });
++}
++
++struct Gate {
++    blocked: Mutex<bool>,
++    wake: Condvar,
++    entered: mpsc::Sender<()>,
++    panic_once: AtomicBool,
++}
++
++impl Gate {
++    fn enter(&self) {
++        if self.panic_once.swap(false, Ordering::SeqCst) { panic!("planned test panic"); }
++        let mut blocked = self.blocked.lock().unwrap();
++        if *blocked { self.entered.send(()).unwrap(); }
++        while *blocked { blocked = self.wake.wait(blocked).unwrap(); }
++    }
++
++    fn release(&self) {
++        *self.blocked.lock().unwrap() = false;
++        self.wake.notify_all();
++    }
++}
++
++struct ReleaseOnDrop(Arc<Gate>);
++impl Drop for ReleaseOnDrop { fn drop(&mut self) { self.0.release(); } }
++
++struct Request { gate: Arc<Gate>, value: u64 }
++struct Answer(u64);
++struct Counter(u64);
++impl Component for Request {}
++impl Component for Answer {}
++impl Component for Counter {}
++
++#[derive(Clone)]
++struct GatedState { entity: Entity, gate: Arc<Gate> }
++struct Gated { entity: Entity, value: u64 }
++
++impl SystemParam for Gated {
++    fn parallel_planning() -> bool { true }
++    type State = GatedState;
++    type Item<'a> = Self;
++    fn states(snapshot: &Snapshot) -> Vec<GatedState> {
++        snapshot.entities_with::<Request>().into_iter().map(|entity| GatedState {
++            entity, gate: Arc::clone(&snapshot.get::<Request>(entity).unwrap().gate),
++        }).collect()
++    }
++    fn keys(state: &GatedState) -> Vec<Entity> { state.gate.enter(); vec![state.entity] }
++    fn deps(snapshot: &Snapshot, state: &GatedState) -> Vec<Dep> {
++        vec![snapshot.resolve_store::<Request>().dependency(state.entity, false).unwrap()]
++    }
++    fn access(_: &Snapshot, state: &GatedState) -> Vec<Access> { vec![Access::read::<Request>(state.entity)] }
++    fn fetch(_: &Bowl, snapshot: &Snapshot, state: &GatedState, _: &Commands<Anything>, _: &mut GuardStore) -> Self {
++        Self { entity: state.entity, value: snapshot.get::<Request>(state.entity).unwrap().value }
++    }
++    fn interest_types() -> Option<Vec<TypeId>> { Some(vec![TypeId::of::<Request>()]) }
++}
++
++fn answer(request: Gated, mut commands: Commands<Anything>) {
++    commands.entity(request.entity).insert(Answer(request.value));
++}
++
++fn increment(counter: Query<(Entity, MutRef<'_, Counter>)>) { let (_, mut counter) = counter.item(); counter.0 += 1; }
++
++#[test]
++fn driver_cancellation_and_worker_panic_restore_memo_while_readers_are_alive() {
++    runtime().block_on(async {
++        let (entered, receiver) = mpsc::channel();
++        let gate = Arc::new(Gate { blocked: Mutex::new(false), wake: Condvar::new(), entered, panic_once: AtomicBool::new(false) });
++        let _release = ReleaseOnDrop(Arc::clone(&gate));
++        let bowl = Bowl::builder().system(increment).system(answer).build();
++        bowl.insert((Counter(0),)).await;
++        let mut entities = Vec::new();
++        for _ in 0..4 { entities.push(bowl.insert((Request { gate: Arc::clone(&gate), value: 1 },)).await.entity()); }
++        bowl.stir().await;
++        assert_eq!(bowl.scoop::<Query<&Counter>>().await.collect()[0].0, 1);
++        bowl.set_planning_chunk_size(1);
++        for &entity in &entities { bowl.entity(entity).insert((Request { gate: Arc::clone(&gate), value: 2 },)).await; }
++        *gate.blocked.lock().unwrap() = true;
++        let mut driver = Box::pin(bowl.stir());
++        assert!(futures::poll!(&mut driver).is_pending());
++        receiver.recv_timeout(Duration::from_secs(5)).unwrap();
++        receiver.recv_timeout(Duration::from_secs(5)).unwrap();
++        // Drop while both worker jobs still own the previous memo epoch.
++        drop(driver);
++        gate.release();
++        bowl.stir().await;
++        assert_eq!(bowl.scoop::<Query<&Counter>>().await.collect()[0].0, 1, "unrelated non-idempotent work must remain memoized");
++        assert!(bowl.scoop::<Query<&Answer>>().await.collect().iter().all(|a| a.0 == 2));
++
++        for &entity in &entities { bowl.entity(entity).insert((Request { gate: Arc::clone(&gate), value: 3 },)).await; }
++        gate.panic_once.store(true, Ordering::SeqCst);
++        assert!(std::panic::AssertUnwindSafe(bowl.stir()).catch_unwind().await.is_err());
++        bowl.stir().await;
++        assert_eq!(bowl.scoop::<Query<&Counter>>().await.collect()[0].0, 1);
++        assert!(bowl.scoop::<Query<&Answer>>().await.collect().iter().all(|a| a.0 == 3));
++    });
++}

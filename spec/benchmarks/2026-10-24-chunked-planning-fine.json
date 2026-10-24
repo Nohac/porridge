@@ -1,0 +1,1806 @@
+{
+  "recommendation": "defer current chunked planner for representative1000-slot tiny-body purchases: all screened caps have worse aggregate timing in both async/sync, with extra allocation traffic despite correct worker offload and zero memo COW",
+  "scope": "Screening gate only: same-binary serial0 versus maximum caps16/32/64 at8workers,statsOFF,1000slots,three paired process repetitions,5warmup/10measured rounds. No best viable cap found, so broader scaling and lifetime measurements deliberately skipped.",
+  "provenance": {
+    "candidate_manifest": "frozen/manifest.json",
+    "direct_serial_control_manifest": "target/execution-ids-final-20261024-131906/frozen/manifest.json",
+    "same_features_and_Cargo": true,
+    "candidate_source_and_binary_hashes_verified": true
+  },
+  "validation": {
+    "root_engine_tests": 181,
+    "optimized_smokes": [
+      "engine --bench --test",
+      "standalone playground"
+    ],
+    "counted_work": "Each counted round5000starts,29000revisionchecks,zero stale,zero memo copies; correct5000async row polls or sync calls. Parallel worker_rows10000perround;serial worker jobs/rows0."
+  },
+  "effective_grain_note": "For a1000-row plan at8workers, grain=min(maximum,ceil(1000/16)); caps16/32/64 give16/32/63.128/256 would share63 for full plans and were not screened as independent grain choices. Eligibility thresholds affect smaller plans; actual job totals are recorded.",
+  "serial_wrapper_sanity": {
+    "async": {
+      "before": {
+        "timing_median_us": 25.150862000000004,
+        "process_medians_us": [
+          26.8091055,
+          24.4600285,
+          25.150862000000004
+        ],
+        "round_range_us": [
+          23.645489,
+          30.693093
+        ],
+        "allocation_metrics": {
+          "alloc_calls": {
+            "median": 40106.0,
+            "range": [
+              40097,
+              43974
+            ]
+          },
+          "alloc_requested_bytes": {
+            "median": 15340135.0,
+            "range": [
+              15336831,
+              16994579
+            ]
+          },
+          "dealloc_calls": {
+            "median": 40106.0,
+            "range": [
+              40029,
+              43984
+            ]
+          },
+          "dealloc_requested_bytes": {
+            "median": 21281439.0,
+            "range": [
+              21245463,
+              23519715
+            ]
+          },
+          "realloc_calls": {
+            "median": 1145.0,
+            "range": [
+              1142,
+              1339
+            ]
+          },
+          "realloc_old_bytes": {
+            "median": 5847128.0,
+            "range": [
+              5846840,
+              6408168
+            ]
+          },
+          "realloc_new_bytes": {
+            "median": 11788720.0,
+            "range": [
+              11788144,
+              12929736
+            ]
+          },
+          "allocation_events": {
+            "median": 41252.0,
+            "range": [
+              41239,
+              45313
+            ]
+          }
+        },
+        "diagnostic_totals": {
+          "plan_calls": 396,
+          "candidate_rows": 301654,
+          "memo_hits": 150828,
+          "dependency_records": 1748278,
+          "access_records": 874130,
+          "admission_ns": 129490568,
+          "admission_candidates": 150826,
+          "already_running": 826,
+          "conflict_deferrals": 0,
+          "admitted_rows": 150000,
+          "dispatch_batches": 9542,
+          "enqueue_to_first_poll_ns": 19687955111,
+          "started_rows": 150000,
+          "completed_row_polls": 150000,
+          "completed_sync_calls": 0,
+          "publication_ns": 281957214,
+          "publication_calls": 150090,
+          "stale_publications": 0,
+          "accepted_output_groups": 150000,
+          "buffered_commands": 60000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 180826,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 870000,
+          "reconciled_writes": 120000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        },
+        "planning_jobs_per_iteration_mean": 0.0,
+        "planning_rows_per_iteration_mean": 0.0
+      },
+      "after": {
+        "timing_median_us": 24.6797045,
+        "process_medians_us": [
+          24.891295500000002,
+          24.1758905,
+          25.078602
+        ],
+        "round_range_us": [
+          23.300142,
+          31.176669
+        ],
+        "allocation_metrics": {
+          "alloc_calls": {
+            "median": 40106.0,
+            "range": [
+              40098,
+              43024
+            ]
+          },
+          "alloc_requested_bytes": {
+            "median": 15340271.0,
+            "range": [
+              15339055,
+              16806355
+            ]
+          },
+          "dealloc_calls": {
+            "median": 40105.5,
+            "range": [
+              40042,
+              43087
+            ]
+          },
+          "dealloc_requested_bytes": {
+            "median": 21281323.0,
+            "range": [
+              21249319,
+              22780667
+            ]
+          },
+          "realloc_calls": {
+            "median": 1144.0,
+            "range": [
+              1142,
+              1349
+            ]
+          },
+          "realloc_old_bytes": {
+            "median": 5847032.0,
+            "range": [
+              5838984,
+              6014800
+            ]
+          },
+          "realloc_new_bytes": {
+            "median": 11788528.0,
+            "range": [
+              11771488,
+              12129608
+            ]
+          },
+          "allocation_events": {
+            "median": 41252.5,
+            "range": [
+              41240,
+              44205
+            ]
+          }
+        },
+        "diagnostic_totals": {
+          "plan_calls": 411,
+          "planning_worker_jobs": 0,
+          "planning_worker_rows": 0,
+          "planning_memo_copies": 0,
+          "candidate_rows": 300525,
+          "memo_hits": 150264,
+          "dependency_records": 1742637,
+          "access_records": 871305,
+          "admission_ns": 134614032,
+          "admission_candidates": 150261,
+          "already_running": 261,
+          "conflict_deferrals": 0,
+          "admitted_rows": 150000,
+          "dispatch_batches": 9524,
+          "enqueue_to_first_poll_ns": 18320001879,
+          "started_rows": 150000,
+          "completed_row_polls": 150000,
+          "completed_sync_calls": 0,
+          "publication_ns": 292877534,
+          "publication_calls": 150090,
+          "stale_publications": 0,
+          "accepted_output_groups": 150000,
+          "buffered_commands": 60000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 180261,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 870000,
+          "reconciled_writes": 120000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        },
+        "planning_jobs_per_iteration_mean": 0.0,
+        "planning_rows_per_iteration_mean": 0.0
+      }
+    },
+    "sync": {
+      "before": {
+        "timing_median_us": 24.863906,
+        "process_medians_us": [
+          24.8664405,
+          25.798366,
+          24.215297
+        ],
+        "round_range_us": [
+          22.837812999999997,
+          30.409721
+        ],
+        "allocation_metrics": {
+          "alloc_calls": {
+            "median": 39476.0,
+            "range": [
+              39475,
+              45826
+            ]
+          },
+          "alloc_requested_bytes": {
+            "median": 9690695.0,
+            "range": [
+              9690191,
+              12971511
+            ]
+          },
+          "dealloc_calls": {
+            "median": 39476.0,
+            "range": [
+              39411,
+              45841
+            ]
+          },
+          "dealloc_requested_bytes": {
+            "median": 12655839.0,
+            "range": [
+              12623079,
+              16416815
+            ]
+          },
+          "realloc_calls": {
+            "median": 1019.0,
+            "range": [
+              1016,
+              1366
+            ]
+          },
+          "realloc_old_bytes": {
+            "median": 2870968.0,
+            "range": [
+              2870680,
+              3343200
+            ]
+          },
+          "realloc_new_bytes": {
+            "median": 5836400.0,
+            "range": [
+              5835824,
+              6779728
+            ]
+          },
+          "allocation_events": {
+            "median": 40495.5,
+            "range": [
+              40491,
+              47087
+            ]
+          }
+        },
+        "diagnostic_totals": {
+          "plan_calls": 405,
+          "candidate_rows": 300027,
+          "memo_hits": 150014,
+          "dependency_records": 1740139,
+          "access_records": 870065,
+          "admission_ns": 117848627,
+          "admission_candidates": 150013,
+          "already_running": 13,
+          "conflict_deferrals": 0,
+          "admitted_rows": 150000,
+          "dispatch_batches": 9516,
+          "enqueue_to_first_poll_ns": 17436506267,
+          "started_rows": 150000,
+          "completed_row_polls": 0,
+          "completed_sync_calls": 150000,
+          "publication_ns": 286770401,
+          "publication_calls": 150090,
+          "stale_publications": 0,
+          "accepted_output_groups": 150000,
+          "buffered_commands": 60000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 180013,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 870000,
+          "reconciled_writes": 120000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        },
+        "planning_jobs_per_iteration_mean": 0.0,
+        "planning_rows_per_iteration_mean": 0.0
+      },
+      "after": {
+        "timing_median_us": 24.38257,
+        "process_medians_us": [
+          24.38257,
+          23.8146215,
+          24.21685
+        ],
+        "round_range_us": [
+          22.330312999999997,
+          39.405656
+        ],
+        "allocation_metrics": {
+          "alloc_calls": {
+            "median": 39476.0,
+            "range": [
+              39468,
+              43793
+            ]
+          },
+          "alloc_requested_bytes": {
+            "median": 9690831.0,
+            "range": [
+              9689615,
+              11874031
+            ]
+          },
+          "dealloc_calls": {
+            "median": 39475.0,
+            "range": [
+              39404,
+              43861
+            ]
+          },
+          "dealloc_requested_bytes": {
+            "median": 12655471.0,
+            "range": [
+              12622887,
+              14936831
+            ]
+          },
+          "realloc_calls": {
+            "median": 1018.5,
+            "range": [
+              1016,
+              1150
+            ]
+          },
+          "realloc_old_bytes": {
+            "median": 2870920.0,
+            "range": [
+              2870680,
+              3449720
+            ]
+          },
+          "realloc_new_bytes": {
+            "median": 5836304.0,
+            "range": [
+              5835824,
+              7012408
+            ]
+          },
+          "allocation_events": {
+            "median": 40496.0,
+            "range": [
+              40485,
+              44923
+            ]
+          }
+        },
+        "diagnostic_totals": {
+          "plan_calls": 384,
+          "planning_worker_jobs": 0,
+          "planning_worker_rows": 0,
+          "planning_memo_copies": 0,
+          "candidate_rows": 301571,
+          "memo_hits": 150786,
+          "dependency_records": 1747859,
+          "access_records": 873925,
+          "admission_ns": 113098570,
+          "admission_candidates": 150785,
+          "already_running": 785,
+          "conflict_deferrals": 0,
+          "admitted_rows": 150000,
+          "dispatch_batches": 9572,
+          "enqueue_to_first_poll_ns": 19243913508,
+          "started_rows": 150000,
+          "completed_row_polls": 0,
+          "completed_sync_calls": 150000,
+          "publication_ns": 282094605,
+          "publication_calls": 150090,
+          "stale_publications": 0,
+          "accepted_output_groups": 150000,
+          "buffered_commands": 60000,
+          "planning_arena_chunk_growth": 0,
+          "planning_key_growth": 0,
+          "command_storage_created": 0,
+          "command_storage_reused": 180785,
+          "command_arena_chunk_growth": 0,
+          "command_metadata_growth": 0,
+          "revision_checks": 870000,
+          "reconciled_writes": 120000,
+          "bound_cleanup_ns": 0,
+          "bound_cleanup_roots": 0,
+          "ambient_healing_ns": 0,
+          "ambient_healing_memo_entries": 0,
+          "ambient_healing_victims": 0
+        },
+        "planning_jobs_per_iteration_mean": 0.0,
+        "planning_rows_per_iteration_mean": 0.0
+      }
+    }
+  },
+  "screening": {
+    "async": {
+      "16": {
+        "before": {
+          "timing_median_us": 24.9507635,
+          "process_medians_us": [
+            24.9507635,
+            24.9537145,
+            25.0630145
+          ],
+          "round_range_us": [
+            23.4267,
+            32.306005
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40106.0,
+              "range": [
+                40105,
+                43065
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 15340271.0,
+              "range": [
+                15339767,
+                16942515
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40106.0,
+              "range": [
+                40041,
+                43130
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 21281575.0,
+              "range": [
+                21248815,
+                22914187
+              ]
+            },
+            "realloc_calls": {
+              "median": 1144.0,
+              "range": [
+                1142,
+                1253
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5846984.0,
+              "range": [
+                5845296,
+                5854592
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 11788432.0,
+              "range": [
+                11784208,
+                11802728
+              ]
+            },
+            "allocation_events": {
+              "median": 41250.0,
+              "range": [
+                41247,
+                44301
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 381,
+            "planning_worker_jobs": 0,
+            "planning_worker_rows": 0,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300018,
+            "memo_hits": 150009,
+            "dependency_records": 1740090,
+            "access_records": 870045,
+            "admission_ns": 127661443,
+            "admission_candidates": 150009,
+            "already_running": 9,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9514,
+            "enqueue_to_first_poll_ns": 16476943303,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 287957481,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180009,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 0.0,
+          "planning_rows_per_iteration_mean": 0.0
+        },
+        "after": {
+          "timing_median_us": 25.410364,
+          "process_medians_us": [
+            25.372352999999997,
+            25.125351000000002,
+            25.6161745
+          ],
+          "round_range_us": [
+            24.275188999999997,
+            28.742103
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 42354.0,
+              "range": [
+                42350,
+                44730
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 15883279.0,
+              "range": [
+                15880511,
+                17235319
+              ]
+            },
+            "dealloc_calls": {
+              "median": 42353.5,
+              "range": [
+                42296,
+                44732
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 22265931.0,
+              "range": [
+                22235815,
+                23780135
+              ]
+            },
+            "realloc_calls": {
+              "median": 1758.5,
+              "range": [
+                1757,
+                1801
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6288584.0,
+              "range": [
+                6288440,
+                6447424
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12671632.0,
+              "range": [
+                12671344,
+                12991232
+              ]
+            },
+            "allocation_events": {
+              "median": 44112.5,
+              "range": [
+                44110,
+                46531
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 363,
+            "planning_worker_jobs": 18930,
+            "planning_worker_rows": 300000,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300000,
+            "memo_hits": 150000,
+            "dependency_records": 1740000,
+            "access_records": 870000,
+            "admission_ns": 131748568,
+            "admission_candidates": 150000,
+            "already_running": 0,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9496,
+            "enqueue_to_first_poll_ns": 11846442535,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 300656184,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180000,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 631.0,
+          "planning_rows_per_iteration_mean": 10000.0
+        }
+      },
+      "32": {
+        "before": {
+          "timing_median_us": 24.4613245,
+          "process_medians_us": [
+            24.823307,
+            24.232216,
+            24.563941999999997
+          ],
+          "round_range_us": [
+            22.739556,
+            26.505737
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40106.0,
+              "range": [
+                40101,
+                43235
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 15340271.0,
+              "range": [
+                15339351,
+                16955295
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40106.0,
+              "range": [
+                40033,
+                43268
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 21281575.0,
+              "range": [
+                21247983,
+                22902375
+              ]
+            },
+            "realloc_calls": {
+              "median": 1144.0,
+              "range": [
+                1142,
+                1358
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5847032.0,
+              "range": [
+                5826728,
+                6476104
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 11788528.0,
+              "range": [
+                11747776,
+                13046192
+              ]
+            },
+            "allocation_events": {
+              "median": 41250.0,
+              "range": [
+                41245,
+                44514
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 402,
+            "planning_worker_jobs": 0,
+            "planning_worker_rows": 0,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300090,
+            "memo_hits": 150045,
+            "dependency_records": 1740450,
+            "access_records": 870225,
+            "admission_ns": 131578049,
+            "admission_candidates": 150045,
+            "already_running": 45,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9554,
+            "enqueue_to_first_poll_ns": 17810055868,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 290265531,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180045,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 0.0,
+          "planning_rows_per_iteration_mean": 0.0
+        },
+        "after": {
+          "timing_median_us": 25.613231,
+          "process_medians_us": [
+            24.607582999999998,
+            25.670002500000002,
+            25.8161415
+          ],
+          "round_range_us": [
+            23.203854,
+            38.790267
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 41269.0,
+              "range": [
+                41268,
+                41273
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 15711839.0,
+              "range": [
+                15711335,
+                15712639
+              ]
+            },
+            "dealloc_calls": {
+              "median": 41269.0,
+              "range": [
+                41268,
+                41276
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 22159543.0,
+              "range": [
+                22159039,
+                22160639
+              ]
+            },
+            "realloc_calls": {
+              "median": 1598.5,
+              "range": [
+                1597,
+                1633
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6353384.0,
+              "range": [
+                6353240,
+                6356696
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12801232.0,
+              "range": [
+                12800944,
+                12807856
+              ]
+            },
+            "allocation_events": {
+              "median": 42867.5,
+              "range": [
+                42865,
+                42902
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 360,
+            "planning_worker_jobs": 9600,
+            "planning_worker_rows": 300000,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300000,
+            "memo_hits": 150000,
+            "dependency_records": 1740000,
+            "access_records": 870000,
+            "admission_ns": 132720007,
+            "admission_candidates": 150000,
+            "already_running": 0,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9450,
+            "enqueue_to_first_poll_ns": 8838933365,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 294532711,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180000,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 320.0,
+          "planning_rows_per_iteration_mean": 10000.0
+        }
+      },
+      "64": {
+        "before": {
+          "timing_median_us": 25.068859,
+          "process_medians_us": [
+            26.094999,
+            24.894202,
+            24.712436
+          ],
+          "round_range_us": [
+            23.449146,
+            28.537193
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40106.0,
+              "range": [
+                40090,
+                44279
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 15340271.0,
+              "range": [
+                15338519,
+                17638939
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40106.0,
+              "range": [
+                40013,
+                44356
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 21281575.0,
+              "range": [
+                21246823,
+                23599195
+              ]
+            },
+            "realloc_calls": {
+              "median": 1146.0,
+              "range": [
+                1142,
+                1345
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 5847032.0,
+              "range": [
+                5832592,
+                5850200
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 11788528.0,
+              "range": [
+                11760536,
+                11794864
+              ]
+            },
+            "allocation_events": {
+              "median": 41253.0,
+              "range": [
+                41232,
+                45624
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 414,
+            "planning_worker_jobs": 0,
+            "planning_worker_rows": 0,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300185,
+            "memo_hits": 150094,
+            "dependency_records": 1740937,
+            "access_records": 870455,
+            "admission_ns": 127336873,
+            "admission_candidates": 150091,
+            "already_running": 91,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9598,
+            "enqueue_to_first_poll_ns": 16524649588,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 296789542,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180091,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 0.0,
+          "planning_rows_per_iteration_mean": 0.0
+        },
+        "after": {
+          "timing_median_us": 25.505556,
+          "process_medians_us": [
+            26.4936015,
+            25.677433,
+            24.673268
+          ],
+          "round_range_us": [
+            23.909578,
+            29.007063
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40709.0,
+              "range": [
+                40708,
+                42548
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 15636999.0,
+              "range": [
+                15636495,
+                16595191
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40708.5,
+              "range": [
+                40675,
+                42585
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 22109051.0,
+              "range": [
+                22088967,
+                23566199
+              ]
+            },
+            "realloc_calls": {
+              "median": 1443.0,
+              "range": [
+                1442,
+                1628
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 6377936.0,
+              "range": [
+                6377840,
+                6850248
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 12850336.0,
+              "range": [
+                12850144,
+                13802160
+              ]
+            },
+            "allocation_events": {
+              "median": 42153.5,
+              "range": [
+                42150,
+                44176
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 363,
+            "planning_worker_jobs": 4848,
+            "planning_worker_rows": 300000,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300000,
+            "memo_hits": 150000,
+            "dependency_records": 1740000,
+            "access_records": 870000,
+            "admission_ns": 138994611,
+            "admission_candidates": 150000,
+            "already_running": 0,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9466,
+            "enqueue_to_first_poll_ns": 9230299540,
+            "started_rows": 150000,
+            "completed_row_polls": 150000,
+            "completed_sync_calls": 0,
+            "publication_ns": 326155406,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180000,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 161.6,
+          "planning_rows_per_iteration_mean": 10000.0
+        }
+      }
+    },
+    "sync": {
+      "16": {
+        "before": {
+          "timing_median_us": 24.6331865,
+          "process_medians_us": [
+            24.367448000000003,
+            24.975367,
+            24.2870835
+          ],
+          "round_range_us": [
+            22.016887,
+            26.886335
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 39476.0,
+              "range": [
+                39475,
+                43765
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 9690831.0,
+              "range": [
+                9690327,
+                11848467
+              ]
+            },
+            "dealloc_calls": {
+              "median": 39476.0,
+              "range": [
+                39409,
+                43830
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 12655975.0,
+              "range": [
+                12623215,
+                14847835
+              ]
+            },
+            "realloc_calls": {
+              "median": 1018.0,
+              "range": [
+                1016,
+                1171
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 2870872.0,
+              "range": [
+                2870680,
+                2961592
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5836208.0,
+              "range": [
+                5835824,
+                6017000
+              ]
+            },
+            "allocation_events": {
+              "median": 40494.0,
+              "range": [
+                40491,
+                44854
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 387,
+            "planning_worker_jobs": 0,
+            "planning_worker_rows": 0,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300010,
+            "memo_hits": 150005,
+            "dependency_records": 1740050,
+            "access_records": 870025,
+            "admission_ns": 120651488,
+            "admission_candidates": 150005,
+            "already_running": 5,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9528,
+            "enqueue_to_first_poll_ns": 15882728604,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 284465401,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180005,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 0.0,
+          "planning_rows_per_iteration_mean": 0.0
+        },
+        "after": {
+          "timing_median_us": 24.936930500000003,
+          "process_medians_us": [
+            26.1620435,
+            24.5761995,
+            24.695589
+          ],
+          "round_range_us": [
+            23.377986,
+            33.788269
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 41724.0,
+              "range": [
+                41723,
+                41724
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 10233839.0,
+              "range": [
+                10233335,
+                10233839
+              ]
+            },
+            "dealloc_calls": {
+              "median": 41723.5,
+              "range": [
+                41723,
+                41724
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 13640331.0,
+              "range": [
+                13640079,
+                13640583
+              ]
+            },
+            "realloc_calls": {
+              "median": 1633.0,
+              "range": [
+                1631,
+                1664
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 3312472.0,
+              "range": [
+                3312280,
+                3315448
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 6719408.0,
+              "range": [
+                6719024,
+                6725360
+              ]
+            },
+            "allocation_events": {
+              "median": 43357.0,
+              "range": [
+                43354,
+                43388
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 360,
+            "planning_worker_jobs": 18900,
+            "planning_worker_rows": 300000,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300000,
+            "memo_hits": 150000,
+            "dependency_records": 1740000,
+            "access_records": 870000,
+            "admission_ns": 122037060,
+            "admission_candidates": 150000,
+            "already_running": 0,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9450,
+            "enqueue_to_first_poll_ns": 7861305401,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 292049181,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180000,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 630.0,
+          "planning_rows_per_iteration_mean": 10000.0
+        }
+      },
+      "32": {
+        "before": {
+          "timing_median_us": 24.989926,
+          "process_medians_us": [
+            24.5136135,
+            25.342086000000002,
+            25.114539
+          ],
+          "round_range_us": [
+            22.790016,
+            42.088834999999996
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 39476.0,
+              "range": [
+                39472,
+                57639
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 9690831.0,
+              "range": [
+                9690327,
+                18739555
+              ]
+            },
+            "dealloc_calls": {
+              "median": 39476.0,
+              "range": [
+                39403,
+                57686
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 12655975.0,
+              "range": [
+                12622383,
+                21909931
+              ]
+            },
+            "realloc_calls": {
+              "median": 1018.5,
+              "range": [
+                1016,
+                1653
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 2870920.0,
+              "range": [
+                2870680,
+                3214336
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5836304.0,
+              "range": [
+                5835824,
+                6544976
+              ]
+            },
+            "allocation_events": {
+              "median": 40496.0,
+              "range": [
+                40489,
+                59209
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 528,
+            "planning_worker_jobs": 0,
+            "planning_worker_rows": 0,
+            "planning_memo_copies": 0,
+            "candidate_rows": 302346,
+            "memo_hits": 151175,
+            "dependency_records": 1751746,
+            "access_records": 875855,
+            "admission_ns": 112330856,
+            "admission_candidates": 151171,
+            "already_running": 1171,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 10543,
+            "enqueue_to_first_poll_ns": 18758224467,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 286272235,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 181171,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 0.0,
+          "planning_rows_per_iteration_mean": 0.0
+        },
+        "after": {
+          "timing_median_us": 25.4674595,
+          "process_medians_us": [
+            24.8922185,
+            25.2624865,
+            26.754862000000003
+          ],
+          "round_range_us": [
+            23.345026,
+            29.401066999999998
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40639.0,
+              "range": [
+                40638,
+                40643
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 10062399.0,
+              "range": [
+                10061895,
+                10063199
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40639.0,
+              "range": [
+                40638,
+                40646
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 13533943.0,
+              "range": [
+                13533439,
+                13535039
+              ]
+            },
+            "realloc_calls": {
+              "median": 1472.5,
+              "range": [
+                1471,
+                1507
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 3377224.0,
+              "range": [
+                3377080,
+                3380536
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 6848912.0,
+              "range": [
+                6848624,
+                6855536
+              ]
+            },
+            "allocation_events": {
+              "median": 42113.0,
+              "range": [
+                42109,
+                42146
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 360,
+            "planning_worker_jobs": 9600,
+            "planning_worker_rows": 300000,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300000,
+            "memo_hits": 150000,
+            "dependency_records": 1740000,
+            "access_records": 870000,
+            "admission_ns": 122008877,
+            "admission_candidates": 150000,
+            "already_running": 0,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9450,
+            "enqueue_to_first_poll_ns": 9221232114,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 296650603,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180000,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 320.0,
+          "planning_rows_per_iteration_mean": 10000.0
+        }
+      },
+      "64": {
+        "before": {
+          "timing_median_us": 25.2920135,
+          "process_medians_us": [
+            25.147633,
+            25.2545885,
+            26.0543665
+          ],
+          "round_range_us": [
+            23.910906999999998,
+            32.014182
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 39476.0,
+              "range": [
+                39471,
+                48029
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 9690831.0,
+              "range": [
+                9689911,
+                14118887
+              ]
+            },
+            "dealloc_calls": {
+              "median": 39475.5,
+              "range": [
+                39403,
+                48089
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 12655723.0,
+              "range": [
+                12622383,
+                17175735
+              ]
+            },
+            "realloc_calls": {
+              "median": 1018.0,
+              "range": [
+                1016,
+                1215
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 2870872.0,
+              "range": [
+                2870680,
+                3310792
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 5836208.0,
+              "range": [
+                5835824,
+                6715568
+              ]
+            },
+            "allocation_events": {
+              "median": 40494.5,
+              "range": [
+                40488,
+                49226
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 420,
+            "planning_worker_jobs": 0,
+            "planning_worker_rows": 0,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300025,
+            "memo_hits": 150012,
+            "dependency_records": 1740129,
+            "access_records": 870069,
+            "admission_ns": 114122314,
+            "admission_candidates": 150013,
+            "already_running": 13,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9570,
+            "enqueue_to_first_poll_ns": 16257609726,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 299395392,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180013,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 0.0,
+          "planning_rows_per_iteration_mean": 0.0
+        },
+        "after": {
+          "timing_median_us": 26.178593499999998,
+          "process_medians_us": [
+            25.838041,
+            25.750156,
+            27.3460555
+          ],
+          "round_range_us": [
+            24.796795999999997,
+            33.027349
+          ],
+          "allocation_metrics": {
+            "alloc_calls": {
+              "median": 40079.0,
+              "range": [
+                40078,
+                40083
+              ]
+            },
+            "alloc_requested_bytes": {
+              "median": 9987559.0,
+              "range": [
+                9987055,
+                9989439
+              ]
+            },
+            "dealloc_calls": {
+              "median": 40079.0,
+              "range": [
+                40078,
+                40086
+              ]
+            },
+            "dealloc_requested_bytes": {
+              "median": 13483703.0,
+              "range": [
+                13483199,
+                13486087
+              ]
+            },
+            "realloc_calls": {
+              "median": 1317.0,
+              "range": [
+                1316,
+                1353
+              ]
+            },
+            "realloc_old_bytes": {
+              "median": 3401776.0,
+              "range": [
+                3401680,
+                3405232
+              ]
+            },
+            "realloc_new_bytes": {
+              "median": 6898016.0,
+              "range": [
+                6897824,
+                6904928
+              ]
+            },
+            "allocation_events": {
+              "median": 41396.0,
+              "range": [
+                41394,
+                41431
+              ]
+            }
+          },
+          "diagnostic_totals": {
+            "plan_calls": 360,
+            "planning_worker_jobs": 4800,
+            "planning_worker_rows": 300000,
+            "planning_memo_copies": 0,
+            "candidate_rows": 300000,
+            "memo_hits": 150000,
+            "dependency_records": 1740000,
+            "access_records": 870000,
+            "admission_ns": 126651092,
+            "admission_candidates": 150000,
+            "already_running": 0,
+            "conflict_deferrals": 0,
+            "admitted_rows": 150000,
+            "dispatch_batches": 9450,
+            "enqueue_to_first_poll_ns": 9185218783,
+            "started_rows": 150000,
+            "completed_row_polls": 0,
+            "completed_sync_calls": 150000,
+            "publication_ns": 323462354,
+            "publication_calls": 150090,
+            "stale_publications": 0,
+            "accepted_output_groups": 150000,
+            "buffered_commands": 60000,
+            "planning_arena_chunk_growth": 0,
+            "planning_key_growth": 0,
+            "command_storage_created": 0,
+            "command_storage_reused": 180000,
+            "command_arena_chunk_growth": 0,
+            "command_metadata_growth": 0,
+            "revision_checks": 870000,
+            "reconciled_writes": 120000,
+            "bound_cleanup_ns": 0,
+            "bound_cleanup_roots": 0,
+            "ambient_healing_ns": 0,
+            "ambient_healing_memo_entries": 0,
+            "ambient_healing_victims": 0
+          },
+          "planning_jobs_per_iteration_mean": 160.0,
+          "planning_rows_per_iteration_mean": 10000.0
+        }
+      }
+    }
+  },
+  "limits": [
+    "Three alternating process repetitions per cap/mode; differences modest with overlapping process ranges, not a universal claim that candidate planning can never help.",
+    "Candidate rows/jobs run on workers, but driver enumeration, ordered merge, admission/publication and coordination remain; moving work does not guarantee scaling.",
+    "Counted diagnostic passes are separate from uninstrumented timing; counted allocations include independent diagnostics overhead equally.",
+    "All serial sanity baseline comparisons use direct frozen execution-ID source, not older26bcf05 or another dependency graph.",
+    "Extra allocation/reallocation traffic is measured; retained-memory cost is unknown because no cap cleared the throughput screening gate.",
+    "Do not cherry-pick equivalent maximum caps or the fastest isolated sample.",
+    "No new source changes, builds, commits, broad matrix or lifetime profiles performed after screening."
+  ]
+}

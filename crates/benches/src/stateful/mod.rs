@@ -3,6 +3,7 @@
 pub mod churn;
 pub mod purchases;
 pub mod steady;
+pub mod population;
 
 #[cfg(test)]
 mod tests;

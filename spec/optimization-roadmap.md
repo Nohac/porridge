@@ -14,6 +14,12 @@ complete: a runtime control is retained, but measured gains do not explain worke
 scaling. The selected [compact execution-record slice](compact-execution-records.md) is
 implemented and benchmarked: phase-local IDs and dense reservation slots are
 retained. Persistent memo/output IDs and wider routing changes remain unimplemented.
+After commit `bdcfd7f`, [worker-planning experiments](worker-planning-experiment.md)
+tested fine and coarse candidate-preparation chunks. Both failed the initial
+throughput screen; the tested prototype is archived and production retains serial
+preparation. [Persistent-world scaling](world-scaling-experiment.md) is the next
+scoped measurement: fixed purchase traffic alongside larger and busier state.
+A separate spawn-bookkeeping control and distributed publication remain unimplemented.
 
 ## Objective and completion criteria
 

@@ -1,0 +1,2509 @@
+{
+  "conclusion": "Current tiny-body purchase scaling remains dominated by shared driver work, not one planner loop: publication is about31-33% of sampled userCPU at8/16workers, planning about21-24%, reservations about10-12%, and driver sample share about75-77%. Total ordinary-binary task-clock/request rises materially with worker count.",
+  "provenance": {
+    "fp_manifest": "frozen-fp/manifest.json",
+    "normal_manifest": "target/execution-ids-final-20261024-131906/frozen/manifest.json",
+    "actual_fp_build_command": "CARGO_TARGET_DIR=target/profiling-fp RUSTFLAGS='-C force-frame-pointers=yes' cargo build --workspace --examples --profile bench -j20 --message-format=json",
+    "source_and_features_match": true,
+    "classifier_sha256": "c7168673d44398438fce837a0ab12c5075dd020a74cbd711de92b5cdff08d8b4",
+    "normal_vs_fp": "Normal frozen binary supplies PMU/software counters and diagnostics. FP build supplies attribution only; no new ordinary throughput benchmark was run."
+  },
+  "normal_core_counters": {
+    "async": [
+      {
+        "case": "independent-1",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 135539.26653,
+          "instructions:u": 217522.02055,
+          "branches:u": 33369.83591,
+          "branch-misses:u": 830.05009
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-4",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 140981.68105,
+          "instructions:u": 199292.68704,
+          "branches:u": 30372.83022,
+          "branch-misses:u": 766.92774
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 161716.88345,
+          "instructions:u": 197326.43382,
+          "branches:u": 30062.68716,
+          "branch-misses:u": 774.35572
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-16",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 174194.17012,
+          "instructions:u": 200581.70348,
+          "branches:u": 30629.2687,
+          "branch-misses:u": 811.67412
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-16",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 174525.23824,
+          "instructions:u": 197338.31911,
+          "branches:u": 30020.2301,
+          "branch-misses:u": 785.65415
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 165536.63718,
+          "instructions:u": 197859.85014,
+          "branches:u": 30139.32812,
+          "branch-misses:u": 781.03963
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-4",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 146473.06166,
+          "instructions:u": 197602.14485,
+          "branches:u": 30056.81141,
+          "branch-misses:u": 761.69624
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-1",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 131502.23673,
+          "instructions:u": 222301.72031,
+          "branches:u": 34249.49946,
+          "branch-misses:u": 852.552
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      }
+    ],
+    "sync": [
+      {
+        "case": "independent-1",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 127802.63721,
+          "instructions:u": 215148.63077,
+          "branches:u": 32963.63497,
+          "branch-misses:u": 844.60607
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-4",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 148157.63314,
+          "instructions:u": 191488.11764,
+          "branches:u": 28931.30547,
+          "branch-misses:u": 755.00867
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 153785.71957,
+          "instructions:u": 189784.04838,
+          "branches:u": 28648.52149,
+          "branch-misses:u": 744.33667
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-16",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 172698.50535,
+          "instructions:u": 195260.25603,
+          "branches:u": 29657.45806,
+          "branch-misses:u": 798.93172
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-16",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 172824.92952,
+          "instructions:u": 196587.31512,
+          "branches:u": 29904.37815,
+          "branch-misses:u": 805.42911
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 157522.85301,
+          "instructions:u": 191315.79129,
+          "branches:u": 28936.24682,
+          "branch-misses:u": 755.28172
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-4",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 137798.23666,
+          "instructions:u": 194724.25326,
+          "branches:u": 29537.9463,
+          "branch-misses:u": 762.74047
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-1",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 123406.34659,
+          "instructions:u": 213354.17537,
+          "branches:u": 32639.09822,
+          "branch-misses:u": 824.79483
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      }
+    ]
+  },
+  "normal_task_clock": {
+    "async": [
+      {
+        "case": "independent-1",
+        "task_clock_us_per_request": 31.137700000000002,
+        "wall_us_per_request_in_counter_pass": 23.898390350000003,
+        "aggregate_task_clock_over_wall": 1.3029203868535857,
+        "full_coverage": true
+      },
+      {
+        "case": "independent-4",
+        "task_clock_us_per_request": 39.537099999999995,
+        "wall_us_per_request_in_counter_pass": 23.91365832,
+        "aggregate_task_clock_over_wall": 1.6533271267380054,
+        "full_coverage": true
+      },
+      {
+        "case": "independent-8",
+        "task_clock_us_per_request": 52.4371,
+        "wall_us_per_request_in_counter_pass": 26.444922849999998,
+        "aggregate_task_clock_over_wall": 1.9828796740089565,
+        "full_coverage": true
+      },
+      {
+        "case": "independent-16",
+        "task_clock_us_per_request": 61.1482,
+        "wall_us_per_request_in_counter_pass": 28.029680950000003,
+        "aggregate_task_clock_over_wall": 2.1815517668245166,
+        "full_coverage": true
+      }
+    ],
+    "sync": [
+      {
+        "case": "independent-1",
+        "task_clock_us_per_request": 29.5931,
+        "wall_us_per_request_in_counter_pass": 23.06604187,
+        "aggregate_task_clock_over_wall": 1.2829726125872154,
+        "full_coverage": true
+      },
+      {
+        "case": "independent-4",
+        "task_clock_us_per_request": 37.445600000000006,
+        "wall_us_per_request_in_counter_pass": 22.97617596,
+        "aggregate_task_clock_over_wall": 1.6297577136069255,
+        "full_coverage": true
+      },
+      {
+        "case": "independent-8",
+        "task_clock_us_per_request": 49.6252,
+        "wall_us_per_request_in_counter_pass": 25.44155023,
+        "aggregate_task_clock_over_wall": 1.9505572400805702,
+        "full_coverage": true
+      },
+      {
+        "case": "independent-16",
+        "task_clock_us_per_request": 58.491499999999995,
+        "wall_us_per_request_in_counter_pass": 27.5241371,
+        "aggregate_task_clock_over_wall": 2.1250984104420843,
+        "full_coverage": true
+      }
+    ]
+  },
+  "normal_diagnostics_per_request": {
+    "async": {
+      "independent-1": {
+        "plan_calls": 0.044,
+        "candidate_rows": 11.577333333333334,
+        "memo_hits": 5.788666666666667,
+        "dependency_records": 65.88666666666667,
+        "access_records": 32.943333333333335,
+        "admission_ns": 3371.2656666666667,
+        "admission_candidates": 5.788666666666667,
+        "already_running": 0.7886666666666666,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.333,
+        "enqueue_to_first_poll_ns": 2973581.9486666666,
+        "started_rows": 5.0,
+        "completed_row_polls": 5.0,
+        "completed_sync_calls": 0.0,
+        "publication_ns": 11147.218666666668,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.788666666666667,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-4": {
+        "plan_calls": 0.029,
+        "candidate_rows": 10.088,
+        "memo_hits": 5.044,
+        "dependency_records": 58.44,
+        "access_records": 29.22,
+        "admission_ns": 3665.9003333333335,
+        "admission_candidates": 5.044,
+        "already_running": 0.044,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.334,
+        "enqueue_to_first_poll_ns": 1187510.269,
+        "started_rows": 5.0,
+        "completed_row_polls": 5.0,
+        "completed_sync_calls": 0.0,
+        "publication_ns": 10307.535666666667,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.044,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-8": {
+        "plan_calls": 0.014,
+        "candidate_rows": 10.001333333333333,
+        "memo_hits": 5.000666666666667,
+        "dependency_records": 58.00666666666667,
+        "access_records": 29.003333333333334,
+        "admission_ns": 3161.1676666666667,
+        "admission_candidates": 5.000666666666667,
+        "already_running": 0.0006666666666666666,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.3263333333333333,
+        "enqueue_to_first_poll_ns": 1183592.3326666667,
+        "started_rows": 5.0,
+        "completed_row_polls": 5.0,
+        "completed_sync_calls": 0.0,
+        "publication_ns": 8653.942666666666,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.000666666666667,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-16": {
+        "plan_calls": 0.016,
+        "candidate_rows": 10.666666666666666,
+        "memo_hits": 5.333333333333333,
+        "dependency_records": 61.333333333333336,
+        "access_records": 30.666666666666668,
+        "admission_ns": 4063.0383333333334,
+        "admission_candidates": 5.333333333333333,
+        "already_running": 0.3333333333333333,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.3536666666666667,
+        "enqueue_to_first_poll_ns": 1526116.5413333334,
+        "started_rows": 5.0,
+        "completed_row_polls": 5.0,
+        "completed_sync_calls": 0.0,
+        "publication_ns": 9935.235666666667,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.333333333333333,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      }
+    },
+    "sync": {
+      "independent-1": {
+        "plan_calls": 0.057,
+        "candidate_rows": 11.503333333333334,
+        "memo_hits": 5.751666666666667,
+        "dependency_records": 65.51666666666667,
+        "access_records": 32.75833333333333,
+        "admission_ns": 2466.4673333333335,
+        "admission_candidates": 5.751666666666667,
+        "already_running": 0.7516666666666667,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.379,
+        "enqueue_to_first_poll_ns": 2163075.6733333333,
+        "started_rows": 5.0,
+        "completed_row_polls": 0.0,
+        "completed_sync_calls": 5.0,
+        "publication_ns": 9583.549333333332,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.751666666666667,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-4": {
+        "plan_calls": 0.023,
+        "candidate_rows": 10.120666666666667,
+        "memo_hits": 5.060333333333333,
+        "dependency_records": 58.60333333333333,
+        "access_records": 29.301666666666666,
+        "admission_ns": 2314.1853333333333,
+        "admission_candidates": 5.060333333333333,
+        "already_running": 0.060333333333333336,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.3333333333333333,
+        "enqueue_to_first_poll_ns": 863711.835,
+        "started_rows": 5.0,
+        "completed_row_polls": 0.0,
+        "completed_sync_calls": 5.0,
+        "publication_ns": 7496.141666666666,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.060333333333333,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-8": {
+        "plan_calls": 0.016,
+        "candidate_rows": 10.597333333333333,
+        "memo_hits": 5.298666666666667,
+        "dependency_records": 60.986666666666665,
+        "access_records": 30.493333333333332,
+        "admission_ns": 2962.3593333333333,
+        "admission_candidates": 5.298666666666667,
+        "already_running": 0.2986666666666667,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.3416666666666667,
+        "enqueue_to_first_poll_ns": 1648743.4576666667,
+        "started_rows": 5.0,
+        "completed_row_polls": 0.0,
+        "completed_sync_calls": 5.0,
+        "publication_ns": 9368.579666666667,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.298666666666667,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-16": {
+        "plan_calls": 0.035,
+        "candidate_rows": 10.134,
+        "memo_hits": 5.067,
+        "dependency_records": 58.67,
+        "access_records": 29.335,
+        "admission_ns": 3159.9933333333333,
+        "admission_candidates": 5.067,
+        "already_running": 0.067,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.49566666666666664,
+        "enqueue_to_first_poll_ns": 1316012.9153333334,
+        "started_rows": 5.0,
+        "completed_row_polls": 0.0,
+        "completed_sync_calls": 5.0,
+        "publication_ns": 11154.178333333333,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.067,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      }
+    }
+  },
+  "attribution": {
+    "async_workers1": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-async-w1-r0",
+        "target/post-ids-profile-20261024-135028/fp-async-w1-r1"
+      ],
+      "sample_counts": [
+        13521,
+        13678
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          10.028844020412691,
+          10.33045766924989
+        ],
+        "completion_and_dispatch": [
+          4.755565416759115,
+          4.781400789589121
+        ],
+        "other_or_unknown": [
+          8.32724082468197,
+          8.875083203905037
+        ],
+        "planning": [
+          33.25778622605644,
+          33.62916944013017
+        ],
+        "publication_and_command_application": [
+          31.41779454182383,
+          31.62011990057026
+        ],
+        "worker_kernel_body": [
+          0.162709858738259,
+          0.2631963737388507
+        ],
+        "worker_row_execution": [
+          11.1308335182309,
+          11.419798216113467
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          14.429406109015606,
+          15.674806258224887
+        ],
+        "btree_operation": [
+          6.667641468050885,
+          6.863397677686562
+        ],
+        "component_payload_hash": [
+          2.558982323792619,
+          2.602719695861968
+        ],
+        "hash_table_operation": [
+          0.4955254788846979,
+          0.541014768240971
+        ],
+        "hash_unknown_key_or_payload": [
+          1.8789296680801286,
+          2.1669994822868133
+        ],
+        "invocation_key_clone": [
+          2.54423161280889,
+          2.877006138599216
+        ],
+        "map_key_hash:Entity": [
+          2.322313438355151,
+          2.54423161280889
+        ],
+        "map_key_hash:SystemId": [
+          1.2867378271677146,
+          1.4200133126248058
+        ],
+        "map_key_hash:SystemInvocation": [
+          3.313364396124547,
+          3.4434858897499634
+        ],
+        "map_key_hash:TypeId": [
+          5.512501827752596,
+          6.131203313364396
+        ],
+        "memory_copy": [
+          2.411064270394202,
+          2.4272554467027345
+        ],
+        "other_leaf": [
+          42.47466903335552,
+          42.80596578447141
+        ],
+        "reservation_bookkeeping": [
+          3.3873234228237554,
+          3.4654189208948676
+        ],
+        "revision_lookup": [
+          6.316712969732417,
+          6.796834553657274
+        ],
+        "unknown_leaf": [
+          2.288346249451674,
+          2.3518970490348345
+        ]
+      },
+      "driver_percent_range": [
+        85.24638104986109,
+        85.607573404334
+      ],
+      "combined_execution_percent_range": [
+        16.049108793728276,
+        16.464395379441438
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.7578593361602572,
+          3.8310775830190074
+        ],
+        "other_in_stage": [
+          4.9626506915169,
+          4.9787980698932595
+        ],
+        "current_dependency_revision_checks": [
+          4.620558561193157,
+          5.007026107536425
+        ],
+        "command_application_storage": [
+          7.559584734610323,
+          7.758301900746986
+        ],
+        "derived_ownership_cleanup": [
+          4.940462983507137,
+          5.512501827752596
+        ],
+        "structural_or_COW_clone": [
+          4.918275275497375,
+          5.190817370960667
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          22.808963834035943,
+          23.044304722912706
+        ],
+        "dependency_collection": [
+          1.5457436580134605,
+          1.5791782424331042
+        ],
+        "memo_revision_checks": [
+          2.5369206024272555,
+          2.603357739812144
+        ],
+        "row_enumeration_and_joins": [
+          6.046205585611932,
+          6.59714518156941
+        ],
+        "access_collection": [
+          0.0511770726714432,
+          0.07395902669920863
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          0.3436174879368329,
+          0.35500332815620145
+        ],
+        "finish_derived_spawns_context": [
+          1.301678869906072,
+          1.4548910659453136
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.28104430145699283,
+          0.39479456060827606
+        ],
+        "command_producer_operation_context": [
+          0.6656312402928778,
+          0.6872349758736658
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.3518970490348345,
+        2.288346249451674
+      ],
+      "unknown_tail_percent": [
+        0.0813549293691295,
+        0.058488083053077934
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "async_workers4": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-async-w4-r0",
+        "target/post-ids-profile-20261024-135028/fp-async-w4-r1"
+      ],
+      "sample_counts": [
+        14476,
+        14492
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          10.04002208114822,
+          10.313622547665101
+        ],
+        "completion_and_dispatch": [
+          6.396794694667035,
+          6.548440518906983
+        ],
+        "other_or_unknown": [
+          8.183825558929064,
+          8.427742470295662
+        ],
+        "planning": [
+          27.60431058303399,
+          28.208666850676234
+        ],
+        "publication_and_command_application": [
+          29.844051890698317,
+          30.298424979276042
+        ],
+        "worker_kernel_body": [
+          0.22105554020447638,
+          0.2553132762903671
+        ],
+        "worker_row_execution": [
+          16.738049184857694,
+          16.919679823350815
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          13.096881037813967,
+          13.518927880630008
+        ],
+        "btree_operation": [
+          5.333977366823075,
+          5.636916275214148
+        ],
+        "component_payload_hash": [
+          2.02870549268562,
+          2.1760154738878144
+        ],
+        "hash_table_operation": [
+          0.5319148936170213,
+          0.7176373171404913
+        ],
+        "hash_unknown_key_or_payload": [
+          1.8837979574937898,
+          2.065487703785576
+        ],
+        "invocation_key_clone": [
+          2.1000276319425257,
+          2.456527739442451
+        ],
+        "map_key_hash:Entity": [
+          2.1460115926028154,
+          2.3003592152528323
+        ],
+        "map_key_hash:SystemId": [
+          1.3125172699640786,
+          1.4007728401876898
+        ],
+        "map_key_hash:SystemInvocation": [
+          2.794645321556721,
+          2.977341807129041
+        ],
+        "map_key_hash:TypeId": [
+          5.430582390284295,
+          5.50566454821774
+        ],
+        "memory_copy": [
+          2.4108869853550705,
+          2.663538504002208
+        ],
+        "other_leaf": [
+          47.14009394860459,
+          48.02649737786365
+        ],
+        "reservation_bookkeeping": [
+          3.350373031224095,
+          3.4294783328733094
+        ],
+        "revision_lookup": [
+          5.844603919403809,
+          6.0513954130975405
+        ],
+        "structural_clone": [
+          0,
+          0.006907985631389887
+        ],
+        "unknown_leaf": [
+          2.746342809826111,
+          2.915169936446532
+        ]
+      },
+      "driver_percent_range": [
+        77.98785536847916,
+        78.10168554849406
+      ],
+      "combined_execution_percent_range": [
+        23.355899419729205,
+        23.723433618548167
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.985907709311965,
+          4.002208114821971
+        ],
+        "other_in_stage": [
+          5.1257253384912955,
+          5.492685619652222
+        ],
+        "current_dependency_revision_checks": [
+          4.761247584874414,
+          4.828681956341531
+        ],
+        "command_application_storage": [
+          7.065967430306376,
+          7.377728654324399
+        ],
+        "derived_ownership_cleanup": [
+          5.202870549268562,
+          5.250069079856314
+        ],
+        "structural_or_COW_clone": [
+          3.319072591774772,
+          3.7303122409505387
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          19.003868471953577,
+          19.83853160364339
+        ],
+        "dependency_collection": [
+          1.2365294280187897,
+          1.366271046094397
+        ],
+        "memo_revision_checks": [
+          1.8561965222191554,
+          2.0309477756286265
+        ],
+        "row_enumeration_and_joins": [
+          5.113165884626,
+          5.298424979276043
+        ],
+        "access_collection": [
+          0.03450179409329285,
+          0.03453992815694943
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          1.5681127383255042,
+          1.7526911399392768
+        ],
+        "finish_derived_spawns_context": [
+          1.3800717637317141,
+          1.409229068803537
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.1863096881037814,
+          0.303951367781155
+        ],
+        "command_producer_operation_context": [
+          1.317968534363787,
+          1.3194252555954684
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.9220779220779223,
+        2.746342809826111
+      ],
+      "unknown_tail_percent": [
+        0.1036197844708483,
+        0.07590394700524428
+      ],
+      "empty_stacks": [
+        0,
+        1
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "async_workers8": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-async-w8-r0",
+        "target/post-ids-profile-20261024-135028/fp-async-w8-r1"
+      ],
+      "sample_counts": [
+        17947,
+        17520
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          10.113110826321948,
+          10.679223744292237
+        ],
+        "completion_and_dispatch": [
+          7.762557077625571,
+          8.302223212793225
+        ],
+        "other_or_unknown": [
+          7.61986301369863,
+          8.040341004067532
+        ],
+        "planning": [
+          23.223937148269904,
+          24.366438356164384
+        ],
+        "publication_and_command_application": [
+          30.77054794520548,
+          31.45372485652198
+        ],
+        "worker_kernel_body": [
+          0.178302780408982,
+          0.2853881278538813
+        ],
+        "worker_row_execution": [
+          18.515981735159816,
+          18.688360171616427
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          13.521689497716896,
+          14.637543879199866
+        ],
+        "btree_operation": [
+          4.617579908675799,
+          4.752883490276926
+        ],
+        "component_payload_hash": [
+          1.6214409093441802,
+          1.6495433789954337
+        ],
+        "hash_table_operation": [
+          0.5460522650025074,
+          0.5878995433789954
+        ],
+        "hash_unknown_key_or_payload": [
+          2.009132420091324,
+          2.050481974703293
+        ],
+        "invocation_key_clone": [
+          2.1173455173566613,
+          2.2773972602739727
+        ],
+        "map_key_hash:Entity": [
+          1.7551679946509167,
+          1.8493150684931507
+        ],
+        "map_key_hash:SystemId": [
+          0.9193737114838134,
+          1.0159817351598173
+        ],
+        "map_key_hash:SystemInvocation": [
+          2.551958544603555,
+          2.665525114155251
+        ],
+        "map_key_hash:TypeId": [
+          4.235159817351598,
+          4.2848386917033485
+        ],
+        "memory_copy": [
+          2.208904109589041,
+          2.26778848832674
+        ],
+        "other_leaf": [
+          49.85791497186159,
+          50.54223744292238
+        ],
+        "reservation_bookkeeping": [
+          3.694210731598596,
+          3.875570776255708
+        ],
+        "revision_lookup": [
+          6.145873962222098,
+          6.329908675799087
+        ],
+        "structural_clone": [
+          0,
+          0.01671588566334206
+        ],
+        "unknown_leaf": [
+          2.6141552511415527,
+          2.7804089820025633
+        ]
+      },
+      "driver_percent_range": [
+        74.98189112386471,
+        75.21118721461187
+      ],
+      "combined_execution_percent_range": [
+        26.563926940639266,
+        27.168886164818634
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.384703196347032,
+          3.4546163704240263
+        ],
+        "other_in_stage": [
+          6.267123287671233,
+          6.413328132835572
+        ],
+        "current_dependency_revision_checks": [
+          5.343511450381679,
+          5.5993150684931505
+        ],
+        "command_application_storage": [
+          6.758789769877974,
+          6.763698630136986
+        ],
+        "derived_ownership_cleanup": [
+          4.557864824204603,
+          5.057077625570776
+        ],
+        "structural_or_COW_clone": [
+          3.6986301369863015,
+          4.925614308798128
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          15.874519418287178,
+          17.09474885844749
+        ],
+        "dependency_collection": [
+          1.3584474885844748,
+          1.443138128935198
+        ],
+        "memo_revision_checks": [
+          1.5582191780821917,
+          1.6102969855686187
+        ],
+        "row_enumeration_and_joins": [
+          4.245834958488884,
+          4.30365296803653
+        ],
+        "access_collection": [
+          0.050147656990026185,
+          0.05136986301369863
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          2.654109589041096,
+          2.67454170613473
+        ],
+        "finish_derived_spawns_context": [
+          0.963949406586059,
+          1.2271689497716896
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.228310502283105,
+          0.4067532178079902
+        ],
+        "command_producer_operation_context": [
+          1.337270853067365,
+          1.3984018264840183
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.785980943890344,
+        2.6141552511415527
+      ],
+      "unknown_tail_percent": [
+        0.07243550454114894,
+        0.06278538812785388
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "async_workers16": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-async-w16-r0",
+        "target/post-ids-profile-20261024-135028/fp-async-w16-r1"
+      ],
+      "sample_counts": [
+        19113,
+        17793
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          10.58965102286402,
+          10.925644916540213
+        ],
+        "completion_and_dispatch": [
+          7.823301298263362,
+          7.984094595301627
+        ],
+        "other_or_unknown": [
+          7.69965716854943,
+          8.559619107413802
+        ],
+        "planning": [
+          22.806466802699735,
+          23.998201539931433
+        ],
+        "publication_and_command_application": [
+          30.641263418198168,
+          31.308533458902318
+        ],
+        "worker_kernel_body": [
+          0.20928164076806363,
+          0.23604788399932558
+        ],
+        "worker_row_execution": [
+          18.542353372050435,
+          18.67588377451807
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          13.376046759961783,
+          14.869460576570921
+        ],
+        "btree_operation": [
+          5.007587253414264,
+          5.0122952963951235
+        ],
+        "component_payload_hash": [
+          1.5486841416836707,
+          1.5736525599955038
+        ],
+        "hash_table_operation": [
+          0.5859885941505781,
+          0.702523464283707
+        ],
+        "hash_unknown_key_or_payload": [
+          1.8835347669125726,
+          1.950205136851571
+        ],
+        "invocation_key_clone": [
+          1.825982315701355,
+          2.141291519136739
+        ],
+        "map_key_hash:Entity": [
+          1.700413331240517,
+          1.9445849491373013
+        ],
+        "map_key_hash:SystemId": [
+          0.9522314654946895,
+          1.0678356657112347
+        ],
+        "map_key_hash:SystemInvocation": [
+          2.4642913200439494,
+          2.815714044849098
+        ],
+        "map_key_hash:TypeId": [
+          4.305969758802909,
+          4.310683976844826
+        ],
+        "memory_copy": [
+          2.234081515199079,
+          2.4672624065643793
+        ],
+        "other_leaf": [
+          50.064632158714105,
+          50.185737456181656
+        ],
+        "reservation_bookkeeping": [
+          3.8507821901323704,
+          3.894790085988872
+        ],
+        "revision_lookup": [
+          5.943598597813007,
+          5.979879727982914
+        ],
+        "structural_clone": [
+          0,
+          0.010464082038403181
+        ],
+        "unknown_leaf": [
+          2.6264845916391986,
+          2.7033102905637048
+        ]
+      },
+      "driver_percent_range": [
+        74.69261759012191,
+        74.7541167875007
+      ],
+      "combined_execution_percent_range": [
+        26.73523295678076,
+        26.735729608120128
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.207241144770575,
+          3.7542853931321307
+        ],
+        "other_in_stage": [
+          6.31507351017632,
+          6.5587590625526895
+        ],
+        "current_dependency_revision_checks": [
+          5.063789130556961,
+          5.122168157798357
+        ],
+        "command_application_storage": [
+          6.569999437981228,
+          6.848741694134882
+        ],
+        "derived_ownership_cleanup": [
+          4.5047873175325694,
+          4.9457651885572975
+        ],
+        "structural_or_COW_clone": [
+          3.748665205417861,
+          5.310521634489614
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          15.837388165123215,
+          16.52897206766706
+        ],
+        "dependency_collection": [
+          1.2190655574739706,
+          1.3938065531388748
+        ],
+        "memo_revision_checks": [
+          1.6186140617096612,
+          1.6271647569716947
+        ],
+        "row_enumeration_and_joins": [
+          4.0548317898812325,
+          4.394986792558871
+        ],
+        "access_collection": [
+          0.06182206485696622,
+          0.06801653324962068
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          2.405440341707413,
+          2.4328990739287395
+        ],
+        "finish_derived_spawns_context": [
+          0.9722924745686506,
+          0.9993198346675038
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.19670656999943797,
+          0.2825302150368859
+        ],
+        "command_producer_operation_context": [
+          1.0934965730131325,
+          1.3207441128533692
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.6264845916391986,
+        2.7089304782779746
+      ],
+      "unknown_tail_percent": [
+        0.07324857426882227,
+        0.0393413139998876
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "sync_workers1": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-sync-w1-r0",
+        "target/post-ids-profile-20261024-135028/fp-sync-w1-r1"
+      ],
+      "sample_counts": [
+        12798,
+        12813
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          10.856161710762507,
+          11.517424597593374
+        ],
+        "completion_and_dispatch": [
+          7.063603688076262,
+          7.164598454694451
+        ],
+        "other_or_unknown": [
+          9.548366932333177,
+          9.724498556153906
+        ],
+        "planning": [
+          30.968547568875362,
+          31.262697296452572
+        ],
+        "publication_and_command_application": [
+          32.19253008282544,
+          32.85725435104972
+        ],
+        "worker_kernel_body": [
+          0.22659790592280044,
+          0.29657379224225394
+        ],
+        "worker_row_execution": [
+          8.132365566221806,
+          8.188779496796375
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          14.650726676043131,
+          14.750643877312104
+        ],
+        "btree_operation": [
+          6.313486482262854,
+          6.407554827128697
+        ],
+        "component_payload_hash": [
+          2.7348023128613845,
+          2.778428158901116
+        ],
+        "hash_table_operation": [
+          0.5782153461478357,
+          0.6165613049246859
+        ],
+        "hash_unknown_key_or_payload": [
+          1.9768713861540865,
+          2.107234839616015
+        ],
+        "invocation_key_clone": [
+          2.5208772340591588,
+          2.6644788248163778
+        ],
+        "map_key_hash:Entity": [
+          2.60978277855915,
+          2.630141262779989
+        ],
+        "map_key_hash:SystemId": [
+          1.3267774916100834,
+          1.7424597593373965
+        ],
+        "map_key_hash:SystemInvocation": [
+          3.727144866385373,
+          3.793022711308827
+        ],
+        "map_key_hash:TypeId": [
+          6.079074855446163,
+          6.26707250448763
+        ],
+        "memory_copy": [
+          1.3908423191123613,
+          1.4672598142511513
+        ],
+        "other_leaf": [
+          42.6629160806376,
+          42.69101693592445
+        ],
+        "reservation_bookkeeping": [
+          3.3637711699055646,
+          3.3755274261603376
+        ],
+        "revision_lookup": [
+          6.844610942012019,
+          6.985466479137365
+        ],
+        "structural_clone": [
+          0,
+          0.00781372089388967
+        ],
+        "unknown_leaf": [
+          2.435026925778506,
+          2.5003906860446943
+        ]
+      },
+      "driver_percent_range": [
+        86.49028330601733,
+        86.84169401468979
+      ],
+      "combined_execution_percent_range": [
+        15.478981090795438,
+        15.59353781315851
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.995941621790369,
+          4.360056258790436
+        ],
+        "other_in_stage": [
+          4.883575558681044,
+          4.901272145477249
+        ],
+        "current_dependency_revision_checks": [
+          5.135409349879029,
+          5.313330207844976
+        ],
+        "command_application_storage": [
+          7.798093452101891,
+          7.952860376180442
+        ],
+        "derived_ownership_cleanup": [
+          5.414908579465542,
+          5.728556934363537
+        ],
+        "structural_or_COW_clone": [
+          4.422566025941554,
+          5.143213923359088
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          20.62822315986873,
+          20.838211191758372
+        ],
+        "dependency_collection": [
+          1.459455240771092,
+          1.539303016096265
+        ],
+        "memo_revision_checks": [
+          2.5364863810192775,
+          2.742616033755274
+        ],
+        "row_enumeration_and_joins": [
+          6.126590181846562,
+          6.336927644944523
+        ],
+        "access_collection": [
+          0.007804573480059315,
+          0.01562744178777934
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          0.28096464528213533,
+          0.2891076730739178
+        ],
+        "finish_derived_spawns_context": [
+          1.5471167369901546,
+          1.6311558573323968
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.21852805744166082,
+          0.2656665103922488
+        ],
+        "command_producer_operation_context": [
+          0.7032348804500703,
+          0.7648482010458129
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.516018127832474,
+        2.435026925778506
+      ],
+      "unknown_tail_percent": [
+        0.0781372089388967,
+        0.07804573480059315
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "sync_workers4": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-sync-w4-r0",
+        "target/post-ids-profile-20261024-135028/fp-sync-w4-r1"
+      ],
+      "sample_counts": [
+        14325,
+        14106
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          11.25053168864313,
+          11.280977312390926
+        ],
+        "completion_and_dispatch": [
+          11.504363001745201,
+          11.881468878491422
+        ],
+        "other_or_unknown": [
+          9.172774869109947,
+          9.733446760243869
+        ],
+        "planning": [
+          24.734155678434707,
+          26.108202443280977
+        ],
+        "publication_and_command_application": [
+          31.55322862129145,
+          31.986388770735857
+        ],
+        "worker_kernel_body": [
+          0.2513089005235602,
+          0.31192400396994185
+        ],
+        "worker_row_execution": [
+          10.102084219481071,
+          10.12914485165794
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          13.431064572425829,
+          14.24216645399121
+        ],
+        "btree_operation": [
+          6.052356020942408,
+          6.125053168864313
+        ],
+        "component_payload_hash": [
+          2.345549738219895,
+          2.4103218488586418
+        ],
+        "hash_table_operation": [
+          0.4466184602296895,
+          0.5095986038394416
+        ],
+        "hash_unknown_key_or_payload": [
+          1.9353466609953212,
+          2.143106457242583
+        ],
+        "invocation_key_clone": [
+          1.97079257053736,
+          2.2059336823734728
+        ],
+        "map_key_hash:Entity": [
+          2.317626527050611,
+          2.495392031759535
+        ],
+        "map_key_hash:SystemId": [
+          1.141358287253651,
+          1.2984293193717278
+        ],
+        "map_key_hash:SystemInvocation": [
+          3.2949389179755673,
+          3.324826315043244
+        ],
+        "map_key_hash:TypeId": [
+          5.813129164894371,
+          6.101221640488657
+        ],
+        "memory_copy": [
+          1.2076788830715532,
+          1.3469445625974763
+        ],
+        "other_leaf": [
+          47.232111692844676,
+          47.54714305969091
+        ],
+        "reservation_bookkeeping": [
+          2.966841186736475,
+          2.991634765348079
+        ],
+        "revision_lookup": [
+          5.628810435275769,
+          6.303664921465969
+        ],
+        "structural_clone": [
+          0,
+          0.01417836381681554
+        ],
+        "unknown_leaf": [
+          2.5662838508436128,
+          2.5898778359511345
+        ]
+      },
+      "driver_percent_range": [
+        79.63278037714447,
+        79.74171029668412
+      ],
+      "combined_execution_percent_range": [
+        21.884816753926703,
+        22.295477101942435
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.977031050616759,
+          4.0
+        ],
+        "other_in_stage": [
+          5.619546247818499,
+          5.898199347795265
+        ],
+        "current_dependency_revision_checks": [
+          4.558343967106196,
+          5.31239092495637
+        ],
+        "command_application_storage": [
+          7.448516579406632,
+          7.592513823904722
+        ],
+        "derived_ownership_cleanup": [
+          5.179755671902269,
+          5.536651070466468
+        ],
+        "structural_or_COW_clone": [
+          3.993019197207679,
+          4.423649510846448
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          16.475258755139656,
+          17.82198952879581
+        ],
+        "dependency_collection": [
+          1.2984293193717278,
+          1.325677016872253
+        ],
+        "memo_revision_checks": [
+          1.8290089323692047,
+          1.9267015706806283
+        ],
+        "row_enumeration_and_joins": [
+          5.040139616055846,
+          5.075854246419963
+        ],
+        "access_collection": [
+          0.020942408376963352,
+          0.02835672763363108
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          1.6614310645724257,
+          1.8715440238196512
+        ],
+        "finish_derived_spawns_context": [
+          1.4171029668411868,
+          1.5312632922160783
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.5165794066317626,
+          0.6025804622146604
+        ],
+        "command_producer_operation_context": [
+          1.3114986530554373,
+          1.4171029668411868
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.5968586387434556,
+        2.5804622146604284
+      ],
+      "unknown_tail_percent": [
+        0.07678883071553229,
+        0.0708918190840777
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "sync_workers8": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-sync-w8-r0",
+        "target/post-ids-profile-20261024-135028/fp-sync-w8-r1"
+      ],
+      "sample_counts": [
+        16873,
+        17109
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          11.076041849319072,
+          11.675457832039353
+        ],
+        "completion_and_dispatch": [
+          13.631245184614473,
+          13.928341808404934
+        ],
+        "other_or_unknown": [
+          8.777336573223494,
+          9.310889005786429
+        ],
+        "planning": [
+          21.35718043135192,
+          21.430688081550407
+        ],
+        "publication_and_command_application": [
+          32.43051028270017,
+          32.92419194575954
+        ],
+        "worker_kernel_body": [
+          0.2863989713016541,
+          0.3200379304213833
+        ],
+        "worker_row_execution": [
+          11.116955988076452,
+          11.734724115450721
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          14.312807443845196,
+          15.307732772225144
+        ],
+        "btree_operation": [
+          5.2924791086350975,
+          5.307148284528611
+        ],
+        "component_payload_hash": [
+          1.6890890772239673,
+          1.9054298907008007
+        ],
+        "hash_table_operation": [
+          0.6163693474782196,
+          0.6487813431527266
+        ],
+        "hash_unknown_key_or_payload": [
+          1.8728145557992057,
+          1.9697235373195394
+        ],
+        "invocation_key_clone": [
+          2.004792799111579,
+          2.1395128311503586
+        ],
+        "map_key_hash:Entity": [
+          1.8878952598047811,
+          1.9202275825282997
+        ],
+        "map_key_hash:SystemId": [
+          1.019380074675517,
+          1.116371500379917
+        ],
+        "map_key_hash:SystemInvocation": [
+          2.577590741714887,
+          2.8447816037456293
+        ],
+        "map_key_hash:TypeId": [
+          4.810333742474721,
+          5.132460143424406
+        ],
+        "memory_copy": [
+          1.356011455958852,
+          1.4164641735316779
+        ],
+        "other_leaf": [
+          49.284002571745866,
+          49.285841284893024
+        ],
+        "reservation_bookkeeping": [
+          3.015956514115378,
+          3.3129852426954307
+        ],
+        "revision_lookup": [
+          6.181473359805606,
+          6.183879829329593
+        ],
+        "structural_clone": [
+          0.01168975393067976,
+          0.017779885023410182
+        ],
+        "unknown_leaf": [
+          2.6126600035069263,
+          2.9455342855449533
+        ]
+      },
+      "driver_percent_range": [
+        76.47128548568719,
+        76.60295750774446
+      ],
+      "combined_execution_percent_range": [
+        25.33169676778304,
+        25.686007230486577
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.5186159331346074,
+          3.864161678421146
+        ],
+        "other_in_stage": [
+          6.3826056461511484,
+          6.8393291056717835
+        ],
+        "current_dependency_revision_checks": [
+          5.138386771765543,
+          5.301303407563271
+        ],
+        "command_application_storage": [
+          6.738576423872459,
+          6.984627973581156
+        ],
+        "derived_ownership_cleanup": [
+          4.830202098026433,
+          5.137646852533754
+        ],
+        "structural_or_COW_clone": [
+          5.019854204942808,
+          5.599392132795605
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          14.091998363434449,
+          14.111302080246547
+        ],
+        "dependency_collection": [
+          1.268338301478754,
+          1.3216381200734901
+        ],
+        "memo_revision_checks": [
+          1.6716348120872055,
+          1.718722218929651
+        ],
+        "row_enumeration_and_joins": [
+          4.279025662300717,
+          4.295984569524811
+        ],
+        "access_collection": [
+          0,
+          0.0292243848266994
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          2.542523558347656,
+          2.5834356186802268
+        ],
+        "finish_derived_spawns_context": [
+          1.173472411545072,
+          1.2391139166520544
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.48005689563207493,
+          0.6370915892220469
+        ],
+        "command_producer_operation_context": [
+          1.3749777751437207,
+          1.5313577649190484
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.9455342855449533,
+        2.6126600035069263
+      ],
+      "unknown_tail_percent": [
+        0.04148639838795709,
+        0.07598340054941843
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "sync_workers16": {
+      "profiles": [
+        "target/post-ids-profile-20261024-135028/fp-sync-w16-r0",
+        "target/post-ids-profile-20261024-135028/fp-sync-w16-r1"
+      ],
+      "sample_counts": [
+        18139,
+        17843
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          11.500082694746126,
+          11.875805638065348
+        ],
+        "completion_and_dispatch": [
+          12.761306955108445,
+          13.457191686421522
+        ],
+        "other_or_unknown": [
+          9.510732500140112,
+          9.548486686145873
+        ],
+        "planning": [
+          21.054082363967144,
+          21.20159166059519
+        ],
+        "publication_and_command_application": [
+          31.99574062657625,
+          32.239925023430175
+        ],
+        "worker_kernel_body": [
+          0.269013058342207,
+          0.3087270522079497
+        ],
+        "worker_row_execution": [
+          11.891504493081205,
+          12.385809561172449
+        ]
+      },
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          13.904612453062827,
+          14.416450741496224
+        ],
+        "btree_operation": [
+          5.027181527769994,
+          5.325541650587133
+        ],
+        "component_payload_hash": [
+          1.473967382166676,
+          1.626330007166878
+        ],
+        "hash_table_operation": [
+          0.6119411213407575,
+          0.6557193297091296
+        ],
+        "hash_unknown_key_or_payload": [
+          1.9111136019727624,
+          2.039803737802525
+        ],
+        "invocation_key_clone": [
+          1.780693533270853,
+          1.8326514599562853
+        ],
+        "map_key_hash:Entity": [
+          1.9055091632572998,
+          1.9405700424499697
+        ],
+        "map_key_hash:SystemId": [
+          0.9868239704504107,
+          1.0816566720842908
+        ],
+        "map_key_hash:SystemInvocation": [
+          2.624179943767573,
+          2.7798016028694725
+        ],
+        "map_key_hash:TypeId": [
+          4.674101888695847,
+          5.082970395280887
+        ],
+        "memory_copy": [
+          1.2404211919069408,
+          1.33385641428011
+        ],
+        "other_leaf": [
+          49.85390594850874,
+          50.854676904108054
+        ],
+        "reservation_bookkeeping": [
+          3.368432658911737,
+          3.7605783780754356
+        ],
+        "revision_lookup": [
+          6.14246483214706,
+          6.229670874910414
+        ],
+        "structural_clone": [
+          0.005604438715462646,
+          0.011025966150283919
+        ],
+        "unknown_leaf": [
+          2.6565039511292943,
+          2.861238215998677
+        ]
+      },
+      "driver_percent_range": [
+        75.67671867247367,
+        75.85047357507146
+      ],
+      "combined_execution_percent_range": [
+        25.416129574623103,
+        25.657423231710677
+      ],
+      "publication_subcost_percent_ranges": {
+        "write_revision_reconciliation": [
+          3.4235624896631567,
+          3.4747520035868407
+        ],
+        "other_in_stage": [
+          6.630051000392311,
+          6.632118639395777
+        ],
+        "current_dependency_revision_checks": [
+          5.220794972159435,
+          5.307403463543126
+        ],
+        "command_application_storage": [
+          6.557193297091296,
+          6.819560063950604
+        ],
+        "derived_ownership_cleanup": [
+          4.859048366306115,
+          4.901041953801202
+        ],
+        "structural_or_COW_clone": [
+          5.16729249565656,
+          5.242846904460003
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "other_in_stage": [
+          13.792523678753573,
+          13.810022603230609
+        ],
+        "dependency_collection": [
+          1.3120899718837864,
+          1.3394608529955725
+        ],
+        "memo_revision_checks": [
+          1.6421005436305554,
+          1.7200507194442913
+        ],
+        "row_enumeration_and_joins": [
+          4.167815204807321,
+          4.399484391638177
+        ],
+        "access_collection": [
+          0.028022193577313233,
+          0.044103864601135676
+        ]
+      },
+      "overlapping_context_tag_percent_ranges": {
+        "spawn_slots_context": [
+          2.7685927254385474,
+          2.877777165224103
+        ],
+        "finish_derived_spawns_context": [
+          1.1522134627046694,
+          1.1657232528162305
+        ],
+        "explicit_shared_row_context_Arc_clone_or_drop": [
+          0.35307963907414674,
+          0.42449969678593086
+        ],
+        "command_producer_operation_context": [
+          1.218369259606373,
+          1.3506697304264978
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.866751199073819,
+        2.662108389844757
+      ],
+      "unknown_tail_percent": [
+        0.044103864601135676,
+        0.08967101944740234
+      ],
+      "empty_stacks": [
+        1,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    }
+  },
+  "planning_parallelism_boundary": {
+    "potential_read_only_work": "Candidate row enumeration, read-only join lookup/product construction, memo comparisons, dependency/key/access descriptions against captured immutable snapshot+memo are potential distributed candidate-generation work. Measured planning share is not a guaranteed parallelizable fraction.",
+    "ordering_and_state_constraints": "Provider-before-bound join order, per-pass scratch ownership, fallback component slot registration and candidate ordering need preservation. Admission/reservation mutation and run-ID allocation remain coordinated after candidate generation.",
+    "publication_boundary": "Live-world freshness validation, write-revision reconciliation, command application, derived owner/index cleanup and memo publication observe/mutate current world and must remain consistent with commit ordering. They cannot simply be moved to a stale snapshot worker check.",
+    "concrete_followup_hypothesis": "spawn_slots call-context sample share rises from~0.3% at1worker to~2.4-2.9% at8/16, while finish_derived_spawns adds~1-1.6%. Source shows shared spawn-bookkeeping Mutex touched even for no-spawn invocations. A narrow skip/lazy-acquisition experiment is better supported than assuming all planner work is the scaling bottleneck; samples do not prove contention."
+  },
+  "limitations": [
+    "Sixteen independent100-round FP recordings: async/sync x1/4/8/16workers x2processes,5warmup rounds,1000slots,statsOFF. No extra recordings after consistency.",
+    "FP changes optimization/layout and timing; its phase fractions cannot be multiplied by normal PMU/task-clock to claim exact physical driverCPU time.",
+    "Normal core counters have2processes/configuration,100%coverage. Software task-clock has1process/configuration,100%coverage,aggregate across all threads; no per-thread task-clock available in existing runner.",
+    "Cycle, instruction and task-clock increases can suggest coordination/cache/stall costs but cannot identify a specific lock or cacheline without a focused controlled experiment.",
+    "Exclusive ownership uses nearest recognized actual outer function, ignoring generic nested names. Other/unknown remains explicit; mechanisms and context tags are separate overlapping dimensions.",
+    "Admission includes reservation release. Worker row execution/completion/kernel boundaries depend on inlining; resolved kernelbody share is not total business-logic cost.",
+    "Publication includes command application of measured input/derived paths; phase subcosts with ambiguous callers remain other.",
+    "revision_for_entity generic symbols may be identical-code-folded to Stamp; no claim that Stamp data is active.",
+    "On-CPU sampling does not measure time blocked off-CPU. Command-producer operation tags are not all lock cost; explicit lock primitive symbols were not resolved there.",
+    "Explicit Arc clone/drop tags miss inlined atomic operations and cannot establish negligible total reference-count cost.",
+    "No source edits, new builds, commits or engine optimization by benchmark agent."
+  ],
+  "total_sample_count": 252546,
+  "total_empty_stack_samples": 2,
+  "artifact_root": "target/post-ids-profile-20261024-135028",
+  "preserved_manifests": {
+    "attribution": {
+      "binaries": {
+        "steady_allocations": {
+          "original": "/home/jonas/Development/Rust/porridge/target/profiling-fp/release/examples/steady_allocations",
+          "sha256": "06c79370b8fccacef8e5a4b0c91d1174a3fd6d52f8ee63b2b04603848aa4e45f",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        }
+      },
+      "source_sha256": {
+        "crates/playground/build.rs": "a7d22b5d2df3e8f2d219b91493849efcf9e141b481105c516d6c62927c4bbbdf",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/benches/engine.rs": "19224f5df3ca5ba68008cc7bbaf63109ea78b038d2dd2f3c70f64e032cfa7c8e",
+        "crates/benches/benches/stateful.rs": "18574c42216a6daf6232d808533d29a971d62d04b10424783e54194ed06da9ee",
+        "crates/benches/benches/dispatch.rs": "5a462b67279929e9a62386ae3d18d30124448f6e48a8466968faf1c03a584b0a",
+        "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+        "crates/benches/examples/profile_purchases.rs": "170e8d7dc37f84eeecce9fb95e8141d31f448f7874f584f628c8a828f68e9805",
+        "crates/benches/examples/steady_allocations.rs": "2add51f3cea275a5015a37ce359ec83c978aa98e1f00fc2801ad0f8bdc6d956b",
+        "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+        "crates/benches/examples/profile_allocations.rs": "87232953eb9efb9cfbe84f321124e48469404c842b514fcb000d252f7756af90",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+        "crates/benches/examples/support/perf_control.rs": "2187f55d3761e20045b756b088700901591e7c48ec14216e927730803f27ff87",
+        "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+        "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+        "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+        "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+        "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "bebf454572624ffe465a91b7b8ee141546d42cb3b16af19efe3cdcaa51cffd82",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "3e8d7eb894d88698422ce5cdd0122f620f3d55ff6b2ccc68ee917e2dcfca26a2",
+        "crates/benches/src/stateful/steady.rs": "e3b39a11ec99239dba29cf4a1a65bcab5bf03d417c4e30163b190dc1083eca2c",
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "e459fb8f5257a933b5c7d79f8ef37455d6b6cacdb1ea37fa704ba3bdb988ed99",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "4e25c2cb4528eff294feabe8801461074abaac63fe87b72c4e135968d4dbc75d",
+        "crates/bowl/src/system.rs": "75f3c401b9e2d692209a963e92207849bfde0b2df46ae6b044cbea958023f38e",
+        "crates/bowl/src/world.rs": "d3102e7d0f49200d483378dd8cbf4c88856e661c4907e4a7758a3e074e4cc7c1",
+        "crates/bowl/src/access.rs": "3399cd9ab09e27938f485359d5922841f46fe8e7834fa9c85464ecad59fcb965",
+        "crates/bowl/src/bowl.rs": "49595b86ec4b4451d8de1e61707ed50c4b0641732119a4b11c5cf912134ac333",
+        "crates/bowl/src/dispatch.rs": "f9db2318c9b73c1fb00b8ecdd467c2918a55ed0ac5758f4a390e98f404ccc4cd",
+        "crates/bowl/src/lib.rs": "7fca629e439b6b6744d22b553f81f29ef6e9531ea88e91521ee92e8f0adbc046",
+        "crates/bowl/src/prepared.rs": "ed5cc01ee3b8a2d8a868d4bf98ae8a4519dc0ee4449c1ac447b94a24734f2bdf",
+        "crates/bowl/src/metrics.rs": "f75f52a73c6eca10db1b74af13c4a6c2210d8ceec92c80812b403dadaddbdc86",
+        "crates/bowl/src/planning.rs": "73188ecf08f39a1bbf0719825137c207a559a465c779ce0c1cedb956688b2516",
+        "crates/bowl/src/profiling_tests.rs": "33a5b0fce8c7d2434b4b0464d6c01691656694b202be8042e9636e2d1d91900c",
+        "crates/bowl/src/dispatch/plan.rs": "ca0cf493e7a0f08f6691cd316d0c662f31bb0038660613b66656d108520b80b5",
+        "crates/bowl/src/dispatch/executor.rs": "94de27dd31941a911a7729b6df2d098e43f0088e96c574a1e305f3794632179f",
+        "crates/bowl/src/system/planning_tests.rs": "2bd0b2880dbef5da67e206841d78b26f1498a25d144ff89e0bd41119443aadbb",
+        "crates/bowl/src/system/synchronous.rs": "efb4a31beaeeb8f5c9021a025a19e097e473e571aab0b1bc66721fb300949d59",
+        "crates/bowl/src/world/stores.rs": "60fde14da6f856121e8dbac2bcdf00e5c79d7a11d064e7f34a91f9270a7ea9bf",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+        "crates/bowl/src/world/invocation_tests.rs": "d89bd9f9843b258424ff1167bdedf0425e6b9fbce461a5eeb779499932652804",
+        "crates/bowl/src/prepared/tests.rs": "f3a7248e093eb90067a8565fbdd0a75875853f2020d9763bba49b894e95a036c",
+        "crates/bowl/src/prepared/rows.rs": "ce8bf61a784bc71b6b65e0b0f5957eeb7992df3e2bbaa9397c323ccdd0b5dd88",
+        "crates/bowl/src/query/guards.rs": "bd442c6b8e340cde7890166003a3ccb5d5b4f22d6c45e7c429aba083ea82a032",
+        "crates/bowl/src/commands/arena.rs": "28ebea4b8e036f06804718d61a6e02a19c644538869fcc1883afd4a46f0b21b7",
+        "crates/bowl/src/access/tests.rs": "ab16dfc4d163d854891cad0125bb09a389917aa80e34a55b4943df3bfe539737",
+        "crates/bowl/src/commands/arena/tests.rs": "9b8b0a414203c13d345e81530027a7c20da794eb6b6c7d1d11da0daa34db9b72",
+        "crates/bowl/src/prepared/rows/tests.rs": "0cd239913332adb1309564c3dc313e4bf2bfa0d784cc457e8562c80f645e12fe",
+        "crates/bowl/src/system/synchronous/tests.rs": "4c262eb2e45a03a529487460eaedd2ce21fadd42bc1af796007b59ee18f52f2d",
+        "crates/macros/src/lib.rs": "66165412874d1211652f8d562bd67cca8bdbd0b3c6b9ec465ce45a492f3018bf",
+        "crates/playground/src/tests.rs": "63f7d0898fefb25e8b456a2a6cb9d91bed13aa1bfa6fae48bc54d2ac7ad80e25",
+        "crates/playground/src/replication.rs": "7fa007b5166bab6b9973fa30bbf58336958b263a3f8a662168eb8010b5c484e5",
+        "crates/playground/src/main.rs": "60074f02a266fdb207daaa1a6326e14c57d282ea7330e9ab23f0a95496c26989",
+        "crates/playground/src/lang/entity.rs": "47ab9803de29a7ee03b0ac970771358b0b72b07c1b575c4618dddec5b207f815",
+        "crates/playground/src/lang/facts.rs": "d6eb0d5cf739663efb83309b3f805e5489a1497b1004d19c462933f6bcb2ff66",
+        "crates/playground/src/lang/schema.rs": "8bd0737550286defbc0aced238de7ba4f2c4a3c7a86df2b22d4b275106ccde2c",
+        "crates/playground/src/lang/mod.rs": "219477327d483515936c11a5b39725cf04ed11941e117b87b2d1b9d24f2fa56b",
+        "crates/playground/src/lang/grammar/parser.rs": "48b084de2b108fc63013a778a489f27f922bc0e9cd6305f5fffa32ca9ed1d1f3",
+        "crates/playground/src/lang/grammar/mod.rs": "197151ddbccbe728832111ddae440928405b807713164fe54567f3da8fbcad75",
+        "crates/playground/src/lang/grammar/lexer.rs": "f6593474990ee511ac3c1896ac6644eb9555f2d48879562fbba5407aeeb77db4",
+        "crates/playground/src/lang/service/mod.rs": "163249bd48834fc9810c99225d464bb7e376135d9b80e3cfe35af4472dc5d996",
+        "crates/playground/src/lang/service/hover.rs": "e6d17b7c62d08c1920123e141cf2ff0b22d40d9aece714a7aedc5a1d72280c8a",
+        "crates/playground/src/lang/entities/mod.rs": "115c05a95635d74d5605d12e5d382a511bf19f73dc4a022bb4e403c92cd5aa9f",
+        "crates/playground/src/lang/entities/document.rs": "9851e0a7233aa3df12b46327780c4c5a232f7f8b5183b709cc599eb6a3aea55c",
+        "crates/playground/src/lang/entities/namespace.rs": "ad8289b7039a3ea37f543e9a63b1310028f6e61836eb42e4d5330abc183b3b1e",
+        "crates/playground/src/lang/entities/import.rs": "c92dfaa2e5309f17ddca103f9f1a7860a55cd363e021e683d8c0bfa93b4faa3c",
+        "crates/playground/src/lang/entities/definition.rs": "cce8d5d8948b600a63425948207fdafe19cc0493a0deb4b911f66813fc0736f7"
+      },
+      "actual_build_command": "CARGO_TARGET_DIR=target/profiling-fp RUSTFLAGS='-C force-frame-pointers=yes' cargo build --workspace --examples --profile bench -j20 --message-format=json",
+      "manifest_sha256": "f229addf1d5ea0c5c55e164a9c98d033dc07c304ff8d975cb6e83f894095c4fb",
+      "feature_graph_sha256": "75754779c6979095e14d443468b668a942ea30742a1d12f50b4d51320c305363"
+    },
+    "normal": {
+      "binaries": {
+        "command_buffers": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/command_buffers-87bae43e5cc8f50a",
+          "sha256": "bbecb308f94eb2520415fa64c6c628ca2dfaec2f3cdf7bbeb7f03f65bd1f17cf",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        },
+        "playground": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/playground",
+          "sha256": "855c2154ebe1017aba876c43abf6acca5fa8e70d525f04b4d92cb4c77a415275",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "dispatch": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/dispatch-ff322b621ff80cee",
+          "sha256": "0eebaadc5d221943d5946a921785292c7f8699fbab07d476adb5e629cc908b3a",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        },
+        "profile_allocations": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/examples/profile_allocations",
+          "sha256": "055d8d08576daa21704988613bd759f0bc5ac6e7b4c2ee6a838ab627f0a294b3",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "steady_allocations": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+          "sha256": "c1047c917292f3a46bfce21be54d54e6ae13fb67003f7e9724aa9372f0109602",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "profile_purchases": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/examples/profile_purchases",
+          "sha256": "929a6b84118d5c95c8f85054ae8f51c2c02032f0104bee10be22b77113ae5db9",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "stateful": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/stateful-ddf66b1b779a2eba",
+          "sha256": "9099279c69e9b3f4288c0d8040bcc8586fca56d4c2de6eb0e6f00433091054fa",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        },
+        "engine": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/engine-3668254fd99c3494",
+          "sha256": "c3d82401ad36ca5e1fd7a0f57ae6626344ba2802efcdfbe0143a70194ddccf79",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        }
+      },
+      "source_sha256": {
+        "crates/playground/build.rs": "a7d22b5d2df3e8f2d219b91493849efcf9e141b481105c516d6c62927c4bbbdf",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/benches/engine.rs": "19224f5df3ca5ba68008cc7bbaf63109ea78b038d2dd2f3c70f64e032cfa7c8e",
+        "crates/benches/benches/stateful.rs": "18574c42216a6daf6232d808533d29a971d62d04b10424783e54194ed06da9ee",
+        "crates/benches/benches/dispatch.rs": "5a462b67279929e9a62386ae3d18d30124448f6e48a8466968faf1c03a584b0a",
+        "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+        "crates/benches/examples/profile_purchases.rs": "170e8d7dc37f84eeecce9fb95e8141d31f448f7874f584f628c8a828f68e9805",
+        "crates/benches/examples/steady_allocations.rs": "2add51f3cea275a5015a37ce359ec83c978aa98e1f00fc2801ad0f8bdc6d956b",
+        "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+        "crates/benches/examples/profile_allocations.rs": "87232953eb9efb9cfbe84f321124e48469404c842b514fcb000d252f7756af90",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+        "crates/benches/examples/support/perf_control.rs": "2187f55d3761e20045b756b088700901591e7c48ec14216e927730803f27ff87",
+        "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+        "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+        "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+        "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+        "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "bebf454572624ffe465a91b7b8ee141546d42cb3b16af19efe3cdcaa51cffd82",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "3e8d7eb894d88698422ce5cdd0122f620f3d55ff6b2ccc68ee917e2dcfca26a2",
+        "crates/benches/src/stateful/steady.rs": "e3b39a11ec99239dba29cf4a1a65bcab5bf03d417c4e30163b190dc1083eca2c",
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "e459fb8f5257a933b5c7d79f8ef37455d6b6cacdb1ea37fa704ba3bdb988ed99",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "4e25c2cb4528eff294feabe8801461074abaac63fe87b72c4e135968d4dbc75d",
+        "crates/bowl/src/system.rs": "75f3c401b9e2d692209a963e92207849bfde0b2df46ae6b044cbea958023f38e",
+        "crates/bowl/src/world.rs": "d3102e7d0f49200d483378dd8cbf4c88856e661c4907e4a7758a3e074e4cc7c1",
+        "crates/bowl/src/access.rs": "3399cd9ab09e27938f485359d5922841f46fe8e7834fa9c85464ecad59fcb965",
+        "crates/bowl/src/bowl.rs": "49595b86ec4b4451d8de1e61707ed50c4b0641732119a4b11c5cf912134ac333",
+        "crates/bowl/src/dispatch.rs": "f9db2318c9b73c1fb00b8ecdd467c2918a55ed0ac5758f4a390e98f404ccc4cd",
+        "crates/bowl/src/lib.rs": "7fca629e439b6b6744d22b553f81f29ef6e9531ea88e91521ee92e8f0adbc046",
+        "crates/bowl/src/prepared.rs": "ed5cc01ee3b8a2d8a868d4bf98ae8a4519dc0ee4449c1ac447b94a24734f2bdf",
+        "crates/bowl/src/metrics.rs": "f75f52a73c6eca10db1b74af13c4a6c2210d8ceec92c80812b403dadaddbdc86",
+        "crates/bowl/src/planning.rs": "73188ecf08f39a1bbf0719825137c207a559a465c779ce0c1cedb956688b2516",
+        "crates/bowl/src/profiling_tests.rs": "33a5b0fce8c7d2434b4b0464d6c01691656694b202be8042e9636e2d1d91900c",
+        "crates/bowl/src/dispatch/plan.rs": "ca0cf493e7a0f08f6691cd316d0c662f31bb0038660613b66656d108520b80b5",
+        "crates/bowl/src/dispatch/executor.rs": "94de27dd31941a911a7729b6df2d098e43f0088e96c574a1e305f3794632179f",
+        "crates/bowl/src/system/planning_tests.rs": "2bd0b2880dbef5da67e206841d78b26f1498a25d144ff89e0bd41119443aadbb",
+        "crates/bowl/src/system/synchronous.rs": "efb4a31beaeeb8f5c9021a025a19e097e473e571aab0b1bc66721fb300949d59",
+        "crates/bowl/src/world/stores.rs": "60fde14da6f856121e8dbac2bcdf00e5c79d7a11d064e7f34a91f9270a7ea9bf",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+        "crates/bowl/src/world/invocation_tests.rs": "d89bd9f9843b258424ff1167bdedf0425e6b9fbce461a5eeb779499932652804",
+        "crates/bowl/src/prepared/tests.rs": "f3a7248e093eb90067a8565fbdd0a75875853f2020d9763bba49b894e95a036c",
+        "crates/bowl/src/prepared/rows.rs": "ce8bf61a784bc71b6b65e0b0f5957eeb7992df3e2bbaa9397c323ccdd0b5dd88",
+        "crates/bowl/src/query/guards.rs": "bd442c6b8e340cde7890166003a3ccb5d5b4f22d6c45e7c429aba083ea82a032",
+        "crates/bowl/src/commands/arena.rs": "28ebea4b8e036f06804718d61a6e02a19c644538869fcc1883afd4a46f0b21b7",
+        "crates/bowl/src/access/tests.rs": "ab16dfc4d163d854891cad0125bb09a389917aa80e34a55b4943df3bfe539737",
+        "crates/bowl/src/commands/arena/tests.rs": "9b8b0a414203c13d345e81530027a7c20da794eb6b6c7d1d11da0daa34db9b72",
+        "crates/bowl/src/prepared/rows/tests.rs": "0cd239913332adb1309564c3dc313e4bf2bfa0d784cc457e8562c80f645e12fe",
+        "crates/bowl/src/system/synchronous/tests.rs": "4c262eb2e45a03a529487460eaedd2ce21fadd42bc1af796007b59ee18f52f2d",
+        "crates/macros/src/lib.rs": "66165412874d1211652f8d562bd67cca8bdbd0b3c6b9ec465ce45a492f3018bf",
+        "crates/playground/src/tests.rs": "63f7d0898fefb25e8b456a2a6cb9d91bed13aa1bfa6fae48bc54d2ac7ad80e25",
+        "crates/playground/src/replication.rs": "7fa007b5166bab6b9973fa30bbf58336958b263a3f8a662168eb8010b5c484e5",
+        "crates/playground/src/main.rs": "60074f02a266fdb207daaa1a6326e14c57d282ea7330e9ab23f0a95496c26989",
+        "crates/playground/src/lang/entity.rs": "47ab9803de29a7ee03b0ac970771358b0b72b07c1b575c4618dddec5b207f815",
+        "crates/playground/src/lang/facts.rs": "d6eb0d5cf739663efb83309b3f805e5489a1497b1004d19c462933f6bcb2ff66",
+        "crates/playground/src/lang/schema.rs": "8bd0737550286defbc0aced238de7ba4f2c4a3c7a86df2b22d4b275106ccde2c",
+        "crates/playground/src/lang/mod.rs": "219477327d483515936c11a5b39725cf04ed11941e117b87b2d1b9d24f2fa56b",
+        "crates/playground/src/lang/grammar/parser.rs": "48b084de2b108fc63013a778a489f27f922bc0e9cd6305f5fffa32ca9ed1d1f3",
+        "crates/playground/src/lang/grammar/mod.rs": "197151ddbccbe728832111ddae440928405b807713164fe54567f3da8fbcad75",
+        "crates/playground/src/lang/grammar/lexer.rs": "f6593474990ee511ac3c1896ac6644eb9555f2d48879562fbba5407aeeb77db4",
+        "crates/playground/src/lang/service/mod.rs": "163249bd48834fc9810c99225d464bb7e376135d9b80e3cfe35af4472dc5d996",
+        "crates/playground/src/lang/service/hover.rs": "e6d17b7c62d08c1920123e141cf2ff0b22d40d9aece714a7aedc5a1d72280c8a",
+        "crates/playground/src/lang/entities/mod.rs": "115c05a95635d74d5605d12e5d382a511bf19f73dc4a022bb4e403c92cd5aa9f",
+        "crates/playground/src/lang/entities/document.rs": "9851e0a7233aa3df12b46327780c4c5a232f7f8b5183b709cc599eb6a3aea55c",
+        "crates/playground/src/lang/entities/namespace.rs": "ad8289b7039a3ea37f543e9a63b1310028f6e61836eb42e4d5330abc183b3b1e",
+        "crates/playground/src/lang/entities/import.rs": "c92dfaa2e5309f17ddca103f9f1a7860a55cd363e021e683d8c0bfa93b4faa3c",
+        "crates/playground/src/lang/entities/definition.rs": "cce8d5d8948b600a63425948207fdafe19cc0493a0deb4b911f66813fc0736f7",
+        "Cargo.lock": "99fe55b09c65079e2e3f5c04aff0d1df56e922f5e24c790371b1500735e2c4b0",
+        "Cargo.toml": "e42f8782b56e3bc746de28b3dbfda6592451e31faf0857ae6207d7179fc39b45",
+        "crates/playground/Cargo.toml": "18a46e2c22783df9d83afff1eaead8becc86af36acac08c124b06b7159bc4d1f",
+        "crates/macros/Cargo.toml": "48d22b9b6bd09f2e838fdb2c719e2428d93f6f8255e5a1e931461e55af8dfa88",
+        "crates/bowl/Cargo.toml": "8a761ba71f95dfa70c8ee900acacd70980f5a4966dbc7199cbe7db525aa344eb",
+        "crates/benches/Cargo.toml": "60a8e7f40c3e6d751b42443487863b213d91410ea37cda8efe94ddd791d25572",
+        "tools/measure-allocations": "dd0ee27f2a478ad68e0eef29d1a4631d9b33545e776f9aac2e5ae1ddc1a65678"
+      },
+      "manifest_sha256": "a70b79ac33f325a42a183698aac9a3ef51dfbcde71e99d5390372115969bfd2a",
+      "feature_graph_sha256": "75754779c6979095e14d443468b668a942ea30742a1d12f50b4d51320c305363"
+    }
+  }
+}
