@@ -1,5 +1,5 @@
 //! Worker dispatch batches execution, never invocation identity or commits.
-use crate::{system::SystemRun, world::SystemInvocation};
+use crate::{access::RunId, system::SystemRun};
 use futures::{
     FutureExt, StreamExt,
     future::BoxFuture,
@@ -11,7 +11,7 @@ mod executor;
 mod plan;
 pub(crate) use plan::{Admission, RunPlan, prepare, prepare_calls};
 
-pub(crate) type Row = (SystemInvocation, SystemRun);
+pub(crate) type Row = (RunId, SystemRun);
 pub(crate) type Run = BoxFuture<'static, Row>;
 pub(crate) type Runs = BoxStream<'static, Row>;
 
@@ -108,15 +108,12 @@ where C: FnOnce() -> Row + Send + 'static,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Entity, world::SystemId};
+
     use futures::{FutureExt, channel::oneshot};
 
     fn row(id: u64) -> Row {
         (
-            SystemInvocation {
-                system: SystemId(0),
-                keys: vec![Entity::from_raw(id)].into(),
-            },
+            RunId::test(id),
             SystemRun {
                 completed: true,
                 outputs: Vec::new(),
@@ -134,7 +131,7 @@ mod tests {
             let values = queue.collect::<Vec<_>>().await;
             let mut ids: Vec<_> = values
                 .into_iter()
-                .map(|(owner, _)| owner.keys[0].raw())
+                .map(|(owner, _)| u64::from(owner.slot))
                 .collect();
             ids.sort_unstable();
             assert_eq!(ids, [1, 2]);
@@ -158,9 +155,9 @@ mod tests {
                 let (release, waiting) = oneshot::channel::<()>();
                 // Both rows have the same concrete, !Unpin future type.
                 let mut values = batch(vec![gated_row(1, Some(waiting)), gated_row(2, None)]);
-                assert_eq!(values.next().await.unwrap().0.keys[0].raw(), 2);
+                assert_eq!(values.next().await.unwrap().0.slot, 2);
                 release.send(()).unwrap();
-                assert_eq!(values.next().await.unwrap().0.keys[0].raw(), 1);
+                assert_eq!(values.next().await.unwrap().0.slot, 1);
                 assert!(values.next().await.is_none());
             });
     }
@@ -193,7 +190,7 @@ mod tests {
             let mut values = values;
             let mut ids = Vec::new();
             while let Some(Some((owner, _))) = values.next().now_or_never() {
-                ids.push(owner.keys[0].raw());
+                ids.push(u64::from(owner.slot));
             }
             assert_eq!(ids.len(), COUNT, "ready completions must remain visible to the driver drain");
             ids.sort_unstable();

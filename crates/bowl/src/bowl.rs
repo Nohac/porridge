@@ -111,6 +111,7 @@ struct Inner {
     commit_limit: StdMutex<CommitLimit>,
     /// Maximum rows per worker task, captured once per evaluator phase.
     dispatch_batch_size: atomic::AtomicUsize,
+    system_profiling_enabled: atomic::AtomicBool,
     /// Derived from the sealed registry at construction: only non-Settle
     /// systems with ambient view dependencies can require healing.
     ambient_healing_enabled: atomic::AtomicBool,
@@ -1158,6 +1159,7 @@ impl Bowl {
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
                 dispatch_batch_size: atomic::AtomicUsize::new(16),
+                system_profiling_enabled: atomic::AtomicBool::new(true),
                 deferred_bound_cleanup: StdMutex::new(Vec::new()),
                 preempt_waiters: std::sync::atomic::AtomicUsize::new(0),
                 preempt_signal: futures::task::AtomicWaker::new(),
@@ -1201,6 +1203,19 @@ impl Bowl {
     /// Current maximum; active phases keep the value they started with.
     pub fn dispatch_batch_size(&self) -> usize {
         self.inner.dispatch_batch_size.load(atomic::Ordering::Relaxed)
+    }
+
+    /// Enable per-system planning/poll timing and completed-run counts.
+    /// Enabled by default. Each evaluation phase captures this setting; work
+    /// already admitted keeps its original setting. Existing totals are retained.
+    /// This does not disable the separate process-wide diagnostic metrics.
+    pub fn set_system_profiling(&self, enabled: bool) {
+        self.inner.system_profiling_enabled.store(enabled, atomic::Ordering::Relaxed);
+    }
+
+    /// Whether future evaluation phases collect per-system profiling totals.
+    pub fn system_profiling_enabled(&self) -> bool {
+        self.inner.system_profiling_enabled.load(atomic::Ordering::Relaxed)
     }
 
     pub(crate) async fn with_component_original<T, F, R>(
@@ -1390,18 +1405,10 @@ impl Bowl {
         }
     }
 
-    /// Explains why `system` (matched by function-name suffix) did or did
-    /// not run: whether it is registered at all, which phase it runs in, how
-    /// many invocations its queries currently match after joins and filters,
-    /// and how many of those are memo-current (skipped as up to date).
-    ///
-    /// Distinguishes the silent no-run causes that are otherwise guesswork:
-    /// no matching rows (e.g. a demand join starved the tuple product), all
-    /// rows memoized, the wrong phase, the wrong system name entirely — or
-    /// ambient staleness, where the system's `View`s moved but its tracked
-    /// deps did not ([`ExplainReport::stale_views`]).
-    /// Cumulative per-system profile (plan time, poll time, completed
-    /// runs) in registration order.
+    /// Cumulative per-system profile (plan time, poll time, completed runs)
+    /// in registration order. Totals include only phases admitted with system
+    /// profiling enabled; disabling profiling pauses collection without resetting
+    /// totals. Read after settlement for completed work.
     pub async fn profile_all(&self) -> Vec<ProfileEntry> {
         let state = lock_state(&self.inner.state).await;
         state
@@ -2253,14 +2260,14 @@ impl Bowl {
         allow_preempt: bool,
     ) -> PhaseRun {
         let mut phase_changed = false;
-        let mut running = HashSet::new();
-        let mut running_access = Reservations::default();
+        let component_registry = lock_state(&self.inner.state).await.world.component_registry();
+        let mut running_access = Reservations::new(component_registry);
         // Tiered preemption drops read-only work wholesale while draining
         // writers, so in-flight runs are split by access class.
         let mut read_runs = crate::dispatch::Queue::new();
         let mut write_runs = crate::dispatch::Queue::new();
         let dispatch_maximum = self.dispatch_batch_size();
-        let mut read_owners: HashSet<SystemInvocation> = HashSet::new();
+        let profile_systems = self.system_profiling_enabled();
         let mut needs_plan = true;
         let mut deferred_conflicts = false;
 
@@ -2273,15 +2280,12 @@ impl Bowl {
                 // apply at this boundary, then hand the generation back for
                 // a restart through the Startup slot.
                 drop(read_runs);
-                for owner in read_owners.drain() {
-                    running.remove(&owner);
-                    running_access.remove(&owner);
-                }
-                while let Some((owner, run)) = write_runs.next().await {
-                    running.remove(&owner);
+                running_access.cancel_readers();
+                while let Some((id, run)) = write_runs.next().await {
+                    assert!(running_access.contains(id), "completion belongs to an active invocation");
                     let progress =
                         commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
-                    running_access.remove(&owner);
+                    running_access.remove(id).expect("completed invocation");
                     commit_budget.record(progress.commits);
                     phase_changed |= progress.needs_followup;
                 }
@@ -2329,13 +2333,12 @@ impl Bowl {
                             while let Some(Some(next)) = write_runs.next().now_or_never() {
                                 batch.push(next);
                             }
-                            for (owner, run) in batch {
-                                running.remove(&owner);
-                                read_owners.remove(&owner);
+                            for (id, run) in batch {
+                                assert!(running_access.contains(id), "completion belongs to an active invocation");
                                 let progress =
                                     commit_system_run(memo, &self.inner.state, run, Some(phase))
                                         .await;
-                                running_access.remove(&owner);
+                                let owner = running_access.remove(id).expect("completed invocation");
                                 commit_budget.record(progress.commits);
                                 phase_changed |= progress.needs_followup;
                                 if progress.stale {
@@ -2355,7 +2358,7 @@ impl Bowl {
                     .iter()
                     .filter(|system| system.phase == phase && system.needs_planning(&snapshot))
                 {
-                    let plan_start = std::time::Instant::now();
+                    let plan_start = profile_systems.then(std::time::Instant::now);
                     // Delta planning: a system whose cursor is current for
                     // this epoch plans only the entities written since its
                     // last plan; anything else (fresh registration, epoch
@@ -2399,16 +2402,17 @@ impl Bowl {
                             .plan_epoch
                             .store(plan_epoch, std::sync::atomic::Ordering::Relaxed);
                     }
-                    system.stats.plan_nanos.fetch_add(
-                        plan_start.elapsed().as_nanos() as u64,
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
+                    if let Some(start) = plan_start {
+                        system.stats.plan_nanos.fetch_add(
+                            start.elapsed().as_nanos() as u64,
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+                    }
                     planned_runs.dispatch(&mut crate::dispatch::Admission {
                         system,
                         maximum: dispatch_maximum,
-                        running: &mut running,
+                        profile_systems,
                         reservations: &mut running_access,
-                        read_owners: &mut read_owners,
                         deferred_conflicts: &mut deferred_conflicts,
                         readers: &mut read_runs,
                         writers: &mut write_runs,
@@ -2441,11 +2445,10 @@ impl Bowl {
 
             let mut followup = false;
             let mut stale = false;
-            for (owner, run) in batch {
-                running.remove(&owner);
-                read_owners.remove(&owner);
+            for (id, run) in batch {
+                assert!(running_access.contains(id), "completion belongs to an active invocation");
                 let progress = commit_system_run(memo, &self.inner.state, run, Some(phase)).await;
-                running_access.remove(&owner);
+                let owner = running_access.remove(id).expect("completed invocation");
                 commit_budget.record(progress.commits);
                 followup |= progress.needs_followup;
                 if progress.stale {
@@ -2482,7 +2485,7 @@ impl Bowl {
         allow_preempt: bool,
     ) -> RunEvent
     where
-        F: futures::Stream<Item = (SystemInvocation, SystemRun)> + Unpin,
+        F: futures::Stream<Item = crate::dispatch::Row> + Unpin,
     {
         futures::future::poll_fn(|context| {
             // AtomicWaker protocol: check, register, re-check — a mutator
@@ -2637,7 +2640,7 @@ enum PhaseRun {
 
 /// Outcome of awaiting the next in-flight invocation.
 enum RunEvent {
-    Finished((SystemInvocation, SystemRun)),
+    Finished(crate::dispatch::Row),
     /// Both run streams are exhausted.
     Drained,
     /// A mutator registered for preemption; handle the boundary.
@@ -8882,3 +8885,7 @@ mod tests {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "profiling_tests.rs"]
+mod profiling_tests;

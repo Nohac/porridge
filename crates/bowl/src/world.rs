@@ -887,6 +887,11 @@ impl World {
         self.presence = Some(presence);
     }
 
+    /// Shared dense component slots used by schema-backed storage.
+    pub(crate) fn component_registry(&self) -> Arc<HashMap<TypeId, u32>> {
+        self.stores.registry()
+    }
+
     /// The presence index, when this bowl was constructed over a schema.
     pub(crate) fn presence(&self) -> Option<&PresenceIndex> {
         self.presence.as_ref()

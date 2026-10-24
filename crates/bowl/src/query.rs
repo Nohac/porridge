@@ -867,7 +867,10 @@ impl Dep {
         if self.store_scoped {
             return;
         }
-        self.revision = world.revision_by_type(self.type_id, self.entity);
+        self.revision = match self.slot {
+            Some(slot) => world.revision_by_slot(slot, self.type_id, self.entity),
+            None => world.revision_by_type(self.type_id, self.entity),
+        };
     }
 }
 

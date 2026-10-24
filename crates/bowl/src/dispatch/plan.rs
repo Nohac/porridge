@@ -1,11 +1,9 @@
 //! Admission is shared by typed kernels and the erased hook fallback.
-use std::{collections::HashSet, future::Future, sync::Arc};
+use std::{future::Future, sync::Arc};
 
 use crate::{
-    access::Reservations,
-    query::AccessKind,
+    access::{Reservations, Rejected, RunId},
     system::{BoxedSystem, PlannedSystemRun, SystemRun, SystemStats},
-    world::SystemInvocation,
 };
 
 use super::Queue;
@@ -13,9 +11,8 @@ use super::Queue;
 pub(crate) struct Admission<'a> {
     pub(crate) system: &'a BoxedSystem,
     pub(crate) maximum: usize,
-    pub(crate) running: &'a mut HashSet<SystemInvocation>,
+    pub(crate) profile_systems: bool,
     pub(crate) reservations: &'a mut Reservations,
-    pub(crate) read_owners: &'a mut HashSet<SystemInvocation>,
     pub(crate) deferred_conflicts: &'a mut bool,
     pub(crate) readers: &'a mut Queue,
     pub(crate) writers: &'a mut Queue,
@@ -73,7 +70,7 @@ where
 
 fn dispatch_rows<I, R, Q>(
     runs: I, admission: &mut Admission<'_>,
-    mut wrap: impl FnMut(SystemInvocation, R, Arc<SystemStats>, Option<std::time::Instant>) -> Q,
+    mut wrap: impl FnMut(RunId, R, Option<Arc<SystemStats>>, Option<std::time::Instant>) -> Q,
     submit: impl Fn(&mut Queue, Vec<Q>),
 ) where I: ExactSizeIterator<Item = PlannedSystemRun<R>> {
     use crate::metrics::{self, Counter::*};
@@ -85,33 +82,22 @@ fn dispatch_rows<I, R, Q>(
     let mut writers = Vec::new();
 
     for planned in runs {
-        if !admission.running.insert(planned.owner.clone()) {
-            duplicates += 1;
-            continue;
-        }
-
-        if admission.reservations.conflicts(&planned.access) {
-            conflicts += 1;
-            *admission.deferred_conflicts = true;
-            admission.system.force_replan(&planned.owner.keys);
-            admission.running.remove(&planned.owner);
-            continue;
-        }
-
-        let writer = planned
-            .access
-            .iter()
-            .any(|access| access.kind == AccessKind::Write);
-        let owner = planned.owner;
-        admission.reservations.insert(owner.clone(), planned.access);
-        if !writer {
-            admission.read_owners.insert(owner.clone());
-        }
+        let id = match admission.reservations.admit(planned.owner, planned.access) {
+            Ok(id) => id,
+            Err(Rejected::Duplicate) => { duplicates += 1; continue; }
+            Err(Rejected::Conflict(owner)) => {
+                conflicts += 1;
+                *admission.deferred_conflicts = true;
+                admission.system.force_replan(&owner.keys);
+                continue;
+            }
+        };
+        let writer = admission.reservations.is_writer(id);
 
         admitted += 1;
         let queued = metrics::enabled().then(std::time::Instant::now);
-        let stats = Arc::clone(&admission.system.stats);
-        let run = wrap(owner, planned.run, stats, queued);
+        let stats = admission.profile_systems.then(|| Arc::clone(&admission.system.stats));
+        let run = wrap(id, planned.run, stats, queued);
         let (batch, queue) = if writer {
             (&mut writers, &mut admission.writers)
         } else {
@@ -139,16 +125,18 @@ fn dispatch_rows<I, R, Q>(
 }
 
 fn timed_call<C: FnOnce() -> SystemRun>(
-    run: C, stats: Arc<SystemStats>, queued: Option<std::time::Instant>,
+    run: C, stats: Option<Arc<SystemStats>>, queued: Option<std::time::Instant>,
 ) -> SystemRun {
-    let start = std::time::Instant::now();
+    let start = stats.as_ref().map(|_| std::time::Instant::now());
     if let Some(queued) = queued {
         crate::metrics::add(crate::metrics::Counter::FirstPollNs, queued.elapsed().as_nanos() as u64);
         crate::metrics::add(crate::metrics::Counter::StartedRows, 1);
     }
     let result = run();
-    stats.run_nanos.fetch_add(start.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
-    stats.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if let (Some(stats), Some(start)) = (&stats, start) {
+        stats.run_nanos.fetch_add(start.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        stats.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     if queued.is_some() {
         crate::metrics::add(crate::metrics::Counter::SyncCalls, 1);
     }
@@ -159,14 +147,17 @@ fn timed_call<C: FnOnce() -> SystemRun>(
 /// a box. Measure poll time only, excluding time suspended between polls.
 async fn timed<F: Future>(
     run: F,
-    stats: Arc<SystemStats>,
+    stats: Option<Arc<SystemStats>>,
     mut queued: Option<std::time::Instant>,
 ) -> F::Output {
+    if stats.is_none() && queued.is_none() {
+        return run.await;
+    }
     let trace = queued.is_some();
     let mut polls = 0;
     let mut run = std::pin::pin!(run);
     std::future::poll_fn(|cx| {
-        let start = std::time::Instant::now();
+        let start = stats.as_ref().map(|_| std::time::Instant::now());
         if let Some(queued) = queued.take() {
             crate::metrics::add(
                 crate::metrics::Counter::FirstPollNs,
@@ -178,17 +169,19 @@ async fn timed<F: Future>(
             polls += 1;
         }
         let result = run.as_mut().poll(cx);
-        stats.run_nanos.fetch_add(
-            start.elapsed().as_nanos() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        if let (Some(stats), Some(start)) = (&stats, start) {
+            stats.run_nanos.fetch_add(
+                start.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
         if result.is_ready() {
             if trace {
                 crate::metrics::add(crate::metrics::Counter::RowPolls, polls);
             }
-            stats
-                .runs
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Some(stats) = &stats {
+                stats.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
         }
         result
     })

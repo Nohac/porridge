@@ -70,10 +70,12 @@ fn notify_after_publication(rows: Query<(Entity, &Derived, MutRef<'_, Signal>)>)
 #[cfg(feature = "parallel")]
 fn sync_publication_progresses_while_an_async_sibling_is_pending() {
     tokio::runtime::Builder::new_multi_thread().worker_threads(2).build().unwrap().block_on(async {
+        for profiling in [false, true] {
         let (release, gate) = oneshot::channel();
         let (signal, observed) = oneshot::channel();
         let bowl = Bowl::builder().system(wait_for_gate)
             .system(derive).system(notify_after_publication).build();
+        bowl.set_system_profiling(profiling);
         bowl.insert((Gate(gate.map(|result| result.unwrap()).boxed().shared()),)).await;
         bowl.insert((Input(5), Signal(Some(signal)))).await;
         let driver = Box::pin(bowl.stir());
@@ -84,5 +86,9 @@ fn sync_publication_progresses_while_an_async_sibling_is_pending() {
         release.send(()).unwrap();
         driver.await;
         assert_eq!(bowl.scoop::<Query<&Finished>>().await.len(), 1);
+        if !profiling {
+            assert!(bowl.profile_all().await.iter().all(|entry| entry.runs == 0 && entry.run_nanos == 0 && entry.plan_nanos == 0));
+        }
+        }
     });
 }

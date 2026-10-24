@@ -43,6 +43,11 @@ fn main() {
     let rounds = number("ALLOC_ROUNDS", 10);
     let warmup = number("ALLOC_WARMUP", 3);
     let mode = env::var("ALLOC_KERNELS").unwrap_or_else(|_| "async".into()).parse::<KernelMode>().expect("ALLOC_KERNELS");
+    let system_stats = match env::var("ALLOC_SYSTEM_STATS").unwrap_or_else(|_| "on".into()).as_str() {
+        "on" => true,
+        "off" => false,
+        _ => panic!("ALLOC_SYSTEM_STATS must be on or off"),
+    };
     let counting = number("ALLOC_COUNT", 1) != 0;
     let metrics = number("ALLOC_METRICS", 0) != 0;
     let case = env::var("ALLOC_CASE").unwrap_or_else(|_| "purchases".into());
@@ -59,7 +64,7 @@ fn main() {
         .build()
         .unwrap();
     println!(
-        "config\tcase={case}\tworkers={workers}\tslots={slots}\twarmup={warmup}\trounds={rounds}\tcounting={counting}\tkernels={mode:?}"
+        "config\tcase={case}\tworkers={workers}\tslots={slots}\twarmup={warmup}\trounds={rounds}\tcounting={counting}\tkernels={mode:?}\tsystem_stats={system_stats}"
     );
     if let Some(path) = env::var_os("ALLOC_READY") {
         std::fs::write(path, std::process::id().to_string()).unwrap();
@@ -71,11 +76,13 @@ fn main() {
     runtime.block_on(async {
         let mut purchases = Purchases::new_with_mode(if case == "probe" { 0 } else { slots }, mode).await;
         purchases.bowl.set_dispatch_batch_size(16);
+        purchases.bowl.set_system_profiling(system_stats);
         let probe = Bowl::builder()
             .schema::<ProbeSchema>()
             .system(allocating_probe)
             .build();
         probe.set_dispatch_batch_size(16);
+        probe.set_system_profiling(system_stats);
         probe.set_commit_limit(bowl::CommitLimit::None);
         let mut ids: Vec<Entity> = Vec::new();
         if case == "probe" {

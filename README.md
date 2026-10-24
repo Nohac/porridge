@@ -401,6 +401,12 @@ supported.
 work accumulated. The playground uses these alongside process-global debug
 counters to make incremental behavior inspectable during experiments.
 
+Per-system timing and completed-run counts are enabled by default. Call
+`bowl.set_system_profiling(false)` to pause their collection, or `true` to resume.
+Each evaluation phase captures the setting; already-admitted work keeps its
+original policy. `profile_all()` retains prior totals. This switch is independent
+of the opt-in process-wide diagnostic metrics and existing debug buckets.
+
 ## The playground
 
 [`crates/playground`](crates/playground) is the primary integration example and

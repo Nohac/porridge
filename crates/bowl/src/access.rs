@@ -1,11 +1,30 @@
-//! Row/store access reservations for one evaluator phase.
-//! Candidate cost follows its declared accesses, not the number of running rows.
+//! Dense, phase-local execution records and component reservations.
 use crate::{
     Entity,
     query::{Access, AccessKind},
     world::SystemInvocation,
 };
-use std::{any::TypeId, collections::HashMap};
+use std::{any::TypeId, collections::{HashMap, hash_map::Entry}, sync::Arc};
+
+/// Only valid within its owning evaluator phase. Reused slots change generation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RunId {
+    pub(crate) slot: u32,
+    generation: u32,
+}
+
+impl RunId {
+    #[cfg(test)]
+    pub(crate) fn test(slot: u64) -> Self {
+        Self { slot: u32::try_from(slot).unwrap(), generation: 0 }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum Rejected {
+    Duplicate,
+    Conflict(SystemInvocation),
+}
 
 #[derive(Default)]
 struct Counts {
@@ -14,9 +33,7 @@ struct Counts {
 }
 
 impl Counts {
-    fn any(&self) -> bool {
-        self.readers != 0 || self.writers != 0
-    }
+    fn any(&self) -> bool { self.readers != 0 || self.writers != 0 }
 
     fn conflicts(&self, kind: AccessKind) -> bool {
         match kind {
@@ -47,200 +64,178 @@ struct ComponentAccess {
     rows: HashMap<Entity, Counts>,
 }
 
-/// Ownership metadata permits exact release after completion or preemption.
-/// Repeated accesses are counted, including overlapping row/store declarations.
-/// The phase driver owns this index; workers never access it. These are scheduling
-/// reservations, not component locks. Completed runs keep them until publication;
-/// cancelled readers can release them when their work is discarded.
+impl ComponentAccess {
+    fn conflicts(&self, access: &ResolvedAccess) -> bool {
+        match access.entity {
+            None => self.total.conflicts(access.kind),
+            Some(entity) => self.whole_store.conflicts(access.kind)
+                || self.rows.get(&entity).is_some_and(|row| row.conflicts(access.kind)),
+        }
+    }
+
+    fn add(&mut self, access: &ResolvedAccess) {
+        self.total.add(access.kind);
+        match access.entity {
+            Some(entity) => self.rows.entry(entity).or_default().add(access.kind),
+            None => self.whole_store.add(access.kind),
+        }
+    }
+
+    fn remove(&mut self, access: ResolvedAccess) {
+        self.total.remove(access.kind);
+        match access.entity {
+            None => self.whole_store.remove(access.kind),
+            Some(entity) => {
+                if let Entry::Occupied(mut entry) = self.rows.entry(entity) {
+                    entry.get_mut().remove(access.kind);
+                    if !entry.get().any() { entry.remove(); }
+                } else {
+                    panic!("reserved row missing");
+                }
+            }
+        }
+    }
+}
+
+struct ResolvedAccess {
+    component: usize,
+    entity: Option<Entity>,
+    kind: AccessKind,
+    // Preserve Access's allocation width when replacing TypeId with an index.
+    // Vec's in-place collection otherwise shrinks every row's allocation. This
+    // padding is only a performance aid; conversion remains safe if a target's
+    // layout needs the standard library's allocating fallback.
+    _allocation_width: [u8; std::mem::size_of::<TypeId>() - std::mem::size_of::<usize>()],
+}
+
+#[derive(Default)]
+struct Components {
+    schema: Arc<HashMap<TypeId, u32>>,
+    extra: HashMap<TypeId, usize>,
+    slots: Vec<ComponentAccess>,
+}
+
+impl Components {
+    fn resolve(&mut self, access: Access) -> ResolvedAccess {
+        let component = if let Some(&slot) = self.schema.get(&access.component) {
+            slot as usize
+        } else {
+            *self.extra.entry(access.component).or_insert_with(|| {
+                let slot = self.slots.len();
+                self.slots.push(ComponentAccess::default());
+                slot
+            })
+        };
+        ResolvedAccess { component, entity: access.entity, kind: access.kind,
+            _allocation_width: [0; std::mem::size_of::<TypeId>() - std::mem::size_of::<usize>()] }
+    }
+}
+
+struct Record {
+    owner: SystemInvocation,
+    accesses: Vec<ResolvedAccess>,
+    writer: bool,
+}
+
+struct Slot {
+    generation: u32,
+    record: Option<Record>,
+}
+
+#[derive(Default)]
+struct Records {
+    slots: Vec<Slot>,
+    free: Vec<u32>,
+}
+
+impl Records {
+    fn insert(&mut self, record: Record) -> RunId {
+        let index = if let Some(index) = self.free.pop() {
+            index
+        } else {
+            let index = u32::try_from(self.slots.len()).expect("execution slot space exhausted");
+            self.slots.push(Slot { generation: 0, record: None });
+            index
+        };
+        let slot = &mut self.slots[index as usize];
+        debug_assert!(slot.record.is_none());
+        slot.record = Some(record);
+        RunId { slot: index, generation: slot.generation }
+    }
+
+    fn get(&self, id: RunId) -> Option<&Record> {
+        let slot = self.slots.get(id.slot as usize)?;
+        (slot.generation == id.generation).then_some(slot.record.as_ref()).flatten()
+    }
+
+    fn remove(&mut self, id: RunId) -> Option<Record> {
+        let slot = self.slots.get_mut(id.slot as usize)?;
+        if slot.generation != id.generation { return None; }
+        let record = slot.record.take()?;
+        // Never wrap a generation and make a retired completion valid again.
+        if let Some(next) = slot.generation.checked_add(1) {
+            slot.generation = next;
+            self.free.push(id.slot);
+        }
+        Some(record)
+    }
+}
+
+/// One logical-key index for duplicate detection. Completion and release use IDs.
+/// Exact row/store reservations remain held through publication. Component
+/// counters and record slots retain capacity only for the active phase.
 #[derive(Default)]
 pub(crate) struct Reservations {
-    owners: HashMap<SystemInvocation, Vec<Access>>,
-    components: HashMap<TypeId, ComponentAccess>,
+    owners: HashMap<SystemInvocation, RunId>,
+    records: Records,
+    components: Components,
 }
 
 impl Reservations {
-    pub(crate) fn conflicts(&self, accesses: &[Access]) -> bool {
-        accesses.iter().any(|access| {
-            let Some(component) = self.components.get(&access.component) else {
-                return false;
-            };
-            match access.entity {
-                None => component.total.conflicts(access.kind),
-                Some(entity) => {
-                    component.whole_store.conflicts(access.kind)
-                        || component
-                            .rows
-                            .get(&entity)
-                            .is_some_and(|row| row.conflicts(access.kind))
-                }
-            }
-        })
+    pub(crate) fn new(schema: Arc<HashMap<TypeId, u32>>) -> Self {
+        let mut slots = Vec::with_capacity(schema.len());
+        slots.resize_with(schema.len(), ComponentAccess::default);
+        Self { owners: HashMap::new(), records: Records::default(), components: Components { schema, slots, extra: HashMap::new() } }
     }
 
-    pub(crate) fn insert(&mut self, owner: SystemInvocation, accesses: Vec<Access>) {
-        assert!(
-            !self.owners.contains_key(&owner),
-            "invocation already reserved"
-        );
-        for access in &accesses {
-            let component = self.components.entry(access.component).or_default();
-            component.total.add(access.kind);
-            let counts = match access.entity {
-                Some(entity) => component.rows.entry(entity).or_default(),
-                None => &mut component.whole_store,
-            };
-            counts.add(access.kind);
-        }
-        self.owners.insert(owner, accesses);
-    }
-
-    pub(crate) fn remove(&mut self, owner: &SystemInvocation) {
-        let Some(accesses) = self.owners.remove(owner) else {
-            return;
+    pub(crate) fn admit(&mut self, owner: SystemInvocation, accesses: Vec<Access>) -> Result<RunId, Rejected> {
+        let Entry::Vacant(entry) = self.owners.entry(owner) else {
+            return Err(Rejected::Duplicate);
         };
-        for access in accesses {
-            let component = self
-                .components
-                .get_mut(&access.component)
-                .expect("reserved component");
-            component.total.remove(access.kind);
-            match access.entity {
-                None => component.whole_store.remove(access.kind),
-                Some(entity) => {
-                    let counts = component.rows.get_mut(&entity).expect("reserved row");
-                    counts.remove(access.kind);
-                    if !counts.any() {
-                        component.rows.remove(&entity);
-                    }
-                }
-            }
-            if !component.total.any() {
-                self.components.remove(&access.component);
-            }
+        let accesses: Vec<_> = accesses.into_iter().map(|access| self.components.resolve(access)).collect();
+        if accesses.iter().any(|access| self.components.slots[access.component].conflicts(access)) {
+            return Err(Rejected::Conflict(entry.into_key()));
         }
+        let writer = accesses.iter().any(|access| access.kind == AccessKind::Write);
+        for access in &accesses { self.components.slots[access.component].add(access); }
+        let id = self.records.insert(Record { owner: entry.key().clone(), accesses, writer });
+        entry.insert(id);
+        Ok(id)
+    }
+
+    pub(crate) fn contains(&self, id: RunId) -> bool { self.records.get(id).is_some() }
+
+    pub(crate) fn is_writer(&self, id: RunId) -> bool {
+        self.records.get(id).expect("admitted invocation").writer
+    }
+
+    pub(crate) fn remove(&mut self, id: RunId) -> Option<SystemInvocation> {
+        let record = self.records.remove(id)?;
+        let previous = self.owners.remove(&record.owner);
+        debug_assert_eq!(previous, Some(id));
+        for access in record.accesses { self.components.slots[access.component].remove(access); }
+        Some(record.owner)
+    }
+
+    pub(crate) fn cancel_readers(&mut self) {
+        // Cancellation is exceptional; ordinary completion goes straight by ID.
+        let readers: Vec<_> = self.records.slots.iter().enumerate().filter_map(|(index, slot)| {
+            slot.record.as_ref().filter(|record| !record.writer)
+                .map(|_| RunId { slot: index as u32, generation: slot.generation })
+        }).collect();
+        for id in readers { self.remove(id); }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{Component, world::SystemId};
-
-    struct A;
-
-    impl Component for A {}
-
-    struct B;
-
-    impl Component for B {}
-
-    fn owner(id: usize) -> SystemInvocation {
-        SystemInvocation {
-            system: SystemId(id % 3),
-            keys: vec![Entity::from_raw(id as u64)].into(),
-        }
-    }
-
-    fn candidates() -> Vec<Access> {
-        let a = Entity::from_raw(1);
-        let b = Entity::from_raw(2);
-        vec![
-            Access::read::<A>(a),
-            Access::write::<A>(a),
-            Access::read::<A>(b),
-            Access::write::<A>(b),
-            Access::read_all::<A>(),
-            Access::write_all::<A>(),
-            Access::read::<B>(a),
-            Access::write::<B>(a),
-            Access::read_all::<B>(),
-            Access::write_all::<B>(),
-        ]
-    }
-
-    #[test]
-    fn indexed_reservations_match_pairwise_conflicts_and_release() {
-        let candidates = candidates();
-        for first in &candidates {
-            for second in &candidates {
-                let mut index = Reservations::default();
-                index.insert(owner(0), vec![*first, *first]);
-                index.insert(owner(1), vec![*second]);
-                for candidate in &candidates {
-                    assert_eq!(
-                        index.conflicts(&[*candidate]),
-                        candidate.conflicts(*first) || candidate.conflicts(*second)
-                    );
-                }
-
-                index.remove(&owner(0));
-                for candidate in &candidates {
-                    assert_eq!(index.conflicts(&[*candidate]), candidate.conflicts(*second));
-                }
-                index.remove(&owner(0));
-                index.remove(&owner(1));
-                assert!(index.components.is_empty());
-                assert!(!index.conflicts(&candidates));
-            }
-        }
-    }
-
-    #[test]
-    fn multiple_readers_keep_writer_blocked_until_the_last_release() {
-        let row = Entity::from_raw(7);
-        let mut index = Reservations::default();
-        index.insert(owner(0), vec![Access::read::<A>(row)]);
-        index.insert(owner(1), vec![Access::read_all::<A>()]);
-        index.remove(&owner(0));
-        assert!(index.conflicts(&[Access::write::<A>(row)]));
-        assert!(!index.conflicts(&[Access::read::<A>(row)]));
-        index.remove(&owner(1));
-        assert!(!index.conflicts(&[Access::write::<A>(row)]));
-    }
-
-    #[test]
-    fn mixed_reservation_lifecycles_match_pairwise_oracle() {
-        fn next(seed: &mut u64, limit: usize) -> usize {
-            *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            ((*seed >> 32) as usize) % limit
-        }
-
-        let candidates = candidates();
-        let mut seed = 17_u64;
-        let mut index = Reservations::default();
-        let mut reference = HashMap::<SystemInvocation, Vec<Access>>::new();
-        for _ in 0..1000 {
-            let owner = owner(next(&mut seed, 16));
-            // Release/reuse identities, including absent owners and empty accesses.
-            index.remove(&owner);
-            reference.remove(&owner);
-            if next(&mut seed, 3) != 0 {
-                let accesses = (0..next(&mut seed, 5))
-                    .map(|_| candidates[next(&mut seed, candidates.len())])
-                    .collect::<Vec<_>>();
-                index.insert(owner.clone(), accesses.clone());
-                reference.insert(owner, accesses);
-            }
-
-            for first in &candidates {
-                for second in &candidates {
-                    let requested = [*first, *second];
-                    let expected = reference.values().any(|active| {
-                        requested.iter().any(|candidate| {
-                            active.iter().any(|access| candidate.conflicts(*access))
-                        })
-                    });
-                    assert_eq!(index.conflicts(&requested), expected);
-                }
-            }
-            assert!(!index.conflicts(&[]));
-        }
-
-        for owner in reference.keys() {
-            index.remove(owner);
-        }
-        assert!(index.owners.is_empty());
-        assert!(index.components.is_empty());
-        assert!(!index.conflicts(&candidates));
-    }
-}
+mod tests;

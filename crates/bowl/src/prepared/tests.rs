@@ -123,3 +123,31 @@ fn complex_parts_keep_their_dependency_fallback() {
     prepared.deps(&world, &entity, &mut deps);
     assert_eq!(deps, Row::deps(&world, &entity));
 }
+
+#[test]
+fn refreshing_written_dependency_checks_cached_slot_layout_and_fallback() {
+    let entity = Entity::from_raw(0);
+    let mut original = World::new();
+    original.init_presence(vec![TypeId::of::<A>(), TypeId::of::<B>()]);
+    original.insert_base(entity, A(1));
+    let mut dep = original.resolve_store::<A>().dependency(entity, false).unwrap();
+    original.insert_base(entity, A(2));
+    dep.refresh_written(&original, &[(TypeId::of::<B>(), entity)]);
+    assert!(!dep.is_current(&original));
+    dep.refresh_written(&original, &[(TypeId::of::<A>(), entity)]);
+    assert!(dep.is_current(&original));
+
+    let mut reordered = World::new();
+    reordered.init_presence(vec![TypeId::of::<B>(), TypeId::of::<A>()]);
+    reordered.insert_base(entity, A(3));
+    reordered.insert_base(entity, B(4));
+    dep.refresh_written(&reordered, &[(TypeId::of::<A>(), entity)]);
+    assert!(dep.is_current(&reordered));
+
+    let mut fallback = World::new();
+    fallback.insert_base(entity, A(5));
+    let mut dep = fallback.resolve_store::<A>().dependency(entity, false).unwrap();
+    fallback.insert_base(entity, A(6));
+    dep.refresh_written(&fallback, &[(TypeId::of::<A>(), entity)]);
+    assert!(dep.is_current(&fallback));
+}

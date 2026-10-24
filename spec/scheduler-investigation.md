@@ -1,6 +1,8 @@
 # Scheduler investigation and prior art
 
-Status: source audit and research, 2026-10-24. No engine changes in this pass.
+Status: source audit and research, 2026-10-24. This describes the pre-refactor
+state. The subsequent [compact execution records](compact-execution-records.md)
+replace the separate running/reader/reservation-owner tracking structures.
 This supplements the [warmed CPU profile](warmed-purchase-profile.md) and
 [optimization roadmap](optimization-roadmap.md); it does not resume all roadmap tasks.
 
@@ -231,6 +233,13 @@ A system finishing can create more ready work, including work of the same type.
 Cycles require convergence, not an assumed topological ordering. Missing optional
 components, negative filters, outer joins and disappearing matches need explicit
 invalidation routes as well as ordinary value writes.
+
+## Per-system instrumentation follow-up
+
+The first experiment below is complete: [system profiling overhead](system-profiling-overhead.md).
+The runtime toggle is retained with default ON. Sync gains are modest and async
+results mixed; no batch-local counter mechanism was added. This supports moving
+focus to shared scheduling/publication metadata, not expanding statistics work.
 
 ## Ordered experiments
 

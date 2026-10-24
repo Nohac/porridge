@@ -20,6 +20,10 @@ impl Stores {
         }
     }
 
+    pub(super) fn registry(&self) -> Arc<HashMap<TypeId, u32>> {
+        Arc::clone(&self.registry)
+    }
+
     pub(super) fn slot(&self, ty: TypeId) -> Option<u32> {
         self.registry.get(&ty).copied()
     }

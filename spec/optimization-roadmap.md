@@ -9,8 +9,11 @@ does not authorize restarting the entire roadmap. Current changes are being
 captured and committed at the user's request before choosing the next slice.
 
 [Typed-return kernels](typed-return-kernels.md) is a new proposal, not an implemented
-capability. The recommended next experiment is isolating always-on statistics
-cost, followed by compact scheduling metadata; implementation awaits slice selection.
+capability. The scoped [per-system profiling experiment](system-profiling-overhead.md) is
+complete: a runtime control is retained, but measured gains do not explain worker
+scaling. The selected [compact execution-record slice](compact-execution-records.md) is
+implemented and benchmarked: phase-local IDs and dense reservation slots are
+retained. Persistent memo/output IDs and wider routing changes remain unimplemented.
 
 ## Objective and completion criteria
 
