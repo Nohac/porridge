@@ -20,6 +20,9 @@ throughput screen; the tested prototype is archived and production retains seria
 preparation. [Persistent-world scaling](world-scaling-experiment.md) is the next
 scoped measurement: fixed purchase traffic alongside larger and busier state.
 A separate spawn-bookkeeping control and distributed publication remain unimplemented.
+[Dirty-log compaction](dirty-log-compaction.md) now preserves sparse planning
+across busy rounds: the large sparse workload improves with eight workers, with
+a measured single-worker regression retained as a follow-up.
 
 ## Objective and completion criteria
 

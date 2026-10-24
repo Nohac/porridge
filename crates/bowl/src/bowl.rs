@@ -2361,8 +2361,8 @@ impl Bowl {
                     let plan_start = profile_systems.then(std::time::Instant::now);
                     // Delta planning: a system whose cursor is current for
                     // this epoch plans only the entities written since its
-                    // last plan; anything else (fresh registration, epoch
-                    // roll, resets) plans fully once and joins the deltas.
+                    // last plan, plus rows saved during log compaction.
+                    // Fresh/explicitly reset cursors still plan fully once.
                     let forced = system.take_forced_dirty();
                     let hint: Option<Vec<Entity>> = if system.delta_eligible
                         && system.plan_epoch.load(std::sync::atomic::Ordering::Relaxed)
@@ -2567,7 +2567,7 @@ impl Bowl {
     )> {
         let mut state = lock_state(&self.inner.state).await;
         let generation = state.pending_generation.take()?;
-        state.world.maybe_roll_plan_epoch();
+        compact_plan_log(&mut state);
         // Settle-phase inserts deferred from the previous settle land first:
         // they are this run's opening state (gate markers, seeded facts),
         // applied as ordinary owned derived writes.
@@ -2773,6 +2773,16 @@ impl Drop for EpochGuard {
         drop(state);
         for boundary in boundary_waiters {
             let _ = boundary.send(());
+        }
+    }
+}
+
+/// Reclaim the write log without discarding consumers' incremental work.
+/// Called at a generation boundary while state is exclusively held.
+fn compact_plan_log(state: &mut State) {
+    if let Some((epoch, log)) = state.world.maybe_roll_plan_epoch() {
+        for system in &state.systems {
+            system.compact_plan_log(epoch, &log, &state.world);
         }
     }
 }
@@ -8889,3 +8899,7 @@ mod tests {
 #[cfg(test)]
 #[path = "profiling_tests.rs"]
 mod profiling_tests;
+
+#[cfg(test)]
+#[path = "planning_log_tests.rs"]
+mod planning_log_tests;

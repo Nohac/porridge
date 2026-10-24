@@ -656,12 +656,13 @@ pub struct World {
     presence: Option<PresenceIndex>,
     /// Settle-scoped write log: every (store, entity) touched since the
     /// current plan epoch began, in write order — the delta-planning
-    /// source. Cleared by the runner at settle start; per-system cursors
-    /// slice it. Behind `Arc` so planning waves take a cheap handle; not
+    /// source. At compaction, unread rows move to system dirty queues;
+    /// per-system cursors then start a new log. Behind `Arc` so planning
+    /// waves take a cheap handle; not
     /// carried into snapshots.
     write_log: Arc<Vec<(TypeId, Entity)>>,
-    /// Bumped when the write log is cleared, so per-system cursors from a
-    /// previous settle are recognized as stale (forcing one full plan).
+    /// Bumped when the write log is compacted. Valid consumer cursors
+    /// migrate with their unread rows; invalid cursors still full-plan.
     plan_epoch: u64,
 }
 
@@ -854,16 +855,16 @@ impl World {
         }
     }
 
-    /// Rolls the plan epoch when the write log has grown past its budget:
-    /// clears the log and invalidates every per-system delta cursor (each
-    /// then full-plans once and rejoins the deltas). Called by the runner
-    /// at evaluation start, so cursors stay valid across generations and
-    /// settles while activity is modest.
-    pub(crate) fn maybe_roll_plan_epoch(&mut self) {
-        if self.write_log.len() > 4096 {
-            self.plan_epoch += 1;
-            self.write_log = Arc::new(Vec::new());
+    /// Retires a log above its budget at evaluation start. The caller
+    /// must preserve valid consumers' unread rows before planning again.
+    /// Readers holding the old Arc remain immutable and do not block us.
+    pub(crate) fn maybe_roll_plan_epoch(&mut self) -> Option<(u64, Arc<Vec<(TypeId, Entity)>>)> {
+        if self.write_log.len() <= 4096 {
+            return None;
         }
+        let epoch = self.plan_epoch;
+        self.plan_epoch = epoch.checked_add(1).expect("plan epoch overflow");
+        Some((epoch, std::mem::replace(&mut self.write_log, Arc::new(Vec::new()))))
     }
 
     /// The current write log and plan epoch, as a cheap shared handle.

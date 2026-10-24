@@ -1712,8 +1712,8 @@ pub struct BoxedSystem {
     /// Cursor into the settle-scoped write log: entries before this were
     /// covered by the system's last plan.
     pub(crate) log_pos: Arc<std::sync::atomic::AtomicU64>,
-    /// Rows forced back into planning by conflict deferral or stale
-    /// commits: their entities join the next delta hint instead of
+    /// Rows retained across log compaction or forced back into planning
+    /// by conflict deferral/stale commits: these join the next delta hint instead of
     /// resetting the whole system to a full plan (which showed up as
     /// planning growth on write-heavy waves).
     pub(crate) forced_dirty: Arc<std::sync::Mutex<Vec<Entity>>>,
@@ -1826,6 +1826,35 @@ impl BoxedSystem {
             .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
         self.plan_epoch
             .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Preserve only unread, relevant rows before the global log is reclaimed.
+    /// Watermarks stay intact: empty/irrelevant tails must not wake this system.
+    pub(crate) fn compact_plan_log(&self, epoch: u64, log: &[(TypeId, Entity)], world: &Snapshot) {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        // Startup runs again only after a reset. Do not retain an unconsumed
+        // history for a consumer that may never run in normal generations.
+        if !self.delta_eligible || self.phase == Phase::Startup
+            || self.plan_epoch.load(Relaxed) != epoch {
+            return;
+        }
+        let pos = self.log_pos.load(Relaxed) as usize;
+        assert!(pos <= log.len(), "planning cursor exceeds its log");
+        // Fingerprint-equal writes are logged too. If all interest watermarks
+        // are already observed, retiring those writes must not create work.
+        if self.peek_needs_planning(world) {
+            let interest = self.interest.as_ref().expect("delta planner has bounded interest");
+            let mut dirty = self.forced_dirty.lock().expect("forced-dirty lock poisoned");
+            dirty.extend(log[pos..].iter()
+                .filter(|(component, _)| interest.contains(component))
+                .map(|(_, entity)| *entity));
+            dirty.sort_unstable();
+            dirty.dedup();
+        }
+
+        self.log_pos.store(0, Relaxed);
+        self.plan_epoch.store(epoch + 1, Relaxed);
     }
 
     /// Drains rows forced back into planning since the last plan.

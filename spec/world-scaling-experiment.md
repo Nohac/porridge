@@ -100,6 +100,9 @@ kernel when an external socket changes.
 
 ## Results
 
+Follow-up: [dirty-log compaction](dirty-log-compaction.md) removes routine epoch
+rollover scans. The measurements below remain the original baseline.
+
 Evidence: [machine-readable results](benchmarks/2026-10-24-world-scaling.json).
 Raw logs, runner and frozen executable: `target/world-scaling-20261024-150128/`.
 Same executable and features; async purchase/monitoring kernels, 1,000 active
