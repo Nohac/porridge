@@ -3,6 +3,9 @@
 Status: source audit and research, 2026-10-24. This describes the pre-refactor
 state. The subsequent [compact execution records](compact-execution-records.md)
 replace the separate running/reader/reservation-owner tracking structures.
+Subsequent [planner activation experiments](planner-activation-round.md) retain
+quiet-wave gating and sealed metadata reuse, but archive consumer-bitset routing
+after measurement. The proposals below are not all implemented.
 This supplements the [warmed CPU profile](warmed-purchase-profile.md) and
 [optimization roadmap](optimization-roadmap.md); it does not resume all roadmap tasks.
 

@@ -27,6 +27,13 @@ a measured single-worker regression retained as a follow-up.
 substantial entry/index cloning; instrumentation is archived to avoid normal-path
 overhead. Avoiding snapshots on quiet planner waves is the next selected experiment.
 
+
+Planner-focused round completed 2026-10-24: [experiment ledger](planner-activation-round.md).
+Quiet snapshot gating and sealed-registry/absent-hook/phase fast paths are retained.
+Two component-consumer activation variants are archived after mixed/adverse timing.
+The sparse compiler gating check improves substantially; world-workload regressions
+remain explicit. This does not complete the broader allocation/scheduling roadmap.
+
 ## Objective and completion criteria
 
 Make bounded, warmed execution approach zero global allocations per **complete

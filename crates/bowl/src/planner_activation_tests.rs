@@ -57,3 +57,23 @@ fn quiet_pending_phase_does_not_capture_a_new_snapshot_and_recovers_if_cancelled
         });
     }
 }
+
+#[test]
+fn absent_settlement_work_does_not_capture_snapshot_or_touch_pending_inputs() {
+    block_on(async {
+        let bowl = Bowl::builder().system(produce).build();
+        bowl.insert((Input,)).await;
+        let mut budget = CommitBudget::new(bowl.commit_limit());
+        assert!(!bowl.run_settled_hooks(&mut budget).await);
+        assert!(!bowl.run_settle_phase().await);
+        {
+            let state = bowl.inner.state.lock().await;
+            assert!(state.snapshot_cache.is_none());
+            assert!(state.pending_generation.is_some());
+            assert!(state.settled_hooks.is_empty());
+            assert!(state.settle_systems.is_empty());
+        }
+        bowl.stir().await;
+        assert_eq!(bowl.scoop::<Query<&Output>>().await.len(), 1);
+    });
+}

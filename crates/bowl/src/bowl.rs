@@ -115,6 +115,7 @@ struct Inner {
     /// Derived from the sealed registry at construction: only non-Settle
     /// systems with ambient view dependencies can require healing.
     ambient_healing_enabled: atomic::AtomicBool,
+    registered_phases: atomic::AtomicU8,
     /// Bound entity handles cannot `await` in `Drop`, so dropped handles enqueue
     /// their entity here. The next bowl operation drains this queue after
     /// evaluation has had a chance to materialize request outputs.
@@ -149,7 +150,9 @@ struct State {
     /// Repeated reads of an unchanged world share one structural clone
     /// instead of paying O(entries) per scoop.
     snapshot_cache: Option<(SnapshotKey, Arc<Snapshot>)>,
-    systems: Vec<BoxedSystem>,
+    systems: Arc<Vec<BoxedSystem>>,
+    settled_hooks: Vec<usize>,
+    settle_systems: Vec<usize>,
     memo: HashMap<SystemInvocation, MemoEntry>,
     completed_generation: u64,
     running_generation: Option<u64>,
@@ -1010,6 +1013,19 @@ impl BowlBuilder {
             }
         }
 
+        {
+            let mut state = bowl.inner.state.try_lock().expect("unshared builder state");
+            state.settled_hooks = state.systems.iter().enumerate()
+                .filter_map(|(id, system)| (system.phase != Phase::Settle && system.runnable.has_settled_hook()).then_some(id))
+                .collect();
+            state.settle_systems = state.systems.iter().enumerate()
+                .filter_map(|(id, system)| (system.phase == Phase::Settle).then_some(id))
+                .collect();
+            bowl.inner.registered_phases.store(
+                state.systems.iter().fold(0, |mask, system| mask | system.phase.bit()),
+                atomic::Ordering::Relaxed,
+            );
+        }
         bowl
     }
 }
@@ -1129,7 +1145,9 @@ impl Bowl {
                 state: Mutex::new(State {
                     world: World::new(),
                     snapshot_cache: None,
-                    systems: Vec::new(),
+                    systems: Arc::new(Vec::new()),
+                    settled_hooks: Vec::new(),
+                    settle_systems: Vec::new(),
                     memo: HashMap::new(),
                     completed_generation: 0,
                     running_generation: None,
@@ -1155,6 +1173,7 @@ impl Bowl {
                 }),
                 completed_generation: std::sync::atomic::AtomicU64::new(0),
                 ambient_healing_enabled: atomic::AtomicBool::new(false),
+                registered_phases: atomic::AtomicU8::new(0),
                 settled_read: std::sync::RwLock::new(None),
                 runner: Mutex::new(()),
                 commit_limit: StdMutex::new(CommitLimit::default()),
@@ -1357,7 +1376,7 @@ impl Bowl {
                 .ambient_healing_enabled
                 .store(true, atomic::Ordering::Relaxed);
         }
-        state.systems.push(system);
+        Arc::make_mut(&mut state.systems).push(system);
         if state.pending_generation.is_none() {
             let next_generation = state.next_generation;
             state.pending_generation = Some(next_generation);
@@ -1961,7 +1980,9 @@ impl Bowl {
     async fn run_settled_hooks(&self, commit_budget: &mut CommitBudget) -> bool {
         let (systems, mut memo) = {
             let mut state = lock_state(&self.inner.state).await;
-            (state.systems.clone(), std::mem::take(&mut state.memo))
+            if state.settled_hooks.is_empty() { return false; }
+            let systems = state.settled_hooks.iter().map(|&id| state.systems[id].clone()).collect::<Vec<_>>();
+            (systems, std::mem::take(&mut state.memo))
         };
 
         let snapshot = self.snapshot().await;
@@ -1969,7 +1990,6 @@ impl Bowl {
         let runs = join_all(
             systems
                 .iter()
-                .filter(|system| system.phase != Phase::Settle)
                 .map(|system| system.run_settled(bowl.clone(), &snapshot, &memo)),
         )
         .await;
@@ -1998,8 +2018,10 @@ impl Bowl {
     async fn run_settle_phase(&self) -> bool {
         let (systems, mut memo, revision_before) = {
             let mut state = lock_state(&self.inner.state).await;
+            if state.settle_systems.is_empty() { return false; }
+            let systems = state.settle_systems.iter().map(|&id| state.systems[id].clone()).collect::<Vec<_>>();
             (
-                state.systems.clone(),
+                systems,
                 std::mem::take(&mut state.memo),
                 state.world.revision_raw(),
             )
@@ -2008,7 +2030,6 @@ impl Bowl {
         let snapshot = self.snapshot().await;
         let mut runs = systems
             .iter()
-            .filter(|system| system.phase == Phase::Settle)
             .flat_map(|system| system.stream_runs(self.clone(), Arc::clone(&snapshot), &memo, None))
             .map(|planned| {
                 let owner = planned.owner;
@@ -2259,6 +2280,15 @@ impl Bowl {
         commit_budget: &mut CommitBudget,
         allow_preempt: bool,
     ) -> PhaseRun {
+        if self.inner.registered_phases.load(atomic::Ordering::Relaxed) & phase.bit() == 0 {
+            // Preserve the empty phase's preemption boundary without building
+            // reservations, queues or a planner wave that cannot contain work.
+            if allow_preempt && self.inner.preempt_waiters.load(atomic::Ordering::SeqCst) > 0 {
+                self.open_preempt_window().await;
+                return PhaseRun::Preempted(false);
+            }
+            return PhaseRun::Completed(false);
+        }
         let mut phase_changed = false;
         let component_registry = lock_state(&self.inner.state).await.world.component_registry();
         let mut running_access = Reservations::new(component_registry);
@@ -2563,7 +2593,7 @@ impl Bowl {
         &self,
     ) -> Option<(
         u64,
-        Vec<BoxedSystem>,
+        Arc<Vec<BoxedSystem>>,
         HashMap<SystemInvocation, MemoEntry>,
         bool,
     )> {
@@ -2783,7 +2813,7 @@ impl Drop for EpochGuard {
 /// Called at a generation boundary while state is exclusively held.
 fn compact_plan_log(state: &mut State) {
     if let Some((epoch, log)) = state.world.maybe_roll_plan_epoch() {
-        for system in &state.systems {
+        for system in state.systems.iter() {
             system.compact_plan_log(epoch, &log, &state.world);
         }
     }
@@ -2903,7 +2933,7 @@ impl Drop for EvaluationGuard {
         // The abandoned run advanced planned marks and delta cursors for
         // work it never committed; force every system through a full plan
         // so the promoted driver sees the uncommitted rows again.
-        for system in &state.systems {
+        for system in state.systems.iter() {
             system.reset_full();
         }
         // Abandoned run: wake everyone regardless of target, so a waiter
@@ -2964,7 +2994,7 @@ fn warn_same_phase_conflicts(state: &State, new: &BoxedSystem) {
     let Some(schema) = state.schema.as_ref() else {
         return;
     };
-    for existing in &state.systems {
+    for existing in state.systems.iter() {
         if existing.phase != new.phase {
             continue;
         }

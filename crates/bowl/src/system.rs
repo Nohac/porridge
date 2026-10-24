@@ -48,6 +48,10 @@ pub enum Phase {
 }
 
 impl Phase {
+    pub(crate) fn bit(self) -> u8 {
+        match self { Self::Startup => 1, Self::Evaluate => 2, Self::Complete => 4, Self::Settle => 8 }
+    }
+
     pub(crate) const fn ordered(startup: bool) -> &'static [Phase] {
         if startup {
             &[Phase::Startup, Phase::Evaluate, Phase::Complete]
@@ -1610,6 +1614,9 @@ where
 /// multi-threaded executor. Borrowed query data remains valid because the query
 /// wrappers own read guards for the duration of each system invocation.
 pub(crate) trait Runnable: Send + Sync {
+    /// Whether this executable has an actual settled callback; inspected at seal time.
+    fn has_settled_hook(&self) -> bool { false }
+
     fn has_work(&self, _snapshot: &Snapshot, _memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
         false
     }
@@ -2251,6 +2258,8 @@ where
     C: SystemCallback<D>,
     D: Send + Sync + 'static,
 {
+    fn has_settled_hook(&self) -> bool { true }
+
     fn has_work(&self, snapshot: &Snapshot, memo: &HashMap<SystemInvocation, MemoEntry>) -> bool {
         self.system.has_work(snapshot, memo)
     }
