@@ -23,6 +23,9 @@ A separate spawn-bookkeeping control and distributed publication remain unimplem
 [Dirty-log compaction](dirty-log-compaction.md) now preserves sparse planning
 across busy rounds: the large sparse workload improves with eight workers, with
 a measured single-worker regression retained as a follow-up.
+[Publication/COW measurements](publication-copying-investigation.md) identify
+substantial entry/index cloning; instrumentation is archived to avoid normal-path
+overhead. Avoiding snapshots on quiet planner waves is the next selected experiment.
 
 ## Objective and completion criteria
 

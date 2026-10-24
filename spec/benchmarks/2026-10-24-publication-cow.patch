@@ -1,0 +1,400 @@
+diff --git a/crates/bowl/src/bowl.rs b/crates/bowl/src/bowl.rs
+index cf60f421c3b368f8a3ad404df859547ae341d732..938ee25fd6404f7d3b6b870f87b9254866d108b8 100644
+--- a/crates/bowl/src/bowl.rs
++++ b/crates/bowl/src/bowl.rs
+@@ -3157,21 +3157,26 @@ async fn commit_system_run(
+     let memo_updates = run.memo_updates;
+     let writes = run.writes;
+ 
++    let wait_timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationLockWaitNs);
+     let mut state = lock_state(state).await;
++    drop(wait_timer);
++    let _publication_scope = crate::metrics::PublicationScope::enter();
+     let _timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationNs);
+     crate::metrics::add(crate::metrics::Counter::PublicationCalls, 1);
+     crate::metrics::add(crate::metrics::Counter::ReconciledWrites, writes.len() as u64);
+     let before_revision = state.world.revision_raw();
+     let before_mutations = state.world.mutations_raw();
+ 
+-    if !memo_updates
+-        .iter()
+-        .all(|(_owner, entry)| entry.is_current(&state.world))
+-    {
++    let valid = {
++        let _timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationValidateNs);
++        memo_updates.iter().all(|(_owner, entry)| entry.is_current(&state.world))
++    };
++    if !valid {
+         crate::metrics::add(crate::metrics::Counter::StalePublications, 1);
+         // The commands are discarded, but in-place `MutRef` writes already
+         // happened and are not revocable: reconcile their revisions so
+         // downstream consumers still observe the change.
++        let _reconcile_timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationReconcileNs);
+         state.world.reconcile_written(&writes);
+         let needs_followup = state.world.revision_raw() != before_revision;
+         return CommitProgress {
+@@ -3191,6 +3196,7 @@ async fn commit_system_run(
+     // re-defers the same output each settle sees it removed at settle and
+     // reinstated when the next run starts — emergent ephemerality.
+     crate::metrics::add(crate::metrics::Counter::AcceptedOutputs, outputs.len() as u64);
++    let commands_timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationCommandsNs);
+     for output in outputs {
+         crate::metrics::add(crate::metrics::Counter::BufferedCommands, output.commands.len() as u64);
+         let writer = output.owner.system;
+@@ -3290,13 +3296,20 @@ async fn commit_system_run(
+         }
+     }
+ 
+-    state.world.reconcile_written(&writes);
++    drop(commands_timer);
++    {
++        let _timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationReconcileNs);
++        state.world.reconcile_written(&writes);
++    }
++    let memo_timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationMemoNs);
+     for (owner, mut entry) in memo_updates {
+         entry.refresh_written(&state.world, &writes);
+         entry.settle_epoch = state.settle_epoch;
+         memo.insert(owner, entry);
+     }
+ 
++    drop(memo_timer);
++    let _cleanup_timer = crate::metrics::Timer::new(crate::metrics::Counter::PublicationCleanupNs);
+     // Pair-bound invocation identity includes every provider/member entity.
+     // When one disappears, retire that pair's memo and owned outputs, then
+     // propagate through derived entities used by further bound pairs. Plain
+diff --git a/crates/bowl/src/metrics.rs b/crates/bowl/src/metrics.rs
+index 39c197b0e65332db071cc9664faa9907f4c3ea4d..963bb6e24e51a9e96a067546414c8fc90148bf3f 100644
+--- a/crates/bowl/src/metrics.rs
++++ b/crates/bowl/src/metrics.rs
+@@ -34,6 +34,46 @@ counters! {
+     RowPolls => "completed_row_polls",
+     SyncCalls => "completed_sync_calls",
+     PublicationNs => "publication_ns",
++    PublicationLockWaitNs => "publication_lock_wait_ns",
++    PublicationValidateNs => "publication_validate_ns",
++    PublicationCommandsNs => "publication_commands_ns",
++    PublicationReconcileNs => "publication_reconcile_ns",
++    PublicationMemoNs => "publication_memo_ns",
++    PublicationCleanupNs => "publication_cleanup_ns",
++    StructuralSnapshots => "structural_snapshots",
++    CowEntriesClones => "cow_entries_clones",
++    CowEntriesUnits => "cow_entries_units",
++    CowEntriesShallowBytes => "cow_entries_shallow_bytes",
++    CowEntriesNs => "cow_entries_ns",
++    CowEntriesPublicationClones => "cow_entries_publication_clones",
++    CowEntriesPublicationUnits => "cow_entries_publication_units",
++    CowEntriesPublicationShallowBytes => "cow_entries_publication_shallow_bytes",
++    CowEntriesPublicationNs => "cow_entries_publication_ns",
++    CowFingerprintsClones => "cow_fingerprints_clones",
++    CowFingerprintsUnits => "cow_fingerprints_units",
++    CowFingerprintsShallowBytes => "cow_fingerprints_shallow_bytes",
++    CowFingerprintsNs => "cow_fingerprints_ns",
++    CowFingerprintsPublicationClones => "cow_fingerprints_publication_clones",
++    CowFingerprintsPublicationUnits => "cow_fingerprints_publication_units",
++    CowFingerprintsPublicationShallowBytes => "cow_fingerprints_publication_shallow_bytes",
++    CowFingerprintsPublicationNs => "cow_fingerprints_publication_ns",
++    CowPresenceClones => "cow_presence_clones",
++    CowPresenceUnits => "cow_presence_units",
++    CowPresenceShallowBytes => "cow_presence_shallow_bytes",
++    CowPresenceNs => "cow_presence_ns",
++    CowPresencePublicationClones => "cow_presence_publication_clones",
++    CowPresencePublicationUnits => "cow_presence_publication_units",
++    CowPresencePublicationShallowBytes => "cow_presence_publication_shallow_bytes",
++    CowPresencePublicationNs => "cow_presence_publication_ns",
++    CowPlanLogClones => "cow_plan_log_clones",
++    CowPlanLogUnits => "cow_plan_log_units",
++    CowPlanLogShallowBytes => "cow_plan_log_shallow_bytes",
++    CowPlanLogNs => "cow_plan_log_ns",
++    CowPlanLogPublicationClones => "cow_plan_log_publication_clones",
++    CowPlanLogPublicationUnits => "cow_plan_log_publication_units",
++    CowPlanLogPublicationShallowBytes => "cow_plan_log_publication_shallow_bytes",
++    CowPlanLogPublicationNs => "cow_plan_log_publication_ns",
++
+     PublicationCalls => "publication_calls",
+     StalePublications => "stale_publications",
+     AcceptedOutputs => "accepted_output_groups",
+@@ -101,3 +141,46 @@ impl Drop for Timer {
+         }
+     }
+ }
++
++// commit_system_run holds state and does not await inside this scope. The
++// marker is thread-local so unrelated worker work cannot acquire attribution.
++thread_local! {
++    static IN_PUBLICATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++}
++
++pub(crate) struct PublicationScope(Option<bool>);
++
++impl PublicationScope {
++    pub(crate) fn enter() -> Self {
++        Self(enabled().then(|| IN_PUBLICATION.replace(true)))
++    }
++}
++
++impl Drop for PublicationScope {
++    fn drop(&mut self) {
++        if let Some(previous) = self.0 { IN_PUBLICATION.set(previous); }
++    }
++}
++
++#[derive(Clone, Copy)]
++pub(crate) enum CowKind { Entries, Fingerprints, Presence, PlanLog }
++
++/// Called by actual payload Clone implementations, never by a refcount guess.
++/// Byte counts describe logical inline storage, not allocated/physical traffic.
++pub(crate) fn record_cow(kind: CowKind, units: u64, shallow_bytes: u64, nanos: u64) {
++    use Counter::*;
++    let counters = match kind {
++        CowKind::Entries => [CowEntriesClones, CowEntriesUnits, CowEntriesShallowBytes, CowEntriesNs, CowEntriesPublicationClones, CowEntriesPublicationUnits, CowEntriesPublicationShallowBytes, CowEntriesPublicationNs],
++        CowKind::Fingerprints => [CowFingerprintsClones, CowFingerprintsUnits, CowFingerprintsShallowBytes, CowFingerprintsNs, CowFingerprintsPublicationClones, CowFingerprintsPublicationUnits, CowFingerprintsPublicationShallowBytes, CowFingerprintsPublicationNs],
++        CowKind::Presence => [CowPresenceClones, CowPresenceUnits, CowPresenceShallowBytes, CowPresenceNs, CowPresencePublicationClones, CowPresencePublicationUnits, CowPresencePublicationShallowBytes, CowPresencePublicationNs],
++        CowKind::PlanLog => [CowPlanLogClones, CowPlanLogUnits, CowPlanLogShallowBytes, CowPlanLogNs, CowPlanLogPublicationClones, CowPlanLogPublicationUnits, CowPlanLogPublicationShallowBytes, CowPlanLogPublicationNs],
++    };
++    for (counter, value) in counters[..4].iter().copied().zip([1, units, shallow_bytes, nanos]) {
++        add(counter, value);
++    }
++    if IN_PUBLICATION.get() {
++        for (counter, value) in counters[4..].iter().copied().zip([1, units, shallow_bytes, nanos]) {
++            add(counter, value);
++        }
++    }
++}
+diff --git a/crates/bowl/src/world.rs b/crates/bowl/src/world.rs
+index 86f8cc026aeffd757c8ee18fa4b5d6869041618b..a9e333743937bcb8050b70d954ff767b92639a84 100644
+--- a/crates/bowl/src/world.rs
++++ b/crates/bowl/src/world.rs
+@@ -1,4 +1,8 @@
+ mod stores;
++mod cow;
++use cow::CowData;
++
++pub(crate) type PlanLog = Arc<CowData<Vec<(TypeId, Entity)>>>;
+ 
+ #[cfg(test)]
+ mod guard_tests;
+@@ -355,14 +359,14 @@ struct Store<T> {
+     /// a clone — the same copy-on-write pattern as the fingerprint index
+     /// and presence bits, making `World::clone` O(#stores) instead of
+     /// O(total entries).
+-    entries: Arc<BTreeMap<Entity, ComponentEntry<T>>>,
++    entries: Arc<CowData<BTreeMap<Entity, ComponentEntry<T>>>>,
+     /// Fingerprint → entities index for equality lookups.
+     ///
+     /// Only entries with a fingerprint participate. The map is shared with
+     /// snapshots and copied on the first live write after a clone, so
+     /// snapshot clones stay cheap while external `Where<Eq<T>>` queries can
+     /// resolve candidates without scanning.
+-    by_fingerprint: Arc<HashMap<u64, BTreeSet<Entity>>>,
++    by_fingerprint: Arc<CowData<HashMap<u64, BTreeSet<Entity>>>>,
+     /// Highest revision at which this store changed (inserts, removals —
+     /// including whole-entity and sweep paths — and in-place writes).
+     /// Compared against memoized `planned_revision`s by `explain`'s
+@@ -372,7 +376,7 @@ struct Store<T> {
+ 
+ pub(crate) struct ResolvedStore<T> {
+     slot: Option<u32>,
+-    entries: Option<Arc<BTreeMap<Entity, ComponentEntry<T>>>>,
++    entries: Option<Arc<CowData<BTreeMap<Entity, ComponentEntry<T>>>>>,
+ }
+ 
+ impl<T: Component> ResolvedStore<T> {
+@@ -455,8 +459,8 @@ impl<T> Clone for Store<T> {
+ impl<T> Default for Store<T> {
+     fn default() -> Self {
+         Self {
+-            entries: Arc::new(BTreeMap::new()),
+-            by_fingerprint: Arc::new(HashMap::new()),
++            entries: Arc::default(),
++            by_fingerprint: Arc::default(),
+             watermark: 0,
+         }
+     }
+@@ -660,7 +664,7 @@ pub struct World {
+     /// per-system cursors then start a new log. Behind `Arc` so planning
+     /// waves take a cheap handle; not
+     /// carried into snapshots.
+-    write_log: Arc<Vec<(TypeId, Entity)>>,
++    write_log: PlanLog,
+     /// Bumped when the write log is compacted. Valid consumer cursors
+     /// migrate with their unread rows; invalid cursors still full-plan.
+     plan_epoch: u64,
+@@ -677,7 +681,7 @@ pub(crate) struct PresenceIndex {
+     bit_for: Arc<HashMap<TypeId, u32>>,
+     /// Words per entity row.
+     stride: usize,
+-    bits: Arc<Vec<u64>>,
++    bits: Arc<CowData<Vec<u64>>>,
+ }
+ 
+ impl Clone for PresenceIndex {
+@@ -701,7 +705,7 @@ impl PresenceIndex {
+         Self {
+             bit_for: Arc::new(bit_for),
+             stride,
+-            bits: Arc::new(Vec::new()),
++            bits: Arc::default(),
+         }
+     }
+ 
+@@ -787,6 +791,7 @@ impl Clone for World {
+     /// table. Ownership checks against a snapshot must go through the live
+     /// bowl instead.
+     fn clone(&self) -> Self {
++        crate::metrics::add(crate::metrics::Counter::StructuralSnapshots, 1);
+         debug_assert!(
+             self.pending_derived_from.is_empty(),
+             "snapshot taken with unflushed DerivedFrom anchors; \
+@@ -808,7 +813,7 @@ impl Clone for World {
+             flushing_anchors: false,
+             written_derived: Vec::new(),
+             presence: self.presence.clone(),
+-            write_log: Arc::new(Vec::new()),
++            write_log: Arc::default(),
+             plan_epoch: self.plan_epoch,
+         }
+     }
+@@ -850,7 +855,7 @@ impl World {
+             flushing_anchors: false,
+             written_derived: Vec::new(),
+             presence: None,
+-            write_log: Arc::new(Vec::new()),
++            write_log: Arc::default(),
+             plan_epoch: 0,
+         }
+     }
+@@ -858,17 +863,17 @@ impl World {
+     /// Retires a log above its budget at evaluation start. The caller
+     /// must preserve valid consumers' unread rows before planning again.
+     /// Readers holding the old Arc remain immutable and do not block us.
+-    pub(crate) fn maybe_roll_plan_epoch(&mut self) -> Option<(u64, Arc<Vec<(TypeId, Entity)>>)> {
++    pub(crate) fn maybe_roll_plan_epoch(&mut self) -> Option<(u64, PlanLog)> {
+         if self.write_log.len() <= 4096 {
+             return None;
+         }
+         let epoch = self.plan_epoch;
+         self.plan_epoch = epoch.checked_add(1).expect("plan epoch overflow");
+-        Some((epoch, std::mem::replace(&mut self.write_log, Arc::new(Vec::new()))))
++        Some((epoch, std::mem::take(&mut self.write_log)))
+     }
+ 
+     /// The current write log and plan epoch, as a cheap shared handle.
+-    pub(crate) fn plan_log(&self) -> (Arc<Vec<(TypeId, Entity)>>, u64) {
++    pub(crate) fn plan_log(&self) -> (PlanLog, u64) {
+         (Arc::clone(&self.write_log), self.plan_epoch)
+     }
+ 
+diff --git a/crates/bowl/src/world/cow.rs b/crates/bowl/src/world/cow.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b7f9b4072410b1153c0cfae50126cf7bcd3859f
+--- /dev/null
++++ b/crates/bowl/src/world/cow.rs
+@@ -0,0 +1,107 @@
++//! Transparent payload instrumentation: Arc keeps exactly its existing COW policy.
++use super::*;
++use crate::metrics::{self, CowKind};
++use std::time::Instant;
++
++#[repr(transparent)]
++pub(crate) struct CowData<T>(pub T);
++
++impl<T: Default> Default for CowData<T> {
++    fn default() -> Self { Self(T::default()) }
++}
++
++impl<T> Deref for CowData<T> {
++    type Target = T;
++    fn deref(&self) -> &T { &self.0 }
++}
++
++impl<T> DerefMut for CowData<T> {
++    fn deref_mut(&mut self) -> &mut T { &mut self.0 }
++}
++
++pub(crate) trait CowPayload: Clone {
++    const KIND: CowKind;
++    /// Logical elements and inline bytes; excludes allocator/node overhead.
++    fn copy_size(&self) -> (u64, u64);
++}
++
++impl<T: CowPayload> Clone for CowData<T> {
++    fn clone(&self) -> Self {
++        if !metrics::enabled() { return Self(self.0.clone()); }
++        let (units, bytes) = self.0.copy_size();
++        let start = Instant::now();
++        let data = self.0.clone();
++        let nanos = start.elapsed().as_nanos() as u64;
++        metrics::record_cow(T::KIND, units, bytes, nanos);
++        Self(data)
++    }
++}
++
++impl<T> CowPayload for BTreeMap<Entity, ComponentEntry<T>> {
++    const KIND: CowKind = CowKind::Entries;
++    fn copy_size(&self) -> (u64, u64) {
++        let entries = self.len() as u64;
++        (entries, entries * (size_of::<Entity>() + size_of::<ComponentEntry<T>>()) as u64)
++    }
++}
++
++impl CowPayload for HashMap<u64, BTreeSet<Entity>> {
++    const KIND: CowKind = CowKind::Fingerprints;
++    fn copy_size(&self) -> (u64, u64) {
++        let members = self.values().map(|bucket| bucket.len() as u64).sum::<u64>();
++        let bytes = members * size_of::<Entity>() as u64
++            + self.len() as u64 * (size_of::<u64>() + size_of::<BTreeSet<Entity>>()) as u64;
++        (members, bytes)
++    }
++}
++
++impl CowPayload for Vec<u64> {
++    const KIND: CowKind = CowKind::Presence;
++    fn copy_size(&self) -> (u64, u64) {
++        (self.len() as u64, (self.len() * size_of::<u64>()) as u64)
++    }
++}
++
++impl CowPayload for Vec<(TypeId, Entity)> {
++    const KIND: CowKind = CowKind::PlanLog;
++    fn copy_size(&self) -> (u64, u64) {
++        (self.len() as u64, (self.len() * size_of::<(TypeId, Entity)>()) as u64)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    struct Payload { copies: Arc<AtomicU64>, value: u64 }
++    impl Clone for Payload {
++        fn clone(&self) -> Self {
++            self.copies.fetch_add(1, Ordering::Relaxed);
++            Self { copies: self.copies.clone(), value: self.value }
++        }
++    }
++    impl CowPayload for Payload {
++        const KIND: CowKind = CowKind::Entries;
++        fn copy_size(&self) -> (u64, u64) { (1, size_of::<Self>() as u64) }
++    }
++
++    #[test]
++    fn transparent_wrapper_copies_payload_only_when_a_snapshot_still_shares_it() {
++        let copies = Arc::new(AtomicU64::new(0));
++        let mut live = Arc::new(CowData(Payload { copies: copies.clone(), value: 1 }));
++        Arc::make_mut(&mut live).value = 2;
++        assert_eq!(copies.load(Ordering::Relaxed), 0);
++        let snapshot = live.clone();
++        Arc::make_mut(&mut live).value = 3;
++        assert_eq!(copies.load(Ordering::Relaxed), 1);
++        assert_eq!(snapshot.value, 2);
++        assert_eq!(live.value, 3);
++        Arc::make_mut(&mut live).value = 4;
++        assert_eq!(copies.load(Ordering::Relaxed), 1);
++        drop(snapshot);
++        let weak = Arc::downgrade(&live);
++        Arc::make_mut(&mut live).value = 5;
++        assert!(weak.upgrade().is_none());
++        assert_eq!(copies.load(Ordering::Relaxed), 1, "weak disassociation is not a payload copy");
++    }
++}

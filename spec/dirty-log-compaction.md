@@ -134,3 +134,9 @@ Instrumented publication elapsed time rose 31.40→55.81ms/round while admission
 was 3.75→3.62ms. This is a separate diagnostic observation, not exact attribution
 of the ordinary run's wall-time change or proof that COW caused it. Profiling
 publication and counting copied entries/bytes is the next selected investigation.
+
+Follow-up: [publication and structural copying measurements](publication-copying-investigation.md)
+confirm substantial map/index copying and select quiet-snapshot gating as the next
+controlled experiment. The diagnostic patch is archived because metrics-off
+instrumentation overhead was measurable; normal production code retains this
+compaction implementation.
