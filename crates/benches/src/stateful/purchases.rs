@@ -1,5 +1,5 @@
 //! Independent validation artifacts followed by one guarded state update.
-use bowl::{Bowl, Commands, CommitLimit, Component, Entity, Eq, MutRef, Not, Query, Schema, Where, sync_kernel};
+use bowl::{Bowl, Commands, CommitLimit, Component, Entity, Eq, MutRef, Not, Query, Schema, Where};
 
 #[derive(Component, Hash)]
 #[component(hash)]
@@ -176,7 +176,7 @@ pub async fn create_with_mode(owners: usize, balance: u64, capacity: u64, mode: 
         KernelMode::Async => builder
             .system(validate_wallet_async).system(validate_inventory_async).system(apply_async),
         KernelMode::Sync => builder
-            .system(sync_kernel(validate_wallet)).system(sync_kernel(validate_inventory)).system(sync_kernel(apply)),
+            .system(validate_wallet).system(validate_inventory).system(apply),
     }.build();
     // Workload sizes must not silently trip the engine's application guardrail.
     bowl.set_commit_limit(CommitLimit::None);

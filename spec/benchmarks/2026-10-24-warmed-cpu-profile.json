@@ -1,0 +1,1388 @@
+{
+  "conclusion": "The tiny-body steady purchase workload is dominated by shared driver bookkeeping across publication/command application, planning, and admission/reservation work. Publication is the largest robust eight-worker exclusive bucket (~29%), not a single planner hotspot. More workers increase total cycles/request while throughput flattens after four workers.",
+  "scope": "Current uncommitted source, warmed fixed-world independent purchases, 1000 slots, work=0, dispatch width16. Direct .system(sync_fn) API fix preserved. No optimization or commit performed.",
+  "provenance": {
+    "production_manifest": "frozen/manifest.json",
+    "attribution_manifest": "frozen-fp/manifest.json",
+    "actual_attribution_build_command": "CARGO_TARGET_DIR=target/profiling-fp RUSTFLAGS='-C force-frame-pointers=yes' cargo build --workspace --examples --profile bench -j20 --message-format=json",
+    "features_and_source_match": true,
+    "classifier_sha256": "d996e8ce4a1cc02d6b0c20884d329adaea78d3248fc8a21d71a4247dd31d47f0",
+    "runner_static_build_command_caveat": "profile-engine historical build_command field is not the actual FP command; use attribution manifest."
+  },
+  "production_throughput": [
+    {
+      "workers": 1,
+      "async": {
+        "median_us_per_request": 20.960268499999998,
+        "process_medians_us": [
+          20.6576505,
+          20.539514,
+          22.0777675
+        ]
+      },
+      "sync": {
+        "median_us_per_request": 20.023514,
+        "process_medians_us": [
+          19.4042615,
+          19.559703499999998,
+          21.7625855
+        ]
+      }
+    },
+    {
+      "workers": 4,
+      "async": {
+        "median_us_per_request": 21.02769,
+        "process_medians_us": [
+          21.149749,
+          20.7529495,
+          21.049425999999997
+        ]
+      },
+      "sync": {
+        "median_us_per_request": 20.7415935,
+        "process_medians_us": [
+          20.596085,
+          20.7228775,
+          20.858878
+        ]
+      }
+    },
+    {
+      "workers": 8,
+      "async": {
+        "median_us_per_request": 24.626117999999998,
+        "process_medians_us": [
+          24.377086000000002,
+          25.378997000000002,
+          24.752871
+        ]
+      },
+      "sync": {
+        "median_us_per_request": 24.2282255,
+        "process_medians_us": [
+          24.245337499999998,
+          24.483235,
+          24.013222
+        ]
+      }
+    },
+    {
+      "workers": 16,
+      "async": {
+        "median_us_per_request": 24.609947499999997,
+        "process_medians_us": [
+          25.0468525,
+          23.449784,
+          25.678404
+        ]
+      },
+      "sync": {
+        "median_us_per_request": 24.599978999999998,
+        "process_medians_us": [
+          24.473802,
+          26.387756000000003,
+          23.527093999999998
+        ]
+      }
+    }
+  ],
+  "production_core_counters": {
+    "async": [
+      {
+        "case": "independent-1",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 117888.5897,
+          "instructions:u": 236588.27534,
+          "branches:u": 34427.36893,
+          "branch-misses:u": 774.4994
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 157650.1149,
+          "instructions:u": 224942.56287,
+          "branches:u": 32019.88009,
+          "branch-misses:u": 717.06679
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 157953.71614,
+          "instructions:u": 224449.06168,
+          "branches:u": 31934.50092,
+          "branch-misses:u": 718.58224
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-1",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 118831.47948,
+          "instructions:u": 231010.41112,
+          "branches:u": 33438.39126,
+          "branch-misses:u": 750.40509
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      }
+    ],
+    "sync": [
+      {
+        "case": "independent-1",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 115588.39702,
+          "instructions:u": 231776.83708,
+          "branches:u": 33588.84684,
+          "branch-misses:u": 779.30086
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 0,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 157077.78312,
+          "instructions:u": 219261.96576,
+          "branches:u": 31066.84188,
+          "branch-misses:u": 716.01282
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-8",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 161659.0636,
+          "instructions:u": 218606.93062,
+          "branches:u": 30934.63396,
+          "branch-misses:u": 713.87743
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      },
+      {
+        "case": "independent-1",
+        "repeat": 1,
+        "full_coverage": true,
+        "events_per_request": {
+          "cycles:u": 119421.75064,
+          "instructions:u": 228716.25033,
+          "branches:u": 33059.62755,
+          "branch-misses:u": 752.73549
+        },
+        "coverage_percent": {
+          "cycles:u": 100.0,
+          "instructions:u": 100.0,
+          "branches:u": 100.0,
+          "branch-misses:u": 100.0
+        }
+      }
+    ]
+  },
+  "production_diagnostics_per_request": {
+    "async": {
+      "independent-1": {
+        "plan_calls": 0.021,
+        "candidate_rows": 10.808666666666667,
+        "memo_hits": 5.404333333333334,
+        "dependency_records": 62.04333333333334,
+        "access_records": 31.02166666666667,
+        "admission_ns": 3189.023,
+        "admission_candidates": 5.404333333333334,
+        "already_running": 0.4043333333333333,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.319,
+        "enqueue_to_first_poll_ns": 1569231.9736666668,
+        "started_rows": 5.0,
+        "completed_row_polls": 5.0,
+        "completed_sync_calls": 0.0,
+        "publication_ns": 6277.252666666666,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.404333333333334,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-8": {
+        "plan_calls": 0.012,
+        "candidate_rows": 10.0,
+        "memo_hits": 5.0,
+        "dependency_records": 58.0,
+        "access_records": 29.0,
+        "admission_ns": 4868.764666666667,
+        "admission_candidates": 5.0,
+        "already_running": 0.0,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.315,
+        "enqueue_to_first_poll_ns": 224628.126,
+        "started_rows": 5.0,
+        "completed_row_polls": 5.0,
+        "completed_sync_calls": 0.0,
+        "publication_ns": 8715.422666666667,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.0,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      }
+    },
+    "sync": {
+      "independent-1": {
+        "plan_calls": 0.032,
+        "candidate_rows": 10.859333333333334,
+        "memo_hits": 5.429666666666667,
+        "dependency_records": 62.29666666666667,
+        "access_records": 31.148333333333333,
+        "admission_ns": 3053.1493333333333,
+        "admission_candidates": 5.429666666666667,
+        "already_running": 0.42966666666666664,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.3283333333333333,
+        "enqueue_to_first_poll_ns": 1037067.296,
+        "started_rows": 5.0,
+        "completed_row_polls": 0.0,
+        "completed_sync_calls": 5.0,
+        "publication_ns": 6524.0216666666665,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.429666666666667,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      },
+      "independent-8": {
+        "plan_calls": 0.012,
+        "candidate_rows": 10.0,
+        "memo_hits": 5.0,
+        "dependency_records": 58.0,
+        "access_records": 29.0,
+        "admission_ns": 4675.527,
+        "admission_candidates": 5.0,
+        "already_running": 0.0,
+        "conflict_deferrals": 0.0,
+        "admitted_rows": 5.0,
+        "dispatch_batches": 0.315,
+        "enqueue_to_first_poll_ns": 204912.444,
+        "started_rows": 5.0,
+        "completed_row_polls": 0.0,
+        "completed_sync_calls": 5.0,
+        "publication_ns": 9218.501,
+        "publication_calls": 5.003,
+        "stale_publications": 0.0,
+        "accepted_output_groups": 5.0,
+        "buffered_commands": 2.0,
+        "planning_arena_chunk_growth": 0.0,
+        "planning_key_growth": 0.0,
+        "command_storage_created": 0.0,
+        "command_storage_reused": 6.0,
+        "command_arena_chunk_growth": 0.0,
+        "command_metadata_growth": 0.0,
+        "revision_checks": 29.0,
+        "reconciled_writes": 4.0,
+        "bound_cleanup_ns": 0.0,
+        "bound_cleanup_roots": 0.0,
+        "ambient_healing_ns": 0.0,
+        "ambient_healing_memo_entries": 0.0,
+        "ambient_healing_victims": 0.0
+      }
+    }
+  },
+  "attribution": {
+    "async_workers1": {
+      "profiles": [
+        "target/current-bottleneck-20261024-114657/fp-async-w1-r0",
+        "target/current-bottleneck-20261024-114657/fp-async-w1-r1"
+      ],
+      "sample_counts": [
+        12235,
+        14078
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          16.344651228867736,
+          16.559051900286065
+        ],
+        "completion_and_dispatch": [
+          6.243784628498366,
+          6.587658357172048
+        ],
+        "other_or_unknown": [
+          7.012668573763793,
+          7.827816451200454
+        ],
+        "planning": [
+          29.20869441682057,
+          30.077646097261955
+        ],
+        "publication_and_command_application": [
+          29.03146710257458,
+          29.194487853388264
+        ],
+        "worker_kernel_body": [
+          0.23702492848385778,
+          0.2699247052138088
+        ],
+        "worker_row_execution": [
+          10.494483040457704,
+          10.910640716010796
+        ]
+      },
+      "combined_execution_percent_range": [
+        17.31916632611361,
+        17.42435004972297
+      ],
+      "driver_percent_range": [
+        85.78633328597812,
+        85.9991826726604
+      ],
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          10.56804250102166,
+          12.317090495809063
+        ],
+        "btree_operation": [
+          6.023702492848386,
+          6.080409149026851
+        ],
+        "component_payload_hash": [
+          1.9391959085097314,
+          2.0923579893747446
+        ],
+        "hash_table_operation": [
+          1.185124642419289,
+          1.2146611734621395
+        ],
+        "hash_unknown_key_or_payload": [
+          2.8697258133257564,
+          2.96689824274622
+        ],
+        "invocation_key_clone": [
+          1.96050575365819,
+          2.4111156518185535
+        ],
+        "map_key_hash:Entity": [
+          3.6861463015937885,
+          3.6866032106833355
+        ],
+        "map_key_hash:SystemId": [
+          1.1223185111521523,
+          1.3404168369431957
+        ],
+        "map_key_hash:SystemInvocation": [
+          4.037597057621578,
+          5.121466117346214
+        ],
+        "map_key_hash:TypeId": [
+          5.93379648549244,
+          6.456883079982952
+        ],
+        "memory_copy": [
+          2.2639967306906414,
+          2.471942037221196
+        ],
+        "other_leaf": [
+          41.319789742861204,
+          42.52554147936249
+        ],
+        "reservation_bookkeeping": [
+          5.000710328171615,
+          5.6967715570085815
+        ],
+        "revision_lookup": [
+          6.684188094899843,
+          7.707396812423376
+        ],
+        "structural_clone": [
+          0,
+          0.014206563432305724
+        ],
+        "unknown_leaf": [
+          1.5610952186350633,
+          1.7403040204574514
+        ]
+      },
+      "publication_subcost_percent_ranges": {
+        "command_application_storage": [
+          6.7184307315079685,
+          6.911493109816735
+        ],
+        "current_dependency_revision_checks": [
+          5.7039352180707485,
+          5.835717204740498
+        ],
+        "derived_ownership_cleanup": [
+          4.723682341241654,
+          5.05108295872497
+        ],
+        "other_in_stage": [
+          4.258275439313445,
+          5.085949708765449
+        ],
+        "write_revision_reconciliation": [
+          3.928114789032533,
+          4.364527993461381
+        ],
+        "structural_or_COW_clone": [
+          2.803432774826318,
+          2.841312686461145
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "access_collection": [
+          0.11442582754393134,
+          0.1349623526069044
+        ],
+        "memo_revision_checks": [
+          1.804233555902827,
+          2.53371475275848
+        ],
+        "row_enumeration_and_joins": [
+          5.73234834493536,
+          6.1054352268083365
+        ],
+        "other_in_stage": [
+          19.444217409072333,
+          19.761329734337263
+        ],
+        "dependency_collection": [
+          1.7758204290382156,
+          1.8798528810788722
+        ]
+      },
+      "unknown_leaf_percent": [
+        1.5610952186350633,
+        1.7474073021736043
+      ],
+      "unknown_tail_percent": [
+        0.049039640375970577,
+        0.0568262537292229
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "async_workers8": {
+      "profiles": [
+        "target/current-bottleneck-20261024-114657/fp-async-w8-r0",
+        "target/current-bottleneck-20261024-114657/fp-async-w8-r1"
+      ],
+      "sample_counts": [
+        16349,
+        16353
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          14.184353783106001,
+          15.874763040420717
+        ],
+        "completion_and_dispatch": [
+          9.533418944536171,
+          9.651966481130344
+        ],
+        "other_or_unknown": [
+          7.912921176542531,
+          8.875160560278916
+        ],
+        "planning": [
+          22.252797651807008,
+          22.313291332803228
+        ],
+        "publication_and_command_application": [
+          28.759249067449396,
+          29.090464248577895
+        ],
+        "worker_kernel_body": [
+          0.17738087956449936,
+          0.22625817892741393
+        ],
+        "worker_row_execution": [
+          15.44059194031676,
+          15.707382714539115
+        ]
+      },
+      "combined_execution_percent_range": [
+        25.200269063780347,
+        25.536730075233958
+      ],
+      "driver_percent_range": [
+        77.21573184904275,
+        77.27634073258729
+      ],
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          10.777417579056824,
+          11.53916712529811
+        ],
+        "btree_operation": [
+          4.66083552510857,
+          4.843148046230049
+        ],
+        "component_payload_hash": [
+          1.7187595571594594,
+          1.7733749159175687
+        ],
+        "hash_table_operation": [
+          0.8316516847061701,
+          0.8318551593369625
+        ],
+        "hash_unknown_key_or_payload": [
+          2.464982567741146,
+          2.629486944291567
+        ],
+        "invocation_key_clone": [
+          1.7493424674292006,
+          2.739558490796796
+        ],
+        "map_key_hash:Entity": [
+          3.0766407731359715,
+          3.58344034733688
+        ],
+        "map_key_hash:SystemId": [
+          0.9294930593774843,
+          0.9664199645238241
+        ],
+        "map_key_hash:SystemInvocation": [
+          5.54638292668012,
+          5.6027891614166005
+        ],
+        "map_key_hash:TypeId": [
+          4.862682732888862,
+          5.026600623738764
+        ],
+        "memory_copy": [
+          2.1402800709349967,
+          3.688298978530797
+        ],
+        "other_leaf": [
+          46.3768115942029,
+          47.25059636675026
+        ],
+        "reservation_bookkeeping": [
+          3.3885864578873326,
+          3.4244481134959948
+        ],
+        "revision_lookup": [
+          6.237387635296276,
+          6.385711664321977
+        ],
+        "structural_clone": [
+          0.006116582053948254,
+          0.0183452577508714
+        ],
+        "unknown_leaf": [
+          2.3604231639454536,
+          2.5689644626582666
+        ]
+      },
+      "publication_subcost_percent_ranges": {
+        "command_application_storage": [
+          5.486574102391583,
+          5.583073442181862
+        ],
+        "current_dependency_revision_checks": [
+          5.473001895676634,
+          5.712887638387669
+        ],
+        "derived_ownership_cleanup": [
+          5.358125879258671,
+          5.399620864673149
+        ],
+        "other_in_stage": [
+          5.956093683116248,
+          6.330662425836443
+        ],
+        "write_revision_reconciliation": [
+          3.828980365771607,
+          4.103222650278236
+        ],
+        "structural_or_COW_clone": [
+          2.244236531523268,
+          2.3732338369319224
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "access_collection": [
+          0.10395646058827127,
+          0.11009847697106857
+        ],
+        "memo_revision_checks": [
+          1.4802128570554773,
+          1.559346908824069
+        ],
+        "row_enumeration_and_joins": [
+          4.214325035170347,
+          4.610774781385678
+        ],
+        "other_in_stage": [
+          14.725126888032777,
+          15.260872224600893
+        ],
+        "dependency_collection": [
+          1.2477827390054437,
+          1.2535926129762123
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.5750810447122148,
+        2.3604231639454536
+      ],
+      "unknown_tail_percent": [
+        0.03669949232368952,
+        0.024460343667828535
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "sync_workers1": {
+      "profiles": [
+        "target/current-bottleneck-20261024-114657/fp-sync-w1-r0",
+        "target/current-bottleneck-20261024-114657/fp-sync-w1-r1"
+      ],
+      "sample_counts": [
+        11815,
+        12619
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          17.46572628575957,
+          17.7147693609818
+        ],
+        "completion_and_dispatch": [
+          8.946254760897165,
+          9.485696172438386
+        ],
+        "other_or_unknown": [
+          8.057553956834532,
+          8.083049369997623
+        ],
+        "planning": [
+          27.418971392344876,
+          28.709267879813797
+        ],
+        "publication_and_command_application": [
+          28.96318239526026,
+          29.907282668991204
+        ],
+        "worker_kernel_body": [
+          0.22188762976464063,
+          0.2708421498095641
+        ],
+        "worker_row_execution": [
+          7.338129496402877,
+          7.4173864807037
+        ]
+      },
+      "combined_execution_percent_range": [
+        16.555226407109608,
+        17.124970282906727
+      ],
+      "driver_percent_range": [
+        86.54410016641572,
+        86.88108336859923
+      ],
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          10.503597122302159,
+          11.411363816467231
+        ],
+        "btree_operation": [
+          6.170122725349133,
+          6.284174657262858
+        ],
+        "component_payload_hash": [
+          1.9212865002115955,
+          2.0683096917346857
+        ],
+        "hash_table_operation": [
+          1.1886837308820033,
+          1.396529834955565
+        ],
+        "hash_unknown_key_or_payload": [
+          3.080829454083792,
+          3.296616213646089
+        ],
+        "invocation_key_clone": [
+          2.5899280575539567,
+          2.7656708138521275
+        ],
+        "map_key_hash:Entity": [
+          3.970203661145891,
+          4.088023698688108
+        ],
+        "map_key_hash:SystemId": [
+          1.038117124970283,
+          1.4219212865002115
+        ],
+        "map_key_hash:SystemInvocation": [
+          3.893355903512484,
+          4.643791108645693
+        ],
+        "map_key_hash:TypeId": [
+          5.831570038087177,
+          5.951343212615897
+        ],
+        "memory_copy": [
+          1.2837784293525636,
+          1.4134574693186628
+        ],
+        "other_leaf": [
+          41.223551786987876,
+          41.988997037663985
+        ],
+        "reservation_bookkeeping": [
+          5.436246929233695,
+          5.873889123994922
+        ],
+        "revision_lookup": [
+          7.647198668674221,
+          7.896741430385104
+        ],
+        "structural_clone": [
+          0,
+          0.008463817181548879
+        ],
+        "unknown_leaf": [
+          1.790950154528885,
+          1.9212865002115955
+        ]
+      },
+      "publication_subcost_percent_ranges": {
+        "command_application_storage": [
+          6.855691917054592,
+          6.9815357793803
+        ],
+        "current_dependency_revision_checks": [
+          6.153195090986035,
+          6.426816704968698
+        ],
+        "derived_ownership_cleanup": [
+          4.9344054168429965,
+          5.055868135351454
+        ],
+        "other_in_stage": [
+          4.155734236140499,
+          4.445677153498693
+        ],
+        "write_revision_reconciliation": [
+          3.898882637292971,
+          4.248836225137537
+        ],
+        "structural_or_COW_clone": [
+          2.6153195090986037,
+          3.0985022584990887
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "access_collection": [
+          0.05924672027084215,
+          0.0713210238529202
+        ],
+        "memo_revision_checks": [
+          2.0683096917346857,
+          2.437579348286077
+        ],
+        "row_enumeration_and_joins": [
+          5.975454930173508,
+          6.252476424439338
+        ],
+        "other_in_stage": [
+          17.227989539583167,
+          18.137960220059245
+        ],
+        "dependency_collection": [
+          1.798874712734765,
+          2.099026661024122
+        ]
+      },
+      "unknown_leaf_percent": [
+        1.9212865002115955,
+        1.798874712734765
+      ],
+      "unknown_tail_percent": [
+        0.008463817181548879,
+        0.05547190744116016
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    },
+    "sync_workers8": {
+      "profiles": [
+        "target/current-bottleneck-20261024-114657/fp-sync-w8-r0",
+        "target/current-bottleneck-20261024-114657/fp-sync-w8-r1"
+      ],
+      "sample_counts": [
+        15671,
+        15586
+      ],
+      "exclusive_stage_percent_ranges": {
+        "admission_and_reservation_bookkeeping": [
+          17.650455537020402,
+          18.08435964520452
+        ],
+        "completion_and_dispatch": [
+          14.378288207365584,
+          14.676791525748197
+        ],
+        "other_or_unknown": [
+          7.414970327356263,
+          7.564480944437316
+        ],
+        "planning": [
+          20.68523033491595,
+          20.719800906132345
+        ],
+        "publication_and_command_application": [
+          29.264246059600534,
+          29.60990632619017
+        ],
+        "worker_kernel_body": [
+          0.14038670155063493,
+          0.17323238804054922
+        ],
+        "worker_row_execution": [
+          9.699444834407505,
+          9.938406262030027
+        ]
+      },
+      "combined_execution_percent_range": [
+        24.48992685743616,
+        24.516623061706337
+      ],
+      "driver_percent_range": [
+        78.5272158764597,
+        78.55767996920314
+      ],
+      "mechanism_percent_ranges": {
+        "allocation_or_free": [
+          10.42052198328122,
+          10.522263569870397
+        ],
+        "btree_operation": [
+          4.843341203496905,
+          5.216219684332093
+        ],
+        "component_payload_hash": [
+          1.946270180588348,
+          2.0146285127678687
+        ],
+        "hash_table_operation": [
+          0.9239060695495958,
+          0.9954693382681385
+        ],
+        "hash_unknown_key_or_payload": [
+          2.688310021814449,
+          2.7566843213579224
+        ],
+        "invocation_key_clone": [
+          2.520579414204582,
+          3.933016809957654
+        ],
+        "map_key_hash:Entity": [
+          3.5224299661795673,
+          3.695624278198383
+        ],
+        "map_key_hash:SystemId": [
+          0.8869887052517389,
+          0.962402155780829
+        ],
+        "map_key_hash:SystemInvocation": [
+          5.6974207622225075,
+          7.191627847616616
+        ],
+        "map_key_hash:TypeId": [
+          5.1713075837289875,
+          5.360219513751516
+        ],
+        "memory_copy": [
+          0.9252759874928211,
+          0.9752341845245733
+        ],
+        "other_leaf": [
+          45.36763762350828,
+          45.84263926998915
+        ],
+        "reservation_bookkeeping": [
+          3.3555755164891568,
+          3.777678514453449
+        ],
+        "revision_lookup": [
+          6.566268904345606,
+          6.9292955216219685
+        ],
+        "structural_clone": [
+          0,
+          0.006381213706847042
+        ],
+        "unknown_leaf": [
+          2.4376236360155703,
+          2.5471577056332606
+        ]
+      },
+      "publication_subcost_percent_ranges": {
+        "command_application_storage": [
+          5.5644183523706205,
+          5.6075965610162966
+        ],
+        "current_dependency_revision_checks": [
+          5.8005232595239615,
+          6.133709739509817
+        ],
+        "derived_ownership_cleanup": [
+          5.376620043628898,
+          5.6473741305596326
+        ],
+        "other_in_stage": [
+          6.063133581419223,
+          6.094059090038925
+        ],
+        "write_revision_reconciliation": [
+          4.001020994193095,
+          4.054921083023226
+        ],
+        "structural_or_COW_clone": [
+          2.1568502329143002,
+          2.3739253175927115
+        ]
+      },
+      "planning_subcost_percent_ranges": {
+        "access_collection": [
+          0.03828728224108226,
+          0.038496086231233156
+        ],
+        "memo_revision_checks": [
+          1.4804415799885138,
+          1.6553317079430259
+        ],
+        "row_enumeration_and_joins": [
+          4.7735146926729115,
+          4.881628485737988
+        ],
+        "other_in_stage": [
+          13.036819603088507,
+          13.037341203644296
+        ],
+        "dependency_collection": [
+          1.1805466444244834,
+          1.2826239550762555
+        ]
+      },
+      "unknown_leaf_percent": [
+        2.4440048497224174,
+        2.553573720005133
+      ],
+      "unknown_tail_percent": [
+        0.04466849594792929,
+        0.051328114974977544
+      ],
+      "empty_stacks": [
+        0,
+        0
+      ],
+      "depth_limit_stacks": [
+        0,
+        0
+      ],
+      "zero_lost_samples_verified": true
+    }
+  },
+  "mechanism_priority": [
+    "Map-key hashing (Invocation,TypeId,Entity,SystemId) is substantial and distributed across phases; component-payload hashing is a much smaller separately identified category. Generic untyped hashing remains unresolved.",
+    "Publication freshness checking, derived ownership bookkeeping, command application, write reconciliation and COW cloning are all material subcosts; do not treat total publication as pure revision lookup.",
+    "Planning combines row/join enumeration, dependency/key/access collection and memo checks; a substantial inlined planner remainder prevents a single exact leaf diagnosis.",
+    "Admission/reservation bookkeeping and execution/completion contexts also consume material CPU; eight-worker driver fraction ~77-79% supports a shared serial-work explanation for poor tiny-body scaling, not a universal planner bottleneck."
+  ],
+  "limits": [
+    "Throughput and hardware counters use ordinary optimized binary; attribution uses same optimized feature/source graph with force-frame-pointers=yes, which may perturb layout/timing. FP timings are not replacement throughput numbers.",
+    "Two independent100-round recordings per async/sync and one/eight-worker configuration; not a confidence interval. All percentages are sampled user CPU cycles across driver and workers, not wall-time fractions.",
+    "Each sample belongs to one nearest recognized actual outer-function stage; nested generic type names ignored. Residual other/unknown remains explicit.",
+    "Admission category includes reservation insertion/conflict checks AND release after publication.",
+    "Worker row execution and completion/dispatch boundaries depend on compiler inlining. Combine them with resolved kernel-body frames for a safer execution-path total; resolved kernel bodies below0.3% do not prove all business logic below0.3%.",
+    "Mechanism categories are a separate dimension overlapping the stage table; do not add mechanism percentages to stage percentages. Generic Hasher::write samples without typed caller remain unknown key/payload.",
+    "revision_for_entity symbols may be identical-code-folded to a Stamp specialization; this does not establish active Stamp workload or that exact component type dominates.",
+    "Publication includes command application from all measured phases including base input application; subcosts with ambiguous inlining remain other within stage.",
+    "Production admission/publication diagnostic timers are elapsed instrumented regions, not mutually exclusive CPU ownership; do not add them to sampled percentages or infer wall-time shares.",
+    "Original DWARF32KiB smoke had83%empty callchains and was rejected for ownership analysis. FP profiles have no empty stacks; unknown leaf and unknown tail/depth-limit rates reported separately."
+  ],
+  "artifact_root": "target/current-bottleneck-20261024-114657",
+  "preserved_provenance": {
+    "frozen": {
+      "manifest_sha256": "48b0071131dfe7fb4ba441a51d311da29c470876c91e5cd243fbcc9b9a260a86",
+      "binaries": {
+        "command_buffers": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/command_buffers-87bae43e5cc8f50a",
+          "sha256": "bbecb308f94eb2520415fa64c6c628ca2dfaec2f3cdf7bbeb7f03f65bd1f17cf",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        },
+        "dispatch": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/dispatch-ff322b621ff80cee",
+          "sha256": "0eebaadc5d221943d5946a921785292c7f8699fbab07d476adb5e629cc908b3a",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        },
+        "profile_allocations": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/examples/profile_allocations",
+          "sha256": "57c693a57763168b0d6d1735fa814d6ba602bff4362d331d5e5164ee86cb6fa3",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "steady_allocations": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/examples/steady_allocations",
+          "sha256": "66567626361e4752de0fc853516e0c5c7784b40eb285d631bcc42b74db108cbc",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "stateful": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/stateful-ddf66b1b779a2eba",
+          "sha256": "602856332184edf8079b30ecce82c9f2a3cc36dbdfc1179dce4a4a083c116d01",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        },
+        "profile_purchases": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/examples/profile_purchases",
+          "sha256": "9dc911b7b7e8eb383ec169fee7abd053655ac50e87b84551b664226b53a5ed7a",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "engine": {
+          "original": "/home/jonas/Development/Rust/porridge/target/release/deps/engine-3668254fd99c3494",
+          "sha256": "8c8171cb0fb39d19bc23aa093ba889dcff20abf98cf5909e60f33da1f69ccc2d",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": true
+          }
+        }
+      },
+      "source_sha256": {
+        "crates/playground/build.rs": "a7d22b5d2df3e8f2d219b91493849efcf9e141b481105c516d6c62927c4bbbdf",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/benches/engine.rs": "19224f5df3ca5ba68008cc7bbaf63109ea78b038d2dd2f3c70f64e032cfa7c8e",
+        "crates/benches/benches/stateful.rs": "18574c42216a6daf6232d808533d29a971d62d04b10424783e54194ed06da9ee",
+        "crates/benches/benches/dispatch.rs": "5a462b67279929e9a62386ae3d18d30124448f6e48a8466968faf1c03a584b0a",
+        "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+        "crates/benches/examples/profile_purchases.rs": "170e8d7dc37f84eeecce9fb95e8141d31f448f7874f584f628c8a828f68e9805",
+        "crates/benches/examples/steady_allocations.rs": "ba1fcb8a55377d71a73dce6977170d740f43b436a0d81752d95458d46e7f5173",
+        "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+        "crates/benches/examples/profile_allocations.rs": "87232953eb9efb9cfbe84f321124e48469404c842b514fcb000d252f7756af90",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+        "crates/benches/examples/support/perf_control.rs": "08041cf8ec82f95d935b39e2b011bd4542e5cd715c7c0d3fcdc04b29da5ef7a2",
+        "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+        "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+        "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+        "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+        "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "bebf454572624ffe465a91b7b8ee141546d42cb3b16af19efe3cdcaa51cffd82",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "3e8d7eb894d88698422ce5cdd0122f620f3d55ff6b2ccc68ee917e2dcfca26a2",
+        "crates/benches/src/stateful/steady.rs": "e3b39a11ec99239dba29cf4a1a65bcab5bf03d417c4e30163b190dc1083eca2c",
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "e459fb8f5257a933b5c7d79f8ef37455d6b6cacdb1ea37fa704ba3bdb988ed99",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "0cbf5558e0605284c2cf7730f8cdae76091a99effdfb4825f909e0f22db2c20e",
+        "crates/bowl/src/system.rs": "75f3c401b9e2d692209a963e92207849bfde0b2df46ae6b044cbea958023f38e",
+        "crates/bowl/src/world.rs": "604caf046e6169863a9f8ec996eee39a32fc54fd9baafd7fd5d2a9e7d131037a",
+        "crates/bowl/src/access.rs": "31ccdff47f601965c5c7d2601e026861195d8d0b03307713007890768db7a9ba",
+        "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+        "crates/bowl/src/dispatch.rs": "1bfc1e934370b67ea8869fa1c2c57f6b124ac1b808a5f0bf4039b7ef75ae89fc",
+        "crates/bowl/src/lib.rs": "7fca629e439b6b6744d22b553f81f29ef6e9531ea88e91521ee92e8f0adbc046",
+        "crates/bowl/src/prepared.rs": "ed5cc01ee3b8a2d8a868d4bf98ae8a4519dc0ee4449c1ac447b94a24734f2bdf",
+        "crates/bowl/src/metrics.rs": "f75f52a73c6eca10db1b74af13c4a6c2210d8ceec92c80812b403dadaddbdc86",
+        "crates/bowl/src/planning.rs": "73188ecf08f39a1bbf0719825137c207a559a465c779ce0c1cedb956688b2516",
+        "crates/bowl/src/dispatch/plan.rs": "a105abd9a3f0ca2654cc99426bb199212052e716bd32c0a953cd7692ea4866b8",
+        "crates/bowl/src/dispatch/executor.rs": "94de27dd31941a911a7729b6df2d098e43f0088e96c574a1e305f3794632179f",
+        "crates/bowl/src/system/planning_tests.rs": "2bd0b2880dbef5da67e206841d78b26f1498a25d144ff89e0bd41119443aadbb",
+        "crates/bowl/src/system/synchronous.rs": "efb4a31beaeeb8f5c9021a025a19e097e473e571aab0b1bc66721fb300949d59",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+        "crates/bowl/src/world/invocation_tests.rs": "d89bd9f9843b258424ff1167bdedf0425e6b9fbce461a5eeb779499932652804",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/bowl/src/prepared/rows.rs": "ce8bf61a784bc71b6b65e0b0f5957eeb7992df3e2bbaa9397c323ccdd0b5dd88",
+        "crates/bowl/src/query/guards.rs": "bd442c6b8e340cde7890166003a3ccb5d5b4f22d6c45e7c429aba083ea82a032",
+        "crates/bowl/src/commands/arena.rs": "28ebea4b8e036f06804718d61a6e02a19c644538869fcc1883afd4a46f0b21b7",
+        "crates/bowl/src/commands/arena/tests.rs": "9b8b0a414203c13d345e81530027a7c20da794eb6b6c7d1d11da0daa34db9b72",
+        "crates/bowl/src/prepared/rows/tests.rs": "0cd239913332adb1309564c3dc313e4bf2bfa0d784cc457e8562c80f645e12fe",
+        "crates/bowl/src/system/synchronous/tests.rs": "3a23ff92ead2205606c1e7f4904d1d303c93c735e54d6decdf19b9f32125bc17",
+        "crates/macros/src/lib.rs": "66165412874d1211652f8d562bd67cca8bdbd0b3c6b9ec465ce45a492f3018bf",
+        "crates/playground/src/tests.rs": "63f7d0898fefb25e8b456a2a6cb9d91bed13aa1bfa6fae48bc54d2ac7ad80e25",
+        "crates/playground/src/replication.rs": "7fa007b5166bab6b9973fa30bbf58336958b263a3f8a662168eb8010b5c484e5",
+        "crates/playground/src/main.rs": "60074f02a266fdb207daaa1a6326e14c57d282ea7330e9ab23f0a95496c26989",
+        "crates/playground/src/lang/entity.rs": "47ab9803de29a7ee03b0ac970771358b0b72b07c1b575c4618dddec5b207f815",
+        "crates/playground/src/lang/facts.rs": "d6eb0d5cf739663efb83309b3f805e5489a1497b1004d19c462933f6bcb2ff66",
+        "crates/playground/src/lang/schema.rs": "8bd0737550286defbc0aced238de7ba4f2c4a3c7a86df2b22d4b275106ccde2c",
+        "crates/playground/src/lang/mod.rs": "219477327d483515936c11a5b39725cf04ed11941e117b87b2d1b9d24f2fa56b",
+        "crates/playground/src/lang/grammar/parser.rs": "48b084de2b108fc63013a778a489f27f922bc0e9cd6305f5fffa32ca9ed1d1f3",
+        "crates/playground/src/lang/grammar/mod.rs": "197151ddbccbe728832111ddae440928405b807713164fe54567f3da8fbcad75",
+        "crates/playground/src/lang/grammar/lexer.rs": "f6593474990ee511ac3c1896ac6644eb9555f2d48879562fbba5407aeeb77db4",
+        "crates/playground/src/lang/service/mod.rs": "163249bd48834fc9810c99225d464bb7e376135d9b80e3cfe35af4472dc5d996",
+        "crates/playground/src/lang/service/hover.rs": "e6d17b7c62d08c1920123e141cf2ff0b22d40d9aece714a7aedc5a1d72280c8a",
+        "crates/playground/src/lang/entities/mod.rs": "115c05a95635d74d5605d12e5d382a511bf19f73dc4a022bb4e403c92cd5aa9f",
+        "crates/playground/src/lang/entities/document.rs": "9851e0a7233aa3df12b46327780c4c5a232f7f8b5183b709cc599eb6a3aea55c",
+        "crates/playground/src/lang/entities/namespace.rs": "ad8289b7039a3ea37f543e9a63b1310028f6e61836eb42e4d5330abc183b3b1e",
+        "crates/playground/src/lang/entities/import.rs": "c92dfaa2e5309f17ddca103f9f1a7860a55cd363e021e683d8c0bfa93b4faa3c",
+        "crates/playground/src/lang/entities/definition.rs": "cce8d5d8948b600a63425948207fdafe19cc0493a0deb4b911f66813fc0736f7",
+        "Cargo.lock": "99fe55b09c65079e2e3f5c04aff0d1df56e922f5e24c790371b1500735e2c4b0",
+        "Cargo.toml": "e42f8782b56e3bc746de28b3dbfda6592451e31faf0857ae6207d7179fc39b45",
+        "crates/playground/Cargo.toml": "18a46e2c22783df9d83afff1eaead8becc86af36acac08c124b06b7159bc4d1f",
+        "crates/macros/Cargo.toml": "48d22b9b6bd09f2e838fdb2c719e2428d93f6f8255e5a1e931461e55af8dfa88",
+        "crates/bowl/Cargo.toml": "8a761ba71f95dfa70c8ee900acacd70980f5a4966dbc7199cbe7db525aa344eb",
+        "crates/benches/Cargo.toml": "60a8e7f40c3e6d751b42443487863b213d91410ea37cda8efe94ddd791d25572",
+        "tools/profile-engine": "30e55d75bd6b97f5d74399e35acb3ef76e7d8e050cd7f36d50e8301c6cffe244",
+        "tools/profile-allocations": "fb7eb9bf084e10d7dbf86fac5c1adb73533985b7668ff1bf5ea16c81cb528c50",
+        "tools/measure-allocations": "18db7695fe9165e63f0763e0cb98efd1d5bb96772446a57e2f624c13ab2fe1fc"
+      },
+      "feature_graph_sha256": "75754779c6979095e14d443468b668a942ea30742a1d12f50b4d51320c305363"
+    },
+    "frozen-fp": {
+      "manifest_sha256": "56e5448512f07b87fbccdc69053033a75f733bb6066bdceab3e68ebe6c9e6f2e",
+      "binaries": {
+        "steady_allocations": {
+          "original": "/home/jonas/Development/Rust/porridge/target/profiling-fp/release/examples/steady_allocations",
+          "sha256": "bd20cc56d60da062c4fb8ce9572565a9909227bd15a58f44214001d78e64f03e",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        },
+        "profile_purchases": {
+          "original": "/home/jonas/Development/Rust/porridge/target/profiling-fp/release/examples/profile_purchases",
+          "sha256": "c6dfbf718d0191df415786ba8b6ce1a26d6c88c20f2a6212d292f3f09e9cb1bd",
+          "features": [],
+          "profile": {
+            "opt_level": "3",
+            "debuginfo": 0,
+            "debug_assertions": false,
+            "overflow_checks": false,
+            "test": false
+          }
+        }
+      },
+      "source_sha256": {
+        "crates/playground/build.rs": "a7d22b5d2df3e8f2d219b91493849efcf9e141b481105c516d6c62927c4bbbdf",
+        "crates/benches/src/lib.rs": "f0a6a2a634a38226ff1e5952d4a88449549dc7ae0284d77a0e7eff1a265ea15e",
+        "crates/benches/benches/engine.rs": "19224f5df3ca5ba68008cc7bbaf63109ea78b038d2dd2f3c70f64e032cfa7c8e",
+        "crates/benches/benches/stateful.rs": "18574c42216a6daf6232d808533d29a971d62d04b10424783e54194ed06da9ee",
+        "crates/benches/benches/dispatch.rs": "5a462b67279929e9a62386ae3d18d30124448f6e48a8466968faf1c03a584b0a",
+        "crates/benches/benches/command_buffers.rs": "39a7a05e50ccbaac28814a4a3e0bc711ba3a199efa85258af5af0dd3235f936f",
+        "crates/benches/examples/profile_purchases.rs": "170e8d7dc37f84eeecce9fb95e8141d31f448f7874f584f628c8a828f68e9805",
+        "crates/benches/examples/steady_allocations.rs": "ba1fcb8a55377d71a73dce6977170d740f43b436a0d81752d95458d46e7f5173",
+        "crates/benches/examples/command_buffers.rs": "736b35ac9003f77fbbc7d1151d0ae21f87ca8c7314d5aa221c819a84d1a7451c",
+        "crates/benches/examples/profile_allocations.rs": "87232953eb9efb9cfbe84f321124e48469404c842b514fcb000d252f7756af90",
+        "crates/benches/examples/support/allocations.rs": "22975d83328c7bc296512a80231b1536fa99d5c590443808f970e9d7133d2710",
+        "crates/benches/examples/support/perf_control.rs": "08041cf8ec82f95d935b39e2b011bd4542e5cd715c7c0d3fcdc04b29da5ef7a2",
+        "crates/benches/examples/command_storage/mod.rs": "d9db04c8a5b6c284cf9eca6770f93393edfc44e3168fa63c37c06d24804b8e0d",
+        "crates/benches/examples/command_storage/boxed.rs": "01ef87c3408fcbe4347ef22c49db9cc1fb2e123f8d315236ad2e75087a6b37e7",
+        "crates/benches/examples/command_storage/bump.rs": "9d8f8cf24ddc723a4c9929901b4dd5523c2136206a901a789a800dee42e8aa00",
+        "crates/benches/examples/command_storage/packed.rs": "427090601382f773001f5636325197296f5a63dbee9796ba41ac92fce72bc93e",
+        "crates/benches/examples/command_storage/tests.rs": "7cf65d5000d8ce9643b17c2237ddbb038bd90dacb2545e151ac4fbfa9bddf968",
+        "crates/benches/src/stateful/mod.rs": "0c0247ebf6e389ba6cc1f0896f2ea7c4f575a5285b8d9704873394b0cd58cd71",
+        "crates/benches/src/stateful/purchases.rs": "bebf454572624ffe465a91b7b8ee141546d42cb3b16af19efe3cdcaa51cffd82",
+        "crates/benches/src/stateful/churn.rs": "1d49a11a52e7272ad3442f2d89c7285a0dd9037775f17df11fb1046c566046f0",
+        "crates/benches/src/stateful/tests.rs": "3e8d7eb894d88698422ce5cdd0122f620f3d55ff6b2ccc68ee917e2dcfca26a2",
+        "crates/benches/src/stateful/steady.rs": "e3b39a11ec99239dba29cf4a1a65bcab5bf03d417c4e30163b190dc1083eca2c",
+        "crates/bowl/src/entity.rs": "bc81d8db2dae3ba1399457b38cfe9d42caff9e37946f180f2e05f8c00468b2ad",
+        "crates/bowl/src/declare.rs": "2ff6ab3e101874bd7df80ed5018fa393e4b05aba22ddda1881ff5cb2f8c3c4a0",
+        "crates/bowl/src/commands.rs": "e459fb8f5257a933b5c7d79f8ef37455d6b6cacdb1ea37fa704ba3bdb988ed99",
+        "crates/bowl/src/component.rs": "ec2e991f07307264f37aec1b100295adb31c47a98a500dff50c35a5faec0efd9",
+        "crates/bowl/src/query.rs": "0cbf5558e0605284c2cf7730f8cdae76091a99effdfb4825f909e0f22db2c20e",
+        "crates/bowl/src/system.rs": "75f3c401b9e2d692209a963e92207849bfde0b2df46ae6b044cbea958023f38e",
+        "crates/bowl/src/world.rs": "604caf046e6169863a9f8ec996eee39a32fc54fd9baafd7fd5d2a9e7d131037a",
+        "crates/bowl/src/access.rs": "31ccdff47f601965c5c7d2601e026861195d8d0b03307713007890768db7a9ba",
+        "crates/bowl/src/bowl.rs": "35c0b0b85e3523a503b449b131150af2cd9692dc99983a3111fffa9560608cd3",
+        "crates/bowl/src/dispatch.rs": "1bfc1e934370b67ea8869fa1c2c57f6b124ac1b808a5f0bf4039b7ef75ae89fc",
+        "crates/bowl/src/lib.rs": "7fca629e439b6b6744d22b553f81f29ef6e9531ea88e91521ee92e8f0adbc046",
+        "crates/bowl/src/prepared.rs": "ed5cc01ee3b8a2d8a868d4bf98ae8a4519dc0ee4449c1ac447b94a24734f2bdf",
+        "crates/bowl/src/metrics.rs": "f75f52a73c6eca10db1b74af13c4a6c2210d8ceec92c80812b403dadaddbdc86",
+        "crates/bowl/src/planning.rs": "73188ecf08f39a1bbf0719825137c207a559a465c779ce0c1cedb956688b2516",
+        "crates/bowl/src/dispatch/plan.rs": "a105abd9a3f0ca2654cc99426bb199212052e716bd32c0a953cd7692ea4866b8",
+        "crates/bowl/src/dispatch/executor.rs": "94de27dd31941a911a7729b6df2d098e43f0088e96c574a1e305f3794632179f",
+        "crates/bowl/src/system/planning_tests.rs": "2bd0b2880dbef5da67e206841d78b26f1498a25d144ff89e0bd41119443aadbb",
+        "crates/bowl/src/system/synchronous.rs": "efb4a31beaeeb8f5c9021a025a19e097e473e571aab0b1bc66721fb300949d59",
+        "crates/bowl/src/world/stores.rs": "e0778ade42222f45568fd14203c6ab0fa999e7f3b7b2da9cd7f1603341de6d38",
+        "crates/bowl/src/world/guard_tests.rs": "9bce71bed23e4627245173e3929d0e2fa5e874e2711da3c30fbe4f2f5819b844",
+        "crates/bowl/src/world/candidates_tests.rs": "e67318062deb633611b3342ca1d77fac00a0e53a2abe597eb0c7257146955cc2",
+        "crates/bowl/src/world/invocation_tests.rs": "d89bd9f9843b258424ff1167bdedf0425e6b9fbce461a5eeb779499932652804",
+        "crates/bowl/src/prepared/tests.rs": "1b2c8b9da2178129cda274e157034161f962d499e16bfbcfdf0c58b2239575b6",
+        "crates/bowl/src/prepared/rows.rs": "ce8bf61a784bc71b6b65e0b0f5957eeb7992df3e2bbaa9397c323ccdd0b5dd88",
+        "crates/bowl/src/query/guards.rs": "bd442c6b8e340cde7890166003a3ccb5d5b4f22d6c45e7c429aba083ea82a032",
+        "crates/bowl/src/commands/arena.rs": "28ebea4b8e036f06804718d61a6e02a19c644538869fcc1883afd4a46f0b21b7",
+        "crates/bowl/src/commands/arena/tests.rs": "9b8b0a414203c13d345e81530027a7c20da794eb6b6c7d1d11da0daa34db9b72",
+        "crates/bowl/src/prepared/rows/tests.rs": "0cd239913332adb1309564c3dc313e4bf2bfa0d784cc457e8562c80f645e12fe",
+        "crates/bowl/src/system/synchronous/tests.rs": "3a23ff92ead2205606c1e7f4904d1d303c93c735e54d6decdf19b9f32125bc17",
+        "crates/macros/src/lib.rs": "66165412874d1211652f8d562bd67cca8bdbd0b3c6b9ec465ce45a492f3018bf",
+        "crates/playground/src/tests.rs": "63f7d0898fefb25e8b456a2a6cb9d91bed13aa1bfa6fae48bc54d2ac7ad80e25",
+        "crates/playground/src/replication.rs": "7fa007b5166bab6b9973fa30bbf58336958b263a3f8a662168eb8010b5c484e5",
+        "crates/playground/src/main.rs": "60074f02a266fdb207daaa1a6326e14c57d282ea7330e9ab23f0a95496c26989",
+        "crates/playground/src/lang/entity.rs": "47ab9803de29a7ee03b0ac970771358b0b72b07c1b575c4618dddec5b207f815",
+        "crates/playground/src/lang/facts.rs": "d6eb0d5cf739663efb83309b3f805e5489a1497b1004d19c462933f6bcb2ff66",
+        "crates/playground/src/lang/schema.rs": "8bd0737550286defbc0aced238de7ba4f2c4a3c7a86df2b22d4b275106ccde2c",
+        "crates/playground/src/lang/mod.rs": "219477327d483515936c11a5b39725cf04ed11941e117b87b2d1b9d24f2fa56b",
+        "crates/playground/src/lang/grammar/parser.rs": "48b084de2b108fc63013a778a489f27f922bc0e9cd6305f5fffa32ca9ed1d1f3",
+        "crates/playground/src/lang/grammar/mod.rs": "197151ddbccbe728832111ddae440928405b807713164fe54567f3da8fbcad75",
+        "crates/playground/src/lang/grammar/lexer.rs": "f6593474990ee511ac3c1896ac6644eb9555f2d48879562fbba5407aeeb77db4",
+        "crates/playground/src/lang/service/mod.rs": "163249bd48834fc9810c99225d464bb7e376135d9b80e3cfe35af4472dc5d996",
+        "crates/playground/src/lang/service/hover.rs": "e6d17b7c62d08c1920123e141cf2ff0b22d40d9aece714a7aedc5a1d72280c8a",
+        "crates/playground/src/lang/entities/mod.rs": "115c05a95635d74d5605d12e5d382a511bf19f73dc4a022bb4e403c92cd5aa9f",
+        "crates/playground/src/lang/entities/document.rs": "9851e0a7233aa3df12b46327780c4c5a232f7f8b5183b709cc599eb6a3aea55c",
+        "crates/playground/src/lang/entities/namespace.rs": "ad8289b7039a3ea37f543e9a63b1310028f6e61836eb42e4d5330abc183b3b1e",
+        "crates/playground/src/lang/entities/import.rs": "c92dfaa2e5309f17ddca103f9f1a7860a55cd363e021e683d8c0bfa93b4faa3c",
+        "crates/playground/src/lang/entities/definition.rs": "cce8d5d8948b600a63425948207fdafe19cc0493a0deb4b911f66813fc0736f7"
+      },
+      "feature_graph_sha256": "75754779c6979095e14d443468b668a942ea30742a1d12f50b4d51320c305363"
+    }
+  }
+}

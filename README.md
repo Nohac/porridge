@@ -3,7 +3,7 @@
 Porridge is an ECS-inspired incremental evaluation prototype for compilers,
 language tools, and other stateful systems that are not games.
 
-Callers insert facts. Async or explicitly synchronous systems derive more facts. Queries ask for settled
+Callers insert facts. Async or synchronous systems derive more facts. Queries ask for settled
 results. The runtime tracks which component revisions each system invocation
 observed, so unchanged rows stay memoized while affected rows run again.
 
@@ -326,12 +326,12 @@ siblings finish. Without Tokio, execution remains cooperatively polled.
 `bowl.set_dispatch_batch_size(16)` sets the maximum rows per task (the default);
 `1` selects individual dispatch. See [dispatch batching](spec/dispatch-batching.md).
 
-Plain synchronous kernels can be registered with `sync_kernel(function)` alongside
-ordinary async systems:
+Plain synchronous kernels and async systems both register directly through
+`.system(function)`; the function signature selects execution at compile time:
 
 ```rust
 builder
-    .system(sync_kernel(update_balances))
+    .system(update_balances)
     .system(fetch_remote_facts)
 ```
 

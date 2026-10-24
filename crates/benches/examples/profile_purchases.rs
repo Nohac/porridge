@@ -1,6 +1,9 @@
 //! Fixed fresh-world batches for counters and externally gated perf sampling.
 #[path = "support/allocations.rs"]
 mod allocations;
+#[path = "support/perf_control.rs"]
+mod perf_control;
+use perf_control::PerfControl;
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
@@ -8,9 +11,7 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 use benches::{fleet_bowl, stateful::purchases, touch_slot0};
 use std::{
     env,
-    fs::{File, OpenOptions},
     hint::black_box,
-    io::{BufRead, BufReader, Write},
     time::Instant,
 };
 
@@ -20,43 +21,6 @@ fn number(name: &str, default: usize, positive: bool) -> usize {
         .unwrap_or(default);
     assert!(!positive || value > 0, "{name} must be positive");
     value
-}
-
-struct PerfControl {
-    control: File,
-    acknowledgement: BufReader<File>,
-}
-
-impl PerfControl {
-    fn open() -> std::io::Result<Option<Self>> {
-        match (
-            env::var_os("PROFILE_PERF_CONTROL"),
-            env::var_os("PROFILE_PERF_ACK"),
-        ) {
-            (Some(control), Some(ack)) => Ok(Some(Self {
-                control: OpenOptions::new().write(true).open(control)?,
-                acknowledgement: BufReader::new(File::open(ack)?),
-            })),
-            (None, None) => Ok(None),
-            _ => Err(std::io::Error::other(
-                "set both PROFILE_PERF_CONTROL and PROFILE_PERF_ACK",
-            )),
-        }
-    }
-
-    fn command(&mut self, command: &str) -> std::io::Result<()> {
-        writeln!(self.control, "{command}")?;
-        self.control.flush()?;
-        let mut response = String::new();
-        self.acknowledgement.read_line(&mut response)?;
-        // Some perf versions include a trailing NUL after the newline.
-        if response.trim_matches(|ch: char| ch.is_whitespace() || ch == '\0') != "ack" {
-            return Err(std::io::Error::other(format!(
-                "unexpected perf acknowledgement: {response:?}"
-            )));
-        }
-        Ok(())
-    }
 }
 
 fn main() -> std::io::Result<()> {

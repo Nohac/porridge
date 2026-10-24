@@ -1,5 +1,7 @@
 # Fixed-work hardware and engine accounting
 
+For the current warmed-world investigation, see [warmed purchase CPU profile](warmed-purchase-profile.md). The measurements below use the earlier fresh-world fixture.
+
 Baseline source: `2821d2f` plus the profiling instrumentation in this slice.
 The main tables precede the no-view gate; its follow-up comparison is below.
 [Per-run counts, commands, hashes, affinity and overhead measurements](benchmarks/2026-10-22-hardware-profile.json)

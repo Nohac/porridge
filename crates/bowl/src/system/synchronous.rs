@@ -1,15 +1,5 @@
-//! Explicit synchronous functions; the normal worker path calls them directly.
+//! Inferred synchronous functions; the normal worker path calls them directly.
 use super::*;
-
-/// Registers a synchronous kernel using ordinary system parameters.
-/// Worker batches call it directly. It must not block on I/O. Grouped hooks,
-/// Settle and no-runtime fallback paths currently use the existing adapters.
-pub fn sync_kernel<F>(function: F) -> Synchronous<F> {
-    Synchronous(function)
-}
-
-/// Adapter returned by [`sync_kernel`].
-pub struct Synchronous<F>(F);
 
 #[doc(hidden)]
 pub struct SynchronousMarker;
@@ -46,7 +36,7 @@ impl_sync_function!(P0, P1, P2, P3, P4, P5);
 impl_sync_function!(P0, P1, P2, P3, P4, P5, P6);
 impl_sync_function!(P0, P1, P2, P3, P4, P5, P6, P7);
 
-impl<F, Marker> SystemParamFunction<(SynchronousMarker, Marker)> for Synchronous<F>
+impl<F, Marker> SystemParamFunction<(SynchronousMarker, Marker)> for F
 where
     F: SyncParamFunction<Marker>,
     F::Param: 'static,
@@ -64,13 +54,13 @@ where
     }
 
     fn run_sync<'a>(&'a self, params: <Self::Param as SystemParam>::Item<'a>) {
-        self.0.call(params);
+        self.call(params);
     }
 
     fn run<'a>(&'a self, params: <Self::Param as SystemParam>::Item<'a>)
         -> impl Future<Output = ()> + Send + 'a {
         // Compatibility path for grouped/settle execution.
-        async move { self.0.call(params); }
+        async move { self.call(params); }
     }
 }
 

@@ -1,5 +1,4 @@
 mod synchronous;
-pub use synchronous::{Synchronous, sync_kernel};
 
 use std::{any::TypeId, collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
 

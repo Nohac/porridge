@@ -1,4 +1,4 @@
-use crate::{Bowl, Commands, Component, Entity, MutRef, Query, SystemExt, sync_kernel, declare::Anything};
+use crate::{Bowl, Commands, Component, Entity, MutRef, Query, SystemExt, declare::Anything};
 use futures::{FutureExt, channel::oneshot, future::{BoxFuture, Shared, Either}};
 
 struct Input(u64);
@@ -21,7 +21,7 @@ fn increment(rows: Query<(Entity, MutRef<'_, Counter>)>) {
 }
 
 async fn check_mutation_and_memo() {
-    let bowl = Bowl::builder().system(sync_kernel(derive)).system(sync_kernel(increment)).build();
+    let bowl = Bowl::builder().system(derive).system(increment).build();
     let entity = bowl.insert((Input(3), Counter(0))).await.entity();
     assert_eq!(bowl.scoop::<Query<&Derived>>().await.collect()[0].0, 6);
     assert_eq!(bowl.scoop::<Query<&Counter>>().await.collect()[0].0, 1);
@@ -41,7 +41,7 @@ fn sync_mutation_and_derived_outputs_keep_memo_semantics() {
 #[test]
 fn synchronous_functions_work_through_grouped_hook_fallback() {
     futures::executor::block_on(async {
-        let bowl = Bowl::builder().system(sync_kernel(derive)
+        let bowl = Bowl::builder().system(derive
             .on_complete(|mut commands: Commands<Anything>| { commands.insert((Hook,)); })).build();
         bowl.insert((Input(4),)).await;
         assert_eq!(bowl.scoop::<Query<&Derived>>().await.collect()[0].0, 8);
@@ -73,7 +73,7 @@ fn sync_publication_progresses_while_an_async_sibling_is_pending() {
         let (release, gate) = oneshot::channel();
         let (signal, observed) = oneshot::channel();
         let bowl = Bowl::builder().system(wait_for_gate)
-            .system(sync_kernel(derive)).system(sync_kernel(notify_after_publication)).build();
+            .system(derive).system(notify_after_publication).build();
         bowl.insert((Gate(gate.map(|result| result.unwrap()).boxed().shared()),)).await;
         bowl.insert((Input(5), Signal(Some(signal)))).await;
         let driver = Box::pin(bowl.stir());

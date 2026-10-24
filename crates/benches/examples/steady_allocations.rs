@@ -1,6 +1,9 @@
 //! Allocation traffic on a fixed warmed world. See spec/steady-state-allocations.md.
 #[path = "support/allocations.rs"]
 mod allocations;
+#[path = "support/perf_control.rs"]
+mod perf_control;
+use perf_control::PerfControl;
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
@@ -49,6 +52,7 @@ fn main() {
         "purchases" | "drive" | "idle" | "read" | "probe"
     ));
 
+    let mut control = PerfControl::open().expect("perf control");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(workers)
         .thread_name("porridge-worker")
@@ -93,6 +97,9 @@ fn main() {
             let before = allocations::snapshot();
             let kernel_before = allocations::kernel_snapshot();
             allocations::enable(counting && round >= warmup);
+            if round >= warmup && let Some(control) = &mut control {
+                control.command("enable").expect("enable perf");
+            }
             let start = Instant::now();
             let completed = match case.as_str() {
                 "purchases" => purchases.round().await,
@@ -122,6 +129,9 @@ fn main() {
                 _ => unreachable!(),
             };
             let wall_ns = start.elapsed().as_nanos();
+            if round >= warmup && let Some(control) = &mut control {
+                control.command("disable").expect("disable perf");
+            }
             allocations::enable(false);
             bowl::metrics::set_enabled(false);
             let metrics_after = if metrics {

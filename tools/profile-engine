@@ -93,6 +93,9 @@ def main():
     parser.add_argument("--binary", type=Path, default=Path("target/release/examples/profile_purchases"))
     candidates = sorted(Path("/nix/store").glob("*-perf-linux-*/bin/perf")) if Path("/nix/store").exists() else []
     parser.add_argument("--perf", type=Path, default=shutil.which("perf") or (candidates[-1] if candidates else None))
+    parser.add_argument("--call-graph", choices=("dwarf", "fp"), default="dwarf", help="fp requires a binary built with force-frame-pointers")
+    parser.add_argument("--stack-bytes", type=int, default=16384, help="DWARF stack dump size for CPU samples")
+    parser.add_argument("--steady", action="store_true", help="profile warmed independent purchases using steady_allocations")
     parser.add_argument("--kernels", choices=("async", "sync"), default="async")
     parser.add_argument("--out", type=Path, default=Path("target/hardware-profile") / time.strftime("%Y%m%d-%H%M%S"))
     parser.add_argument("--cases", default="independent-1,independent-8,contended-8,sparse-8,control")
@@ -106,9 +109,18 @@ def main():
     args = parser.parse_args()
     if args.rounds <= 0 or args.repetitions <= 0 or args.warmup < 0:
         parser.error("rounds/repetitions must be positive and warmup nonnegative")
+    if not 8 <= args.stack_bytes <= 65528 or args.stack_bytes % 8:
+        parser.error("stack-bytes must be a multiple of 8 in 8..65528")
     cases, modes, groups = args.cases.split(","), args.modes.split(","), args.groups.split(",")
     if set(cases) - CASES.keys() or set(groups) - GROUPS.keys() or set(modes) - {"counters", "diagnostics", "sample"}:
         parser.error("unknown case, group, or mode")
+    if args.steady:
+        if set(cases) - {"independent-1", "independent-8"}:
+            parser.error("--steady supports independent-1 and independent-8")
+        if args.warmup < 1:
+            parser.error("--steady requires positive warmup")
+        if args.binary == Path("target/release/examples/profile_purchases"):
+            args.binary = Path("target/release/examples/steady_allocations")
     allowed = set(os.sched_getaffinity(0))
     workers = cpu_list(args.worker_cpus) if args.worker_cpus else worker_order(allowed, args.driver_cpu)
     if args.driver_cpu not in allowed or not set(workers) <= allowed or args.driver_cpu in workers:
@@ -124,7 +136,7 @@ def main():
     perf = str(args.perf)
     manifest = dict(base_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
                     binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
-                    source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for directory in ["crates/bowl/src", "crates/benches/examples"] for p in Path(directory).rglob("*.rs")},
+                    source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for directory in ["crates/bowl/src", "crates/benches/src", "crates/benches/examples"] for p in Path(directory).rglob("*.rs")},
                     runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     features=subprocess.check_output(["cargo", "tree", "--workspace", "-e", "features", "-i", "tokio"], text=True),
                     build_command="cargo build --workspace --all-targets --profile bench -j 20 --message-format=json",
@@ -144,6 +156,10 @@ def main():
                     "PROFILE_PER_OWNER": str(owners), "PROFILE_WORK": str(work), "PROFILE_ROWS": "1000",
                     "PROFILE_ROUNDS": str(args.rounds), "PROFILE_WARMUP": str(args.warmup),
                     "PROFILE_DISPATCH_BATCH": "16", "PROFILE_READY": str(ready), "PROFILE_METRICS": str(int(mode == "diagnostics"))}
+        if args.steady:
+            settings |= {"ALLOC_KERNELS": args.kernels, "ALLOC_CASE": "purchases", "ALLOC_WORKERS": str(count),
+                         "ALLOC_SLOTS": str(requests), "ALLOC_ROUNDS": str(args.rounds), "ALLOC_WARMUP": str(args.warmup),
+                         "ALLOC_COUNT": "0", "ALLOC_METRICS": str(int(mode == "diagnostics")), "ALLOC_READY": str(ready)}
         command = [str(binary)]
         if mode != "diagnostics":
             os.mkfifo(control); os.mkfifo(ack)
@@ -151,7 +167,7 @@ def main():
             if mode == "counters":
                 command = [perf, "stat", "--no-big-num", "-x", ";", "-o", str(directory / "stat.csv"), "-D", "-1", "--control", f"fifo:{control},{ack}", "-e", GROUPS[group], "--", *command]
             else:
-                command = [perf, "record", "-e", "cycles:u", "-c", "1000000", "--call-graph", "dwarf,8192", "-D", "-1", "--control", f"fifo:{control},{ack}", "-o", str(directory / "perf.data"), "--", *command]
+                command = [perf, "record", "-e", "cycles:u", "-c", "1000000", "--call-graph", (f"dwarf,{args.stack_bytes}" if args.call_graph == "dwarf" else "fp"), "-D", "-1", "--control", f"fifo:{control},{ack}", "-o", str(directory / "perf.data"), "--", *command]
         with (directory / "output.tsv").open("w") as out, (directory / "stderr.log").open("w") as err:
             process = subprocess.Popen(command, env=os.environ | settings, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, start_new_session=True)
             try:
@@ -182,12 +198,15 @@ def main():
             totals = {}
             for metric in parsed["metrics"]:
                 totals[metric["name"]] = totals.get(metric["name"], 0) + metric["value"]
-            completed = sum(system["completed"] for system in parsed["systems"])
-            if totals["admitted_rows"] != completed or totals["started_rows"] != completed or totals["completed_row_polls"] < completed:
+            completed = totals["started_rows"] if args.steady else sum(system["completed"] for system in parsed["systems"])
+            executions = totals["completed_row_polls"] + totals.get("completed_sync_calls", 0)
+            if totals["admitted_rows"] != completed or totals["started_rows"] != completed or executions < completed:
                 raise RuntimeError("diagnostic invocation accounting does not match completed work")
-            if workload == "purchases" and totals["bound_cleanup_roots"] != operations:
+            if not args.steady and workload == "purchases" and totals["bound_cleanup_roots"] != operations:
                 raise RuntimeError("request retirement does not match completed purchases")
-            entry["diagnostic_checks"] = "completion, poll, and purchase-retirement accounting passed"
+            if args.steady and completed != 5 * operations:
+                raise RuntimeError("steady purchase kernel count does not match completed work")
+            entry["diagnostic_checks"] = "admission/execution accounting and fixture operation counts passed"
         if mode == "counters":
             entry["events"] = parse_stat(directory / "stat.csv")
             for event in entry["events"]:

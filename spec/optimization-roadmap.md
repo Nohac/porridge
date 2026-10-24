@@ -1,10 +1,16 @@
 # Allocation and execution optimization roadmap
 
-Status: planned, 2026-10-23. Baseline: `35247bc`.
-This is the active ordering for the optimization campaign. Earlier reports remain
-historical evidence; their unchecked items are not all still unimplemented.
-The user authorized implementation and commits between batches for this campaign.
-This document is the planning deliverable before the next implementation batch.
+Current source audit and prior-art mapping: [scheduler investigation](scheduler-investigation.md). This is a proposed experiment order, not a restart of the paused campaign.
+
+Status: broader campaign paused; scoped follow-ups recorded through 2026-10-24.
+Original baseline: `35247bc`. Earlier reports remain historical evidence; their
+unchecked items are not all still unimplemented. Earlier campaign commit authority
+does not authorize restarting the entire roadmap. Current changes are being
+captured and committed at the user's request before choosing the next slice.
+
+[Typed-return kernels](typed-return-kernels.md) is a new proposal, not an implemented
+capability. The recommended next experiment is isolating always-on statistics
+cost, followed by compact scheduling metadata; implementation awaits slice selection.
 
 ## Objective and completion criteria
 
@@ -274,13 +280,13 @@ does not make total scheduling O(1). Keep opaque-parameter full-plan fallbacks.
 
 Files: system adapters/builder/macros, `dispatch/plan.rs`, executor and tests.
 
-Initial supported registration:
+Supported registration:
 
 ```rust
-builder.system(sync_kernel(update_balances)).system(fetch_remote_facts)
+builder.system(update_balances).system(fetch_remote_facts)
 ```
 
-- [x] Add an explicit non-async adapter with shared parameter preparation,
+- [x] Infer non-async registration with shared parameter preparation,
   guards, access admission, revisions, output ownership and publication.
 - [x] Execute ordinary synchronous worker rows directly inside a typed batch loop, without
   constructing/polling a future node for each row.

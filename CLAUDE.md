@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Porridge is an ECS-inspired **incremental evaluation** prototype for compilers, language tools, and other stateful non-game systems. Facts are components on entities, systems are async or explicitly synchronous functions that derive more facts, and callers query settled results. It is a prototype: the API is still being shaped, and the playground is the main documentation alongside `README.md`, `TODO.md` (roadmap), and `spec/` (design docs — `formal-semantics.md`, `streaming-evaluation.md`, `access-scheduling.md`, etc.).
+Porridge is an ECS-inspired **incremental evaluation** prototype for compilers, language tools, and other stateful non-game systems. Facts are components on entities, systems are async or synchronous functions that derive more facts, and callers query settled results. It is a prototype: the API is still being shaped, and the playground is the main documentation alongside `README.md`, `TODO.md` (roadmap), and `spec/` (design docs — `formal-semantics.md`, `streaming-evaluation.md`, `access-scheduling.md`, etc.).
 
 ## Change workflow
 
@@ -70,7 +70,8 @@ The whole model hangs on a few types; understanding their interaction requires r
 
 ### Kernel execution
 
-- `sync_kernel(f)` registers a plain function with existing system parameters.
+- `.system(f)` accepts both plain and async functions with existing system parameters.
+  Internal marker types select execution at compile time without a wrapper.
   Ordinary worker plans execute direct call batches; async functions retain their
   future executor. Registration, planning, admission, guards and publication are
   shared. Grouped hooks, Settle and no-runtime sync fallback currently use the

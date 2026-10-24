@@ -4,11 +4,11 @@ Status: initial direct worker path implemented and validated (2026-10-24).
 This resumes only O6 experimentation; the broader optimization campaign remains paused.
 
 ```rust
-builder.system(sync_kernel(update_balances)).system(fetch_remote_facts)
+builder.system(update_balances).system(fetch_remote_facts)
 ```
 
-- Add a small explicit adapter for ordinary synchronous functions with existing
-  system parameters. Keep async registration unchanged.
+- Infer synchronous versus asynchronous execution from the function signature
+  through internal marker types. Both register with `.system(function)`.
 - Share registration metadata, planning, access admission, guards, command reuse,
   stale checks, memoization and publication. Direct worker batches contain
   FnOnce calls and execute a plain loop: no per-row future or future set.
@@ -77,14 +77,16 @@ not an exact CPU partition for warmed purchases.
 
 Conclusion: removing per-kernel futures alone did not reveal a large end-to-end
 bottleneck. Shared planning/admission, outer completion polling and publication
-remain. Native sync still provides a useful explicit execution mode and much
+remain. Native sync still provides a useful execution mode and much
 lower requested byte traffic; keep it without claiming it solves scaling.
 
 ## Using and reproducing it
 
-Use `sync_kernel(function)` for a plain function with existing system parameters.
-Keep ordinary async functions registered directly. Registration selects the path
-statically, so async systems do not instantiate the direct-call executor.
+Register plain and async functions directly with `.system(function)`. Internal
+marker types select the path statically, so async systems do not instantiate the
+direct-call executor. The original measurements above used an explicit
+`sync_kernel` wrapper; the registration follow-up removes that wrapper without
+changing either executor. Those measurements have not been rerun for this API change.
 
 ```text
 uv run tools/measure-allocations \
