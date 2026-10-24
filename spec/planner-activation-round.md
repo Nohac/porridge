@@ -84,3 +84,46 @@ actual work. Preserve registration order by iterating bits in ascending ID order
 Snapshots do not copy or own activation state. Settle's separate evaluation path
 retains its existing semantics. This first prototype does not replace per-system
 row-log hints; measure system-selection cost before merging those mechanisms.
+
+## P2 initial result and refinement
+
+[Initial measurements](benchmarks/2026-10-24-planner-p2.json) show correct bounded
+selection (eight-worker baseline16 checks/round;64idle observers13) and unchanged
+useful work, but mixed throughput. The P1 control lacked these new counters, so
+no numeric before-check count is invented. [Initial prototype patch](benchmarks/2026-10-24-planner-p2-initial.patch)
+applies to `bebb9c8` and is preserved before refinement.
+
+P2b moves dirty-type signalling from an extra TypeId lookup on every log write
+to a cached marker on each typed live store. Signal when its watermark advances.
+Store/snapshot clones must drop the live marker; otherwise scratch snapshot
+mutation could spuriously wake live consumers. The store factory installs markers
+once from the compiled consumer index. Atomic markers avoid losing a concurrent
+wake; they do not replace any data-access guard or transaction protection.
+
+P3 is refined by source evidence: share the sealed system registry and compile
+lists of actual settled hooks and Settle systems. Today default empty hooks still
+allocate/execute empty work, while full registry clones duplicate many Arc handles.
+Candidate-density heuristics remain deferred rather than bundled into this round.
+
+## P2/P2b disposition: archive, do not retain in production
+
+[Cached-marker comparison](benchmarks/2026-10-24-planner-p2b.json) is directly
+against the P1 frozen executable. It does not treat the earlier variant's timings
+under different machine load as a causal control. All188 engine tests, workspace
+checks, optimized build and smokes passed. Work stayed correct; routed checks
+remained bounded with64 idle observers. Eight-worker baseline selected12 systems
+per round and10 dirty-type events; the idle-observer case selected15 with14.33
+events (process averages; events coalesce per flush, not once per whole round).
+
+Throughput did not justify keeping the additional machinery. The target sparse
+case at eight workers had paired changes of roughly+11%,+1%,−3%; static100k-device
+runs regressed in all three pairs, and idle-observer results were flat/adverse.
+The initial per-write lookup version was also mixed. Both code variants are
+preserved as replayable patches against `bebb9c8`; the [cached variant](benchmarks/2026-10-24-planner-p2-cached.patch)
+was checked in reverse before restoring source and forward against the base index.
+
+This rejects these implementations for the measured workloads, not activation
+as a general principle. A larger graph with many more consumers could justify a
+new comparison. Do not ship a guessed system-count threshold or claim these
+models make the serial publisher parallel. Production keeps P1's watermark gates
+and incremental row hints. P3 proceeds from that retained baseline.

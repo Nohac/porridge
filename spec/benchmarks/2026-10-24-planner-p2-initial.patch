@@ -1,0 +1,399 @@
+diff --git a/crates/bowl/src/bowl.rs b/crates/bowl/src/bowl.rs
+index 5e2e54814bf405d704dd1a065a5f7af60e3fbe2f..e8616c1c1aae195ae6ee5e897b4658038cde63b4 100644
+--- a/crates/bowl/src/bowl.rs
++++ b/crates/bowl/src/bowl.rs
+@@ -144,6 +144,7 @@ fn snapshot_key(world: &World) -> SnapshotKey {
+ 
+ struct State {
+     world: World,
++    activation: crate::activation::Router,
+     /// Reusable snapshot keyed by the world counters it was taken at.
+     ///
+     /// Repeated reads of an unchanged world share one structural clone
+@@ -1010,6 +1011,12 @@ impl BowlBuilder {
+             }
+         }
+ 
++        {
++            let mut state = bowl.inner.state.try_lock().expect("unshared builder state");
++            let (activation, dirty) = crate::activation::Router::build(&mut state.systems);
++            state.activation = activation;
++            state.world.dirty_components = dirty;
++        }
+         bowl
+     }
+ }
+@@ -1128,6 +1135,7 @@ impl Bowl {
+             inner: Arc::new(Inner {
+                 state: Mutex::new(State {
+                     world: World::new(),
++                    activation: crate::activation::Router::default(),
+                     snapshot_cache: None,
+                     systems: Vec::new(),
+                     memo: HashMap::new(),
+@@ -2270,6 +2278,7 @@ impl Bowl {
+         let profile_systems = self.system_profiling_enabled();
+         let mut needs_plan = true;
+         let mut deferred_conflicts = false;
++        let mut candidate_systems = Vec::new();
+ 
+         loop {
+             if allow_preempt && self.inner.preempt_waiters.load(atomic::Ordering::SeqCst) > 0 {
+@@ -2303,9 +2312,12 @@ impl Bowl {
+                 let planning = {
+                     let snapshot_start = std::time::Instant::now();
+                     let mut state = lock_state(&self.inner.state).await;
+-                    if systems.iter().any(|system| {
+-                        system.phase == phase && system.peek_needs_planning(&state.world)
+-                    }) {
++                    {
++                        let State { activation, world, .. } = &mut *state;
++                        activation.collect(&mut world.dirty_components, phase, &mut candidate_systems);
++                    }
++                    candidate_systems.retain(|&id| systems[id].peek_needs_planning(&state.world));
++                    if !candidate_systems.is_empty() {
+                         let snapshot = snapshot_locked(&mut state);
+                         let (log, epoch) = state.world.plan_log();
+                         SNAPSHOT_NANOS.fetch_add(
+@@ -2356,9 +2368,8 @@ impl Bowl {
+                     .planning_storage
+                     .take()
+                     .unwrap_or_default();
+-                for system in systems
+-                    .iter()
+-                    .filter(|system| system.phase == phase && system.needs_planning(&snapshot))
++                for system in candidate_systems.iter().map(|&id| &systems[id])
++                    .filter(|system| system.needs_planning(&snapshot))
+                 {
+                     let plan_start = profile_systems.then(std::time::Instant::now);
+                     // Delta planning: a system whose cursor is current for
+diff --git a/crates/bowl/src/lib.rs b/crates/bowl/src/lib.rs
+index d588ae4b321223b2ebb00c156b166d3fa841b969..8c22e1468dae3facffe9f3afbf29a070463c1cb0 100644
+--- a/crates/bowl/src/lib.rs
++++ b/crates/bowl/src/lib.rs
+@@ -96,6 +96,7 @@
+ //! This crate is intentionally small right now and is the primary runtime for
+ //! the prototype.
+ 
++mod activation;
+ mod access;
+ mod bowl;
+ mod commands;
+diff --git a/crates/bowl/src/metrics.rs b/crates/bowl/src/metrics.rs
+index 39c197b0e65332db071cc9664faa9907f4c3ea4d..f55801bde98e3aa42bcc7c653d106a1f040446fb 100644
+--- a/crates/bowl/src/metrics.rs
++++ b/crates/bowl/src/metrics.rs
+@@ -19,6 +19,8 @@ macro_rules! counters {
+ 
+ counters! {
+     PlanCalls => "plan_calls",
++    PlannerDirtyTypes => "planner_dirty_types",
++    PlannerSystemChecks => "planner_system_checks",
+     CandidateRows => "candidate_rows",
+     MemoHits => "memo_hits",
+     DependencyRecords => "dependency_records",
+diff --git a/crates/bowl/src/system.rs b/crates/bowl/src/system.rs
+index c82eb8563bd3fb3a0d6a938e20bae4e3d1209b9f..b2f4a4f477961b17158f2d5e2f12812ecc1b3b84 100644
+--- a/crates/bowl/src/system.rs
++++ b/crates/bowl/src/system.rs
+@@ -1671,6 +1671,7 @@ pub struct SystemStats {
+ /// Type-erased registered system.
+ #[derive(Clone)]
+ pub struct BoxedSystem {
++    pub(crate) activation: Option<crate::activation::Activation>,
+     pub(crate) runnable: Arc<dyn Runnable>,
+     pub(crate) phase: Phase,
+     /// Full type path of the registered function, for `explain` lookups.
+@@ -1755,6 +1756,7 @@ impl BoxedSystem {
+             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+             forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
++            activation: None,
+         }
+     }
+ 
+@@ -1812,6 +1814,7 @@ impl BoxedSystem {
+                 .lock()
+                 .expect("forced-dirty lock poisoned")
+                 .extend_from_slice(keys);
++            if let Some(activation) = &self.activation { activation.wake(); }
+             return;
+         }
+         self.reset_full();
+@@ -1826,6 +1829,7 @@ impl BoxedSystem {
+             .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+         self.plan_epoch
+             .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
++        if let Some(activation) = &self.activation { activation.wake(); }
+     }
+ 
+     /// Preserve only unread, relevant rows before the global log is reclaimed.
+@@ -1851,6 +1855,9 @@ impl BoxedSystem {
+                 .map(|(_, entity)| *entity));
+             dirty.sort_unstable();
+             dirty.dedup();
++            if !dirty.is_empty() {
++                if let Some(activation) = &self.activation { activation.wake(); }
++            }
+         }
+ 
+         self.log_pos.store(0, Relaxed);
+@@ -2383,6 +2390,7 @@ where
+             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+             forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
++            activation: None,
+         }
+     }
+ }
+@@ -2436,6 +2444,7 @@ where
+             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+             forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
++            activation: None,
+         }
+     }
+ }
+@@ -2489,6 +2498,7 @@ where
+             plan_epoch: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
+             log_pos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+             forced_dirty: Arc::new(std::sync::Mutex::new(Vec::new())),
++            activation: None,
+         }
+     }
+ }
+diff --git a/crates/bowl/src/world.rs b/crates/bowl/src/world.rs
+index 86f8cc026aeffd757c8ee18fa4b5d6869041618b..6d34e3104d742cc7cd2d3037c669f85f20d19a2c 100644
+--- a/crates/bowl/src/world.rs
++++ b/crates/bowl/src/world.rs
+@@ -590,6 +590,7 @@ impl Clone for Box<dyn StoreDyn> {
+ /// `World` is currently public only because [`crate::QueryParam`] exposes it in
+ /// low-level trait methods. It should be treated as an implementation detail.
+ pub struct World {
++    pub(crate) dirty_components: crate::activation::DirtyComponents,
+     /// Shared monotonic id allocator. Shared (not copied) into snapshots so
+     /// command buffers can reserve real entity ids at buffer time.
+     next_entity: Arc<AtomicU64>,
+@@ -808,6 +809,7 @@ impl Clone for World {
+             flushing_anchors: false,
+             written_derived: Vec::new(),
+             presence: self.presence.clone(),
++            dirty_components: crate::activation::DirtyComponents::default(),
+             write_log: Arc::new(Vec::new()),
+             plan_epoch: self.plan_epoch,
+         }
+@@ -850,6 +852,7 @@ impl World {
+             flushing_anchors: false,
+             written_derived: Vec::new(),
+             presence: None,
++            dirty_components: crate::activation::DirtyComponents::default(),
+             write_log: Arc::new(Vec::new()),
+             plan_epoch: 0,
+         }
+@@ -873,6 +876,7 @@ impl World {
+     }
+ 
+     fn log_write(&mut self, type_id: TypeId, entity: Entity) {
++        self.dirty_components.mark(type_id);
+         Arc::make_mut(&mut self.write_log).push((type_id, entity));
+     }
+ 
+@@ -1333,7 +1337,7 @@ impl World {
+             };
+ 
+             store.reconcile_entry(*entity, &mut self.revision);
+-            Arc::make_mut(&mut self.write_log).push((*type_id, *entity));
++            self.log_write(*type_id, *entity);
+         }
+     }
+ 
+diff --git a/crates/bowl/src/activation.rs b/crates/bowl/src/activation.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa45d011b77f0313e958ef2c8671ca21a0544781
+--- /dev/null
++++ b/crates/bowl/src/activation.rs
+@@ -0,0 +1,184 @@
++//! Compiled component consumers and coalesced phase readiness.
++//! Readiness only selects candidates; watermarks, memos and reservations remain authoritative.
++use std::{any::TypeId, collections::HashMap, sync::{Arc, atomic::{AtomicU64, Ordering::Relaxed}}};
++use crate::system::{BoxedSystem, Phase};
++
++fn phase_index(phase: Phase) -> usize {
++    match phase { Phase::Startup => 0, Phase::Evaluate => 1, Phase::Complete => 2, Phase::Settle => 3 }
++}
++
++#[derive(Default)]
++pub(crate) struct DirtyComponents {
++    index: HashMap<TypeId, usize>,
++    words: Vec<u64>,
++}
++
++impl DirtyComponents {
++    fn new(index: HashMap<TypeId, usize>) -> Self {
++        let words = vec![0; index.len().div_ceil(64)];
++        Self { index, words }
++    }
++
++    pub(crate) fn mark(&mut self, component: TypeId) {
++        if let Some(&id) = self.index.get(&component) { self.words[id / 64] |= 1 << (id % 64); }
++    }
++
++    fn drain(&mut self, mut visit: impl FnMut(usize)) {
++        for (word, pending) in self.words.iter_mut().enumerate() {
++            let mut bits = std::mem::take(pending);
++            while bits != 0 {
++                let bit = bits.trailing_zeros() as usize;
++                bits &= bits - 1;
++                visit(word * 64 + bit);
++            }
++        }
++    }
++}
++
++#[derive(Clone)]
++pub(crate) struct Activation {
++    words: Arc<Vec<AtomicU64>>,
++    id: usize,
++}
++
++impl Activation {
++    pub(crate) fn wake(&self) { self.words[self.id / 64].fetch_or(1 << (self.id % 64), Relaxed); }
++}
++
++#[derive(Default)]
++pub(crate) struct Router {
++    ready: Arc<Vec<AtomicU64>>,
++    phases: [Vec<u64>; 4],
++    unbounded: [Vec<u64>; 4],
++    // Sparse word masks avoid a dense components x systems bitmap matrix.
++    consumers: Vec<Vec<(usize, u64)>>,
++}
++
++impl Router {
++    pub(crate) fn build(systems: &mut [BoxedSystem]) -> (Self, DirtyComponents) {
++        let words = systems.len().div_ceil(64);
++        let ready = Arc::new((0..words).map(|_| AtomicU64::new(0)).collect::<Vec<_>>());
++        let mut router = Self { ready, phases: std::array::from_fn(|_| vec![0; words]),
++            unbounded: std::array::from_fn(|_| vec![0; words]), consumers: vec![] };
++        let mut index = HashMap::new();
++        for (id, system) in systems.iter_mut().enumerate() {
++            let word = id / 64;
++            let bit = 1u64 << (id % 64);
++            let phase = phase_index(system.phase);
++            router.phases[phase][word] |= bit;
++            let token = Activation { words: router.ready.clone(), id };
++            token.wake();
++            system.activation = Some(token);
++            if let Some(interest) = &system.interest {
++                for component in interest.iter() {
++                    let next = index.len();
++                    let slot = *index.entry(*component).or_insert(next);
++                    if slot == router.consumers.len() { router.consumers.push(vec![]); }
++                    let masks = &mut router.consumers[slot];
++                    if let Some((_, mask)) = masks.iter_mut().find(|(w, _)| *w == word) { *mask |= bit; }
++                    else { masks.push((word, bit)); }
++                }
++            } else {
++                router.unbounded[phase][word] |= bit;
++            }
++        }
++        (router, DirtyComponents::new(index))
++    }
++
++    pub(crate) fn collect(&self, dirty: &mut DirtyComponents, phase: Phase, out: &mut Vec<usize>) {
++        dirty.drain(|component| {
++            crate::metrics::add(crate::metrics::Counter::PlannerDirtyTypes, 1);
++            for &(word, mask) in &self.consumers[component] {
++                self.ready[word].fetch_or(mask, Relaxed);
++            }
++        });
++        out.clear();
++        let phase = phase_index(phase);
++        for (word, &mask) in self.phases[phase].iter().enumerate() {
++            if mask == 0 { continue; }
++            let mut pending = self.ready[word].fetch_and(!mask, Relaxed) & mask;
++            pending |= self.unbounded[phase][word];
++            while pending != 0 {
++                let bit = pending.trailing_zeros() as usize;
++                pending &= pending - 1;
++                out.push(word * 64 + bit);
++            }
++        }
++        crate::metrics::add(crate::metrics::Counter::PlannerSystemChecks, out.len() as u64);
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::{Component, Entity, IntoSystem, Query, world::SystemId};
++
++    struct A;
++    struct B;
++    struct Noise;
++    impl Component for A {}
++    impl Component for B {}
++    fn read_a(_: Query<&A>) {}
++    fn read_b(_: Query<&B>) {}
++
++    #[test]
++    fn coalesces_consumers_across_words_and_preserves_other_phase_ready_bits() {
++        let mut systems: Vec<_> = (0..130).map(|id| read_b.into_system(SystemId(id))).collect();
++        for id in [0, 64, 129] { systems[id] = read_a.into_system(SystemId(id)); }
++        systems[129].phase = Phase::Complete;
++        let (router, mut dirty) = Router::build(&mut systems);
++        let mut ids = vec![];
++        router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++        assert_eq!(ids, (0..129).collect::<Vec<_>>());
++        router.collect(&mut dirty, Phase::Complete, &mut ids);
++        assert_eq!(ids, [129]);
++
++        for _ in 0..100 { dirty.mark(TypeId::of::<A>()); }
++        dirty.mark(TypeId::of::<Noise>());
++        router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++        assert_eq!(ids, [0, 64]);
++        router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++        assert!(ids.is_empty());
++        router.collect(&mut dirty, Phase::Complete, &mut ids);
++        assert_eq!(ids, [129]);
++        systems[65].reset_full();
++        router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++        assert_eq!(ids, [65]);
++        systems[1].force_replan(&[Entity::from_raw(7)]);
++        router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++        assert_eq!(ids, [1]);
++    }
++
++    #[test]
++    fn opaque_interests_are_considered_each_wave_without_waking_bounded_neighbors() {
++        let mut systems = vec![read_a.into_system(SystemId(0)), read_b.into_system(SystemId(1))];
++        systems[0].interest = None;
++        let (router, mut dirty) = Router::build(&mut systems);
++        let mut ids = vec![];
++        router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++        assert_eq!(ids, [0, 1]);
++        for _ in 0..3 {
++            router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++            assert_eq!(ids, [0]);
++        }
++        dirty.mark(TypeId::of::<B>());
++        router.collect(&mut dirty, Phase::Evaluate, &mut ids);
++        assert_eq!(ids, [0, 1]);
++    }
++
++    #[test]
++    fn component_bitset_crosses_word_boundary_and_ignores_unsubscribed_types() {
++        let mut index = HashMap::new();
++        macro_rules! register { ($($n:literal),*) => { $(index.insert(TypeId::of::<[u8; $n]>(), $n);)* }; }
++        register!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64);
++        let mut dirty = DirtyComponents::new(index);
++        dirty.mark(TypeId::of::<[u8; 64]>());
++        dirty.mark(TypeId::of::<[u8; 0]>());
++        dirty.mark(TypeId::of::<[u8; 64]>());
++        dirty.mark(TypeId::of::<Noise>());
++        let mut seen = vec![];
++        dirty.drain(|id| seen.push(id));
++        assert_eq!(seen, [0, 64]);
++        dirty.drain(|_| panic!("drain must clear dirty words"));
++    }
++}
