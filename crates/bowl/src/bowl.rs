@@ -2297,25 +2297,27 @@ impl Bowl {
             if needs_plan {
                 deferred_conflicts = false;
                 WAVE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let snapshot_start = std::time::Instant::now();
-                let snapshot = self.snapshot().await;
-                let (plan_log, plan_epoch) = {
-                    let state = lock_state(&self.inner.state).await;
-                    state.world.plan_log()
+                // Readiness and snapshot capture share one state lock. A quiet
+                // wave must not pin fresh store versions while awaiting results:
+                // that would force otherwise unnecessary COW on publication.
+                let planning = {
+                    let snapshot_start = std::time::Instant::now();
+                    let mut state = lock_state(&self.inner.state).await;
+                    if systems.iter().any(|system| {
+                        system.phase == phase && system.peek_needs_planning(&state.world)
+                    }) {
+                        let snapshot = snapshot_locked(&mut state);
+                        let (log, epoch) = state.world.plan_log();
+                        SNAPSHOT_NANOS.fetch_add(
+                            snapshot_start.elapsed().as_nanos() as u64,
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+                        Some((snapshot, log, epoch))
+                    } else {
+                        None
+                    }
                 };
-                SNAPSHOT_NANOS.fetch_add(
-                    snapshot_start.elapsed().as_nanos() as u64,
-                    std::sync::atomic::Ordering::Relaxed,
-                );
-                // Planner memoization: a system whose interested stores
-                // haven't moved past its last planned mark cannot have new
-                // rows or stale deps. When *no* system needs planning the
-                // whole wave setup is skipped — cloning the memo per wave
-                // is the dominant cost of quiet waves.
-                if !systems
-                    .iter()
-                    .any(|system| system.phase == phase && system.peek_needs_planning(&snapshot))
-                {
+                let Some((snapshot, plan_log, plan_epoch)) = planning else {
                     match self
                         .await_next_run(&mut read_runs, &mut write_runs, allow_preempt)
                         .await
@@ -2348,7 +2350,7 @@ impl Bowl {
                             continue;
                         }
                     }
-                }
+                };
                 let mut planning_storage = lock_state(&self.inner.state)
                     .await
                     .planning_storage
@@ -8903,3 +8905,7 @@ mod profiling_tests;
 #[cfg(test)]
 #[path = "planning_log_tests.rs"]
 mod planning_log_tests;
+
+#[cfg(test)]
+#[path = "planner_activation_tests.rs"]
+mod planner_activation_tests;
